@@ -216,7 +216,7 @@ export default async function EquipePage({
                     <input name="password" type="password" required minLength={6} className="input" />
                   </Field>
                   <Field label="Cargo">
-                    <input name="job_title" className="input" placeholder="Analista de marketplace" />
+                    <input name="job_title" className="input" placeholder="cargo na operação" />
                   </Field>
                   <Field label="Papel">
                     <select name="role" defaultValue="membro" className="select">

@@ -21,7 +21,7 @@ export default async function ChatPage() {
             hint={
               list.length
                 ? "As conversas ficam separadas por canal para não misturar assunto de clientes diferentes."
-                : "Crie o primeiro canal — por exemplo #operacao-diaria — para a equipe começar a conversar."
+                : "Crie o primeiro canal para a equipe começar a conversar."
             }
           />
         </Card>

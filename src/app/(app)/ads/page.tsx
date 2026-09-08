@@ -240,7 +240,7 @@ export default async function AdsPage({
                   </select>
                 </Field>
                 <Field label="Campanha">
-                  <input name="campaign" className="input" placeholder="Ads de produto" />
+                  <input name="campaign" className="input" placeholder="nome da campanha" />
                 </Field>
                 <div className="grid grid-cols-2 gap-3">
                   <Field label="Início *">

@@ -6,7 +6,7 @@
     "dev": "next dev -p 3000",
     "build": "next build",
     "start": "next start -p 3000",
-    "seed": "node --experimental-strip-types scripts/seed.ts"
+    "criar-admin": "node --experimental-strip-types scripts/criar-admin.ts"
   },
   "dependencies": {
     "next": "^15.5.25",

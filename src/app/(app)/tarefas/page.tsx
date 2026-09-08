@@ -221,7 +221,7 @@ export default async function TarefasPage({
               <Card title="Nova tarefa" subtitle="Vai para o mural da equipe" bodyClassName="p-5 pb-0">
                 <div className="space-y-3">
                   <Field label="Título *">
-                    <input name="title" required className="input" placeholder="Revisar anúncios do ML" />
+                    <input name="title" required className="input" placeholder="o que precisa ser feito" />
                   </Field>
                   <Field label="Descrição">
                     <textarea name="description" rows={3} className="textarea" />

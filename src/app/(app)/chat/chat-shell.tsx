@@ -65,10 +65,10 @@ export function ChatShell({
           <Card title="Novo canal" bodyClassName="p-4 pb-0">
             <div className="space-y-3">
               <Field label="Nome">
-                <input name="name" required className="input" placeholder="operacao-diaria" />
+                <input name="name" required className="input" placeholder="nome do canal" />
               </Field>
               <Field label="Descrição">
-                <input name="description" className="input" placeholder="assunto do canal" />
+                <input name="description" className="input" placeholder="assunto tratado no canal" />
               </Field>
               <Field label="Vincular a um cliente">
                 <select name="client_id" defaultValue="" className="select">

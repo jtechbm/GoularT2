@@ -7,19 +7,15 @@ Sistema interno da operação — uso exclusivo do Kadu e da equipe. Clientes **
 ```bash
 npm install
 cp .env.example .env      # ajuste GOULART_SESSION_SECRET
-npm run seed              # cria o acesso do Kadu + carteira de exemplo
+npm run criar-admin -- kadu@suaempresa.com.br "Kadu Goulart"
 npm run dev               # http://localhost:3000
 ```
 
-Acessos criados pelo seed (senha `goulart123` — troque em **Equipe** assim que entrar):
+O `criar-admin` cria **apenas** o primeiro acesso administrador e mostra a senha sorteada uma única vez
+(ou use a sua: `npm run criar-admin -- email nome senha`). O sistema começa vazio: clientes, equipe,
+marketplaces, tarefas e canais são cadastrados por dentro dele.
 
-| E-mail | Papel |
-| --- | --- |
-| kadu@goulart.com.br | admin |
-| marina@goulart.com.br | gestor |
-| rafael@goulart.com.br / bianca@… / tiago@… | membro |
-
-`npm run seed -- reset` limpa a base e recria tudo.
+Dentro do sistema, o admin cria os demais acessos em **Equipe**.
 
 ## O que já está de pé
 

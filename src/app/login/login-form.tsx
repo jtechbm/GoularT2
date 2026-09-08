@@ -30,7 +30,7 @@ export function LoginForm({ hasUsers }: { hasUsers: boolean }) {
               autoFocus
               required
               className="input"
-              placeholder="voce@goulart.com.br"
+              placeholder="seu e-mail de acesso"
             />
           </div>
 
@@ -61,8 +61,8 @@ export function LoginForm({ hasUsers }: { hasUsers: boolean }) {
 
           {!hasUsers && (
             <p className="rounded-lg border border-warn/30 bg-warn-soft px-3 py-2 text-xs text-warn">
-              Nenhum usuário cadastrado ainda. Rode <code className="font-mono">npm run seed</code> para criar o acesso
-              inicial do Kadu.
+              Nenhum usuário cadastrado ainda. Rode{" "}
+              <code className="font-mono">npm run criar-admin -- seu@email</code> para criar o primeiro acesso.
             </p>
           )}
         </form>

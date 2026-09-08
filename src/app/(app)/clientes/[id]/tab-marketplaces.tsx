@@ -37,7 +37,7 @@ export function TabMarketplaces({
                 <input type="hidden" name="marketplace_id" value={a.id} />
                 <div className="grid gap-3 sm:grid-cols-3">
                   <Field label="Apelido da conta">
-                    <input name="nickname" defaultValue={a.nickname ?? ""} className="input" placeholder="Loja principal" />
+                    <input name="nickname" defaultValue={a.nickname ?? ""} className="input" placeholder="como a equipe chama esta conta" />
                   </Field>
                   <Field label="ID externo" hint="Seller ID (ML) ou Shop ID (Shopee).">
                     <input name="external_id" defaultValue={a.external_id ?? ""} className="input" />
@@ -131,7 +131,7 @@ export function TabMarketplaces({
                   </select>
                 </Field>
                 <Field label="Apelido">
-                  <input name="nickname" className="input" placeholder="Loja oficial" />
+                  <input name="nickname" className="input" placeholder="como a equipe chama esta conta" />
                 </Field>
                 <Field label="ID externo">
                   <input name="external_id" className="input" placeholder="opcional" />

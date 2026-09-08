@@ -61,7 +61,7 @@ export function TabAds({
                 </select>
               </Field>
               <Field label="Campanha / praça">
-                <input name="campaign" className="input" placeholder="Ads de produto — geral" />
+                <input name="campaign" className="input" placeholder="nome da campanha" />
               </Field>
               <div className="grid grid-cols-2 gap-3">
                 <Field label="Início">

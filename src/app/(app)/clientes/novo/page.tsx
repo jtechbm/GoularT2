@@ -26,7 +26,7 @@ export default async function NovoClientePage() {
         <Card className="max-w-4xl" bodyClassName="p-5 pb-0">
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="Nome do cliente *" className="sm:col-span-2">
-              <input name="name" required className="input" placeholder="Ex.: Casa & Cia Utilidades" />
+              <input name="name" required className="input" placeholder="Razão social ou nome da marca" />
             </Field>
             <Field label="Nome fantasia / marca">
               <input name="trade_name" className="input" />
@@ -35,7 +35,7 @@ export default async function NovoClientePage() {
               <input name="doc" className="input" placeholder="00.000.000/0000-00" />
             </Field>
             <Field label="Segmento">
-              <input name="segment" className="input" placeholder="Casa, Moda, Pet…" />
+              <input name="segment" className="input" placeholder="segmento de atuação" />
             </Field>
             <Field label="Status inicial">
               <select name="status" defaultValue="onboarding" className="select">
