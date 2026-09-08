@@ -12,14 +12,8 @@ export function LoginForm({ hasUsers }: { hasUsers: boolean }) {
   return (
     <main className="app-shell flex min-h-screen items-center justify-center p-5">
       <div className="w-full max-w-[380px]">
-        <div className="mb-7 text-center">
+        <div className="mb-8 flex justify-center">
           <Wordmark size="lg" />
-          <p className="mt-3 text-2xl font-bold tracking-tight text-ink">
-            Mais controle.
-            <br />
-            <span className="text-brand">Mais resultado.</span>
-          </p>
-          <p className="mt-2 text-sm text-muted">Operação interna · acesso restrito à equipe</p>
         </div>
 
         <form action={formAction} className="card space-y-4 p-6">

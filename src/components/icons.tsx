@@ -169,23 +169,34 @@ export const IconPlus = (p: IconProps) => (
 
 /**
  * Marca Elleva: foguete subindo sobre as barras de crescimento.
- * O foguete usa o laranja da marca; as barras seguem a cor do texto.
+ * As partes escuras usam currentColor para acompanhar o tema —
+ * ficam escuras no claro e claras no escuro. O laranja é fixo.
  */
 export function EllevaMark({ size = 30 }: { size?: number }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 48 48" fill="none" aria-hidden="true">
-      {/* barras crescentes */}
-      <rect x="4" y="30" width="7.5" height="14" rx="2" fill="currentColor" />
-      <rect x="14.5" y="22" width="7.5" height="22" rx="2" fill="currentColor" />
-      <rect x="25" y="14" width="7.5" height="30" rx="2" fill="var(--primary)" />
-      {/* foguete diagonal */}
-      <path
-        d="M44 4c-6.6.5-12.2 3-16.6 7.4l-5.2 5.2 9.2 9.2 5.2-5.2C40.9 16.3 43.4 10.7 44 4Z"
-        fill="var(--primary)"
-      />
-      <path d="M22.2 16.6 31.4 25.8l-4 4-9.2-9.2 4-4Z" fill="currentColor" opacity="0.9" />
-      <circle cx="34.6" cy="13.4" r="3.1" fill="var(--surface)" />
-      <path d="M20.4 27.2c-2.6 2.6-3 7-3 7s4.4-.4 7-3l-4-4Z" fill="var(--primary)" opacity="0.85" />
+    <svg
+      width={size}
+      height={(size * 112) / 128}
+      viewBox="0 0 128 112"
+      fill="none"
+      aria-hidden="true"
+    >
+      {/* barras de crescimento */}
+      <rect x="10" y="68" width="28" height="38" rx="3" fill="currentColor" />
+      <rect x="44" y="54" width="28" height="52" rx="3" fill="currentColor" />
+      <rect x="78" y="24" width="28" height="82" rx="3" fill="var(--primary)" />
+
+      {/* foguete deitado na diagonal, atravessando as barras */}
+      <g transform="translate(66 44) rotate(38) scale(1.25)">
+        <path d="M-8 18 L0 39 L8 18 Z" fill="var(--primary)" />
+        <path d="M-11 2 L-25 22 L-11 17 Z" fill="var(--primary)" />
+        <path d="M11 2 L25 22 L11 17 Z" fill="var(--primary)" />
+        <path
+          d="M0 -32 C8 -21 11 -10 11 1 L11 18 L-11 18 L-11 1 C-11 -10 -8 -21 0 -32 Z"
+          fill="currentColor"
+        />
+        <circle cx="0" cy="-8" r="6.5" fill="var(--surface)" />
+      </g>
     </svg>
   );
 }
