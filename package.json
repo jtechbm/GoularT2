@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start -p 3000",
     "criar-admin": "node --experimental-strip-types --env-file-if-exists=.env scripts/criar-admin.ts",
-    "migrar": "node --experimental-strip-types --env-file-if-exists=.env scripts/migrar.ts"
+    "migrar": "node --experimental-strip-types --env-file-if-exists=.env scripts/migrar.ts",
+    "testar-conexao": "node --experimental-strip-types --env-file-if-exists=.env scripts/testar-conexao.ts"
   },
   "dependencies": {
     "next": "^15.5.25",
