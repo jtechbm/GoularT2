@@ -58,7 +58,7 @@ async function refreshIfNeeded(ctx: AdapterContext): Promise<string> {
     refresh_token: json.refresh_token ?? creds.refresh_token,
     expires_at: Date.now() + json.expires_in * 1000,
   };
-  ctx.saveCredentials(next);
+  await ctx.saveCredentials(next);
   return next.access_token!;
 }
 

@@ -7,7 +7,7 @@ import { CLIENT_STATUS, MARKETPLACES } from "@/lib/types";
 
 export default async function NovoClientePage() {
   await requireRole("admin", "gestor");
-  const team = listUsers();
+  const team = await listUsers();
 
   return (
     <>

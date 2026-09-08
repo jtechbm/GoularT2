@@ -22,10 +22,10 @@ export async function createChannelAction(formData: FormData) {
   if (!name) throw new Error("Informe o nome do canal.");
 
   let slug = slugify(name) || `canal-${Date.now()}`;
-  if (one("SELECT id FROM chat_channels WHERE slug = ?", slug)) slug = `${slug}-${Date.now().toString(36).slice(-4)}`;
+  if (await one("SELECT id FROM chat_channels WHERE slug = ?", slug)) slug = `${slug}-${Date.now().toString(36).slice(-4)}`;
 
   const clientId = strOrNull(formData.get("client_id"));
-  run(
+  await run(
     `INSERT INTO chat_channels (id, slug, name, description, kind, client_id, created_by, created_at)
      VALUES (?,?,?,?,?,?,?,?)`,
     id(),
@@ -46,10 +46,10 @@ export async function sendMessageAction(formData: FormData) {
   const user = await requireUser();
   const slug = str(formData.get("slug"));
   const body = str(formData.get("body"));
-  const channel = one<{ id: string }>("SELECT id FROM chat_channels WHERE slug = ?", slug);
+  const channel = await one<{ id: string }>("SELECT id FROM chat_channels WHERE slug = ?", slug);
   if (!channel || !body) redirect(`/chat/${slug}`);
 
-  run(
+  await run(
     "INSERT INTO chat_messages (id, channel_id, user_id, body, created_at) VALUES (?,?,?,?,?)",
     id(),
     channel.id,
@@ -57,7 +57,7 @@ export async function sendMessageAction(formData: FormData) {
     body,
     now(),
   );
-  run(
+  await run(
     `INSERT INTO chat_reads (channel_id, user_id, last_read_at) VALUES (?,?,?)
      ON CONFLICT(channel_id, user_id) DO UPDATE SET last_read_at = excluded.last_read_at`,
     channel.id,
@@ -73,7 +73,7 @@ export async function sendMessageAction(formData: FormData) {
 export async function deleteChannelAction(formData: FormData) {
   const user = await requireUser();
   if (!isManager(user)) throw new Error("Somente gestores removem canais.");
-  run("DELETE FROM chat_channels WHERE slug = ?", str(formData.get("slug")));
+  await run("DELETE FROM chat_channels WHERE slug = ?", str(formData.get("slug")));
   revalidatePath("/chat");
   redirect("/chat");
 }

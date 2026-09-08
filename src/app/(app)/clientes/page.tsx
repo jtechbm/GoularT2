@@ -26,7 +26,7 @@ export default async function ClientesPage({
   const status = params.status ?? "";
   const onlyMine = params.resp === "eu";
 
-  const all = clientRows(ref);
+  const all = await clientRows(ref);
   const rows = all.filter((c) => {
     if (status && c.status !== status) return false;
     if (onlyMine && c.owner_id !== user.id) return false;

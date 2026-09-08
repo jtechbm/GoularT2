@@ -27,7 +27,7 @@ export interface AdapterContext {
   externalId: string | null;
   credentials: StoredCredentials | null;
   /** Persiste tokens renovados durante a chamada. */
-  saveCredentials: (next: StoredCredentials) => void;
+  saveCredentials: (next: StoredCredentials) => void | Promise<void>;
 }
 
 export interface MarketplaceAdapter {

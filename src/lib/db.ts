@@ -1,229 +1,124 @@
-import { DatabaseSync } from "node:sqlite";
 import { randomUUID } from "node:crypto";
-import path from "node:path";
-import fs from "node:fs";
+import pg from "pg";
 
-const DB_PATH = process.env.GOULART_DB_PATH ?? path.join(process.cwd(), "data", "goulart.db");
+const { Pool, types } = pg;
 
-const SCHEMA = `
-PRAGMA journal_mode = WAL;
-PRAGMA foreign_keys = ON;
+/**
+ * O driver devolve bigint (COUNT, SUM de inteiros) e numeric como string, para não
+ * perder precisão. Aqui todos os valores cabem em number com folga, e o resto do
+ * sistema espera number — então convertemos na entrada.
+ */
+types.setTypeParser(20, (v) => (v === null ? null : Number(v))); // int8
+types.setTypeParser(1700, (v) => (v === null ? null : Number(v))); // numeric
 
-CREATE TABLE IF NOT EXISTS users (
-  id            TEXT PRIMARY KEY,
-  name          TEXT NOT NULL,
-  email         TEXT NOT NULL UNIQUE,
-  password_hash TEXT NOT NULL,
-  role          TEXT NOT NULL DEFAULT 'membro',
-  job_title     TEXT,
-  color         TEXT NOT NULL DEFAULT '#7c3aed',
-  active        INTEGER NOT NULL DEFAULT 1,
-  created_at    TEXT NOT NULL
-);
+function connectionString(): string {
+  const url = process.env.DATABASE_URL;
+  if (!url) {
+    throw new Error(
+      "DATABASE_URL não definida. Copie .env.example para .env e informe a string de conexão do Supabase.",
+    );
+  }
+  return url;
+}
 
-CREATE TABLE IF NOT EXISTS sessions (
-  token      TEXT PRIMARY KEY,
-  user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  created_at TEXT NOT NULL,
-  expires_at TEXT NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS clients (
-  id             TEXT PRIMARY KEY,
-  name           TEXT NOT NULL,
-  trade_name     TEXT,
-  doc            TEXT,
-  status         TEXT NOT NULL DEFAULT 'ativo',
-  segment        TEXT,
-  tier           TEXT NOT NULL DEFAULT 'standard',
-  contact_name   TEXT,
-  contact_email  TEXT,
-  contact_phone  TEXT,
-  fee_model      TEXT NOT NULL DEFAULT 'fixo',
-  monthly_fee    REAL NOT NULL DEFAULT 0,
-  commission_pct REAL NOT NULL DEFAULT 0,
-  started_at     TEXT,
-  owner_id       TEXT REFERENCES users(id) ON DELETE SET NULL,
-  summary        TEXT,
-  created_at     TEXT NOT NULL,
-  updated_at     TEXT NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS client_team (
-  client_id TEXT NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
-  user_id   TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  role      TEXT NOT NULL DEFAULT 'analista',
-  PRIMARY KEY (client_id, user_id)
-);
-
-CREATE TABLE IF NOT EXISTS client_marketplaces (
-  id           TEXT PRIMARY KEY,
-  client_id    TEXT NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
-  marketplace  TEXT NOT NULL,
-  nickname     TEXT,
-  external_id  TEXT,
-  status       TEXT NOT NULL DEFAULT 'pendente',
-  credentials  TEXT,
-  last_sync_at TEXT,
-  last_error   TEXT,
-  created_at   TEXT NOT NULL,
-  UNIQUE (client_id, marketplace, external_id)
-);
-
-CREATE TABLE IF NOT EXISTS finance_snapshots (
-  id          TEXT PRIMARY KEY,
-  client_id   TEXT NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
-  marketplace TEXT NOT NULL,
-  ref_month   TEXT NOT NULL,
-  revenue     REAL NOT NULL DEFAULT 0,
-  orders      INTEGER NOT NULL DEFAULT 0,
-  units       INTEGER NOT NULL DEFAULT 0,
-  cogs        REAL NOT NULL DEFAULT 0,
-  fees        REAL NOT NULL DEFAULT 0,
-  shipping    REAL NOT NULL DEFAULT 0,
-  tax         REAL NOT NULL DEFAULT 0,
-  ads         REAL NOT NULL DEFAULT 0,
-  profit      REAL NOT NULL DEFAULT 0,
-  source      TEXT NOT NULL DEFAULT 'manual',
-  updated_by  TEXT REFERENCES users(id) ON DELETE SET NULL,
-  updated_at  TEXT NOT NULL,
-  UNIQUE (client_id, marketplace, ref_month)
-);
-
-CREATE TABLE IF NOT EXISTS ads_entries (
-  id           TEXT PRIMARY KEY,
-  client_id    TEXT NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
-  marketplace  TEXT NOT NULL,
-  campaign     TEXT,
-  period_start TEXT NOT NULL,
-  period_end   TEXT NOT NULL,
-  invested     REAL NOT NULL DEFAULT 0,
-  revenue      REAL NOT NULL DEFAULT 0,
-  clicks       INTEGER NOT NULL DEFAULT 0,
-  orders       INTEGER NOT NULL DEFAULT 0,
-  notes        TEXT,
-  created_by   TEXT REFERENCES users(id) ON DELETE SET NULL,
-  created_at   TEXT NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS client_notes (
-  id         TEXT PRIMARY KEY,
-  client_id  TEXT NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
-  user_id    TEXT REFERENCES users(id) ON DELETE SET NULL,
-  kind       TEXT NOT NULL DEFAULT 'nota',
-  body       TEXT NOT NULL,
-  pinned     INTEGER NOT NULL DEFAULT 0,
-  created_at TEXT NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS tasks (
-  id           TEXT PRIMARY KEY,
-  title        TEXT NOT NULL,
-  description  TEXT,
-  client_id    TEXT REFERENCES clients(id) ON DELETE SET NULL,
-  priority     TEXT NOT NULL DEFAULT 'media',
-  status       TEXT NOT NULL DEFAULT 'disponivel',
-  due_date     TEXT,
-  points       INTEGER NOT NULL DEFAULT 10,
-  created_by   TEXT REFERENCES users(id) ON DELETE SET NULL,
-  assignee_id  TEXT REFERENCES users(id) ON DELETE SET NULL,
-  claimed_at   TEXT,
-  completed_at TEXT,
-  created_at   TEXT NOT NULL,
-  updated_at   TEXT NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS task_events (
-  id         TEXT PRIMARY KEY,
-  task_id    TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
-  user_id    TEXT REFERENCES users(id) ON DELETE SET NULL,
-  type       TEXT NOT NULL,
-  points     INTEGER NOT NULL DEFAULT 0,
-  meta       TEXT,
-  created_at TEXT NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS chat_channels (
-  id          TEXT PRIMARY KEY,
-  slug        TEXT NOT NULL UNIQUE,
-  name        TEXT NOT NULL,
-  description TEXT,
-  kind        TEXT NOT NULL DEFAULT 'equipe',
-  client_id   TEXT REFERENCES clients(id) ON DELETE CASCADE,
-  created_by  TEXT REFERENCES users(id) ON DELETE SET NULL,
-  created_at  TEXT NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS chat_messages (
-  id         TEXT PRIMARY KEY,
-  channel_id TEXT NOT NULL REFERENCES chat_channels(id) ON DELETE CASCADE,
-  user_id    TEXT REFERENCES users(id) ON DELETE SET NULL,
-  body       TEXT NOT NULL,
-  created_at TEXT NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS chat_reads (
-  channel_id   TEXT NOT NULL REFERENCES chat_channels(id) ON DELETE CASCADE,
-  user_id      TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  last_read_at TEXT NOT NULL,
-  PRIMARY KEY (channel_id, user_id)
-);
-
-CREATE TABLE IF NOT EXISTS sync_logs (
-  id                    TEXT PRIMARY KEY,
-  client_marketplace_id TEXT REFERENCES client_marketplaces(id) ON DELETE CASCADE,
-  marketplace           TEXT NOT NULL,
-  ref_month             TEXT,
-  status                TEXT NOT NULL,
-  message               TEXT,
-  created_at            TEXT NOT NULL
-);
-
-CREATE INDEX IF NOT EXISTS idx_fin_client   ON finance_snapshots(client_id, ref_month);
-CREATE INDEX IF NOT EXISTS idx_ads_client   ON ads_entries(client_id, period_start);
-CREATE INDEX IF NOT EXISTS idx_notes_client ON client_notes(client_id, created_at);
-CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status, priority);
-CREATE INDEX IF NOT EXISTS idx_msgs_channel ON chat_messages(channel_id, created_at);
-`;
+/**
+ * TLS: por padrão a conexão é cifrada sem validar a cadeia do certificado — é o que
+ * o pooler do Supabase aceita sem configuração extra. Para validação completa,
+ * aponte DATABASE_SSL_CA para o certificado da Supabase.
+ */
+function ssl(): { ca?: string; rejectUnauthorized: boolean } | boolean {
+  if (process.env.DATABASE_SSL === "off") return false;
+  const ca = process.env.DATABASE_SSL_CA;
+  return ca ? { ca, rejectUnauthorized: true } : { rejectUnauthorized: false };
+}
 
 declare global {
   // eslint-disable-next-line no-var
-  var __goulartDb: DatabaseSync | undefined;
+  var __goulartPool: pg.Pool | undefined;
 }
 
-function open(): DatabaseSync {
-  fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
-  const database = new DatabaseSync(DB_PATH);
-  database.exec(SCHEMA);
-  return database;
+function open(): pg.Pool {
+  const pool = new Pool({
+    connectionString: connectionString(),
+    ssl: ssl(),
+    max: Number(process.env.DATABASE_POOL_MAX ?? 8),
+    idleTimeoutMillis: 30_000,
+    connectionTimeoutMillis: 15_000,
+    application_name: "goulart",
+  });
+  // um erro em conexão ociosa não pode derrubar o processo
+  pool.on("error", (err) => console.error("[db] erro em conexão ociosa:", err.message));
+  return pool;
 }
 
-export const db: DatabaseSync = globalThis.__goulartDb ?? (globalThis.__goulartDb = open());
+/**
+ * O pool só é aberto na primeira consulta: assim o build do Next consegue importar
+ * este módulo sem exigir DATABASE_URL.
+ */
+export function getPool(): pg.Pool {
+  return (globalThis.__goulartPool ??= open());
+}
+
+/** Encerra o pool — usado pelos scripts de linha de comando. */
+export async function closePool(): Promise<void> {
+  const existing = globalThis.__goulartPool;
+  if (!existing) return;
+  globalThis.__goulartPool = undefined;
+  await existing.end();
+}
+
+/**
+ * As consultas são escritas com `?` (mais legível e igual em todo o projeto) e
+ * convertidas para os marcadores posicionais do Postgres na hora de executar.
+ */
+function toPositional(sql: string): string {
+  let n = 0;
+  return sql.replace(/\?/g, () => `$${++n}`);
+}
 
 type Row = Record<string, unknown>;
 
-/**
- * node:sqlite devolve linhas com prototipo nulo, que o React nao consegue
- * serializar para Client Components — por isso toda linha vira objeto simples.
- */
-function plain<T>(row: unknown): T {
-  return { ...(row as object) } as T;
-}
-
-/** SELECT de varias linhas. */
-export function all<T = Row>(sql: string, ...params: unknown[]): T[] {
-  return (db.prepare(sql).all(...(params as never[])) as unknown[]).map((r) => plain<T>(r));
+/** SELECT de várias linhas. */
+export async function all<T = Row>(sql: string, ...params: unknown[]): Promise<T[]> {
+  const res = await getPool().query(toPositional(sql), params);
+  return res.rows as T[];
 }
 
 /** SELECT de uma linha (ou null). */
-export function one<T = Row>(sql: string, ...params: unknown[]): T | null {
-  const row = db.prepare(sql).get(...(params as never[]));
-  return row === undefined ? null : plain<T>(row);
+export async function one<T = Row>(sql: string, ...params: unknown[]): Promise<T | null> {
+  const res = await getPool().query(toPositional(sql), params);
+  return (res.rows[0] as T | undefined) ?? null;
 }
 
-/** INSERT / UPDATE / DELETE. */
-export function run(sql: string, ...params: unknown[]) {
-  return db.prepare(sql).run(...(params as never[]));
+/** INSERT / UPDATE / DELETE. Devolve quantas linhas foram afetadas. */
+export async function run(sql: string, ...params: unknown[]): Promise<number> {
+  const res = await getPool().query(toPositional(sql), params);
+  return res.rowCount ?? 0;
+}
+
+/** Executa SQL bruto sem parâmetros (migração, limpeza). */
+export async function exec(sql: string): Promise<void> {
+  await getPool().query(sql);
+}
+
+/** Roda as operações dentro de uma transação; desfaz tudo em caso de erro. */
+export async function transaction<T>(fn: (q: typeof all) => Promise<T>): Promise<T> {
+  const client = await getPool().connect();
+  const scoped = (async <R,>(sql: string, ...params: unknown[]) => {
+    const res = await client.query(toPositional(sql), params);
+    return res.rows as R[];
+  }) as typeof all;
+  try {
+    await client.query("BEGIN");
+    const out = await fn(scoped);
+    await client.query("COMMIT");
+    return out;
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 export function id(): string {

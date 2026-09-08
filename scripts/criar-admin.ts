@@ -10,26 +10,27 @@
  * Sem a senha, uma senha forte é sorteada e mostrada uma única vez.
  */
 import { randomUUID, randomBytes, scryptSync } from "node:crypto";
-import { one, run } from "../src/lib/db.ts";
+import { one, run, closePool } from "../src/lib/db.ts";
 
 const [email, name = "Administrador", senhaArg] = process.argv.slice(2);
 
-if (!email || !email.includes("@")) {
-  console.error("Informe o e-mail do administrador.");
-  console.error('Exemplo: npm run criar-admin -- kadu@suaempresa.com.br "Kadu Goulart"');
+function sair(msg: string): never {
+  console.error(msg);
   process.exit(1);
 }
 
-if (one("SELECT id FROM users WHERE lower(email) = lower(?)", email)) {
-  console.error(`Já existe um usuário com o e-mail ${email}.`);
-  process.exit(1);
+if (!email || !email.includes("@")) {
+  sair('Informe o e-mail do administrador.\nExemplo: npm run criar-admin -- kadu@suaempresa.com.br "Kadu Goulart"');
+}
+
+if (await one("SELECT id FROM users WHERE lower(email) = lower(?)", email)) {
+  sair(`Já existe um usuário com o e-mail ${email}.`);
 }
 
 /** Senha legível de 16 caracteres, sem os que se confundem (0/O, 1/l/I). */
 function sortearSenha(): string {
   const chars = "abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-  const bytes = randomBytes(16);
-  return [...bytes].map((b) => chars[b % chars.length]).join("");
+  return [...randomBytes(16)].map((b) => chars[b % chars.length]).join("");
 }
 
 function hash(password: string): string {
@@ -38,12 +39,9 @@ function hash(password: string): string {
 }
 
 const senha = senhaArg ?? sortearSenha();
-if (senha.length < 6) {
-  console.error("A senha precisa ter ao menos 6 caracteres.");
-  process.exit(1);
-}
+if (senha.length < 6) sair("A senha precisa ter ao menos 6 caracteres.");
 
-run(
+await run(
   `INSERT INTO users (id, name, email, password_hash, role, job_title, color, active, created_at)
    VALUES (?,?,?,?,'admin',?,?,1,?)`,
   randomUUID(),
@@ -59,3 +57,5 @@ console.log("Administrador criado.\n");
 console.log(`  e-mail: ${email.toLowerCase()}`);
 console.log(`  senha:  ${senha}`);
 if (!senhaArg) console.log("\nAnote a senha: ela não será mostrada de novo. Troque-a em Equipe depois de entrar.");
+
+await closePool();

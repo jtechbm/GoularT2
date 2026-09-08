@@ -13,7 +13,7 @@ export default async function CanalPage({ params }: { params: Promise<{ slug: st
   const user = await requireUser();
   const { slug } = await params;
 
-  const channel = one<{
+  const channel = await one<{
     id: string;
     slug: string;
     name: string;
@@ -23,9 +23,9 @@ export default async function CanalPage({ params }: { params: Promise<{ slug: st
   }>("SELECT * FROM chat_channels WHERE slug = ?", slug);
   if (!channel) notFound();
 
-  const list = channels();
-  const clients = clientOptions();
-  const msgs = messages(channel.id);
+  const list = await channels();
+  const clients = await clientOptions();
+  const msgs = await messages(channel.id);
 
   // agrupa mensagens seguidas da mesma pessoa
   const groups: { user_id: string | null; user_name: string | null; user_color: string | null; at: string; items: typeof msgs }[] =

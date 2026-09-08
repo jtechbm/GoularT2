@@ -5,10 +5,10 @@ import { Sidebar } from "@/components/nav";
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const user = await requireUser();
   const pending =
-    one<{ n: number }>(
+    (await one<{ n: number }>(
       "SELECT COUNT(*) n FROM tasks WHERE status = 'disponivel' OR (status = 'em_andamento' AND assignee_id = ?)",
       user.id,
-    )?.n ?? 0;
+    ))?.n ?? 0;
 
   return (
     <div className="app-shell lg:flex">

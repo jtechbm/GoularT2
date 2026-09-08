@@ -6,7 +6,8 @@ Sistema interno da operação — uso exclusivo do Kadu e da equipe. Clientes **
 
 ```bash
 npm install
-cp .env.example .env      # ajuste GOULART_SESSION_SECRET
+cp .env.example .env      # informe DATABASE_URL e GOULART_SESSION_SECRET
+npm run migrar            # cria as tabelas no Supabase
 npm run criar-admin -- kadu@suaempresa.com.br "Kadu Goulart"
 npm run dev               # http://localhost:3000
 ```
@@ -71,10 +72,24 @@ em Equipe — falta só a camada de níveis/medalhas por cima.
 
 ## Stack
 
-Next.js 15 (App Router, Server Actions) · React 19 · Tailwind CSS v4 · SQLite via `node:sqlite`
-(nativo do Node 24, sem dependência nativa) · sessão em cookie httpOnly com senha em scrypt.
+Next.js 15 (App Router, Server Actions) · React 19 · Tailwind CSS v4 · Postgres no Supabase
+(driver `pg`) · sessão em cookie httpOnly com senha em scrypt.
 
-O banco fica em `data/goulart.db`. Backup é copiar o arquivo.
+### Banco
+
+A conexão vem de `DATABASE_URL`. O Supabase oferece dois poolers:
+
+| Pooler | Porta | Quando usar |
+| --- | --- | --- |
+| Session | 5432 | servidor Node persistente (`npm run dev`, `npm start`, VPS, container) — **padrão** |
+| Transaction | 6543 | ambientes serverless, onde cada requisição abre conexão nova |
+
+`npm run migrar` cria o esquema e é idempotente — pode rodar quantas vezes quiser.
+`npm run migrar -- --limpar` esvazia todas as tabelas antes (destrutivo).
+
+A conexão é sempre TLS. Por padrão a cadeia do certificado não é validada, que é o que o
+pooler aceita sem configuração extra; para validação completa, aponte `DATABASE_SSL_CA`
+para o certificado da Supabase.
 
 ## Convenção de UI
 

@@ -36,18 +36,18 @@ export default async function TarefasPage({
   const clientFilter = sp.cliente;
 
   const manager = isManager(user);
-  const clients = clientOptions();
-  const team = listUsers();
+  const clients = await clientOptions();
+  const team = await listUsers();
 
   const filter = clientFilter ? { clientId: clientFilter } : {};
-  const available = tasks({ ...filter, status: "disponivel" });
-  const mine = tasks({ ...filter, status: "em_andamento", assignee: user.id });
-  const inProgress = tasks({ ...filter, status: "em_andamento" });
-  const done = tasks({ ...filter, status: "concluida" });
-  const all = tasks(filter);
+  const available = await tasks({ ...filter, status: "disponivel" });
+  const mine = await tasks({ ...filter, status: "em_andamento", assignee: user.id });
+  const inProgress = await tasks({ ...filter, status: "em_andamento" });
+  const done = await tasks({ ...filter, status: "concluida" });
+  const all = await tasks(filter);
 
   const list = aba === "disponiveis" ? available : aba === "minhas" ? mine : aba === "concluidas" ? done : all;
-  const board = leaderboard();
+  const board = await leaderboard();
   const myPoints = board.find((b) => b.id === user.id)?.points ?? 0;
 
   const tabHref = (key: string) => `/tarefas?aba=${key}${clientFilter ? `&cliente=${clientFilter}` : ""}`;

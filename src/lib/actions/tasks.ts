@@ -14,8 +14,8 @@ function refresh() {
 }
 
 /** Registra o evento — é a trilha que a gamificação vai consumir depois. */
-function logEvent(taskId: string, userId: string | null, type: string, points = 0, meta?: string) {
-  run(
+async function logEvent(taskId: string, userId: string | null, type: string, points = 0, meta?: string) {
+  await run(
     "INSERT INTO task_events (id, task_id, user_id, type, points, meta, created_at) VALUES (?,?,?,?,?,?,?)",
     id(),
     taskId,
@@ -43,7 +43,7 @@ export async function createTaskAction(formData: FormData) {
   const priority = str(formData.get("priority")) || "media";
   const assignee = strOrNull(formData.get("assignee_id"));
 
-  run(
+  await run(
     `INSERT INTO tasks (id, title, description, client_id, priority, status, due_date, points, created_by,
                         assignee_id, claimed_at, created_at, updated_at)
      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
@@ -62,8 +62,8 @@ export async function createTaskAction(formData: FormData) {
     now(),
   );
 
-  logEvent(taskId, user.id, "criada");
-  if (assignee) logEvent(taskId, assignee, "assumida", 0, "atribuída na criação");
+  await logEvent(taskId, user.id, "criada");
+  if (assignee) await logEvent(taskId, assignee, "assumida", 0, "atribuída na criação");
 
   refresh();
   redirect("/tarefas?ok=1");
@@ -73,17 +73,17 @@ export async function createTaskAction(formData: FormData) {
 export async function claimTaskAction(formData: FormData) {
   const user = await requireUser();
   const taskId = str(formData.get("task_id"));
-  const task = one<{ status: string }>("SELECT status FROM tasks WHERE id = ?", taskId);
+  const task = await one<{ status: string }>("SELECT status FROM tasks WHERE id = ?", taskId);
   if (!task || task.status !== "disponivel") redirect("/tarefas?erro=indisponivel");
 
-  run(
+  await run(
     "UPDATE tasks SET status='em_andamento', assignee_id=?, claimed_at=?, updated_at=? WHERE id=? AND status='disponivel'",
     user.id,
     now(),
     now(),
     taskId,
   );
-  logEvent(taskId, user.id, "assumida");
+  await logEvent(taskId, user.id, "assumida");
   refresh();
   redirect("/tarefas?aba=minhas&ok=1");
 }
@@ -92,12 +92,12 @@ export async function claimTaskAction(formData: FormData) {
 export async function releaseTaskAction(formData: FormData) {
   const user = await requireUser();
   const taskId = str(formData.get("task_id"));
-  run(
+  await run(
     "UPDATE tasks SET status='disponivel', assignee_id=NULL, claimed_at=NULL, updated_at=? WHERE id=?",
     now(),
     taskId,
   );
-  logEvent(taskId, user.id, "devolvida");
+  await logEvent(taskId, user.id, "devolvida");
   refresh();
   redirect("/tarefas?ok=1");
 }
@@ -105,20 +105,20 @@ export async function releaseTaskAction(formData: FormData) {
 export async function completeTaskAction(formData: FormData) {
   const user = await requireUser();
   const taskId = str(formData.get("task_id"));
-  const task = one<{ points: number; assignee_id: string | null }>(
+  const task = await one<{ points: number; assignee_id: string | null }>(
     "SELECT points, assignee_id FROM tasks WHERE id = ?",
     taskId,
   );
   if (!task) redirect("/tarefas");
 
-  run(
+  await run(
     "UPDATE tasks SET status='concluida', completed_at=?, updated_at=?, assignee_id=COALESCE(assignee_id, ?) WHERE id=?",
     now(),
     now(),
     user.id,
     taskId,
   );
-  logEvent(taskId, task.assignee_id ?? user.id, "concluida", task.points);
+  await logEvent(taskId, task.assignee_id ?? user.id, "concluida", task.points);
   refresh();
   redirect("/tarefas?aba=concluidas&ok=1");
 }
@@ -126,8 +126,8 @@ export async function completeTaskAction(formData: FormData) {
 export async function reopenTaskAction(formData: FormData) {
   const user = await requireUser();
   const taskId = str(formData.get("task_id"));
-  run("UPDATE tasks SET status='em_andamento', completed_at=NULL, updated_at=? WHERE id=?", now(), taskId);
-  logEvent(taskId, user.id, "reaberta");
+  await run("UPDATE tasks SET status='em_andamento', completed_at=NULL, updated_at=? WHERE id=?", now(), taskId);
+  await logEvent(taskId, user.id, "reaberta");
   refresh();
   redirect("/tarefas?aba=minhas");
 }
@@ -138,7 +138,7 @@ export async function updateTaskAction(formData: FormData) {
   const taskId = str(formData.get("task_id"));
   const priority = str(formData.get("priority"));
 
-  run(
+  await run(
     `UPDATE tasks SET title=?, description=?, client_id=?, priority=?, due_date=?, points=?, assignee_id=?,
             status=?, updated_at=? WHERE id=?`,
     str(formData.get("title")),
@@ -152,7 +152,7 @@ export async function updateTaskAction(formData: FormData) {
     now(),
     taskId,
   );
-  logEvent(taskId, user.id, "editada");
+  await logEvent(taskId, user.id, "editada");
   refresh();
   redirect("/tarefas?ok=1");
 }
@@ -160,7 +160,7 @@ export async function updateTaskAction(formData: FormData) {
 export async function deleteTaskAction(formData: FormData) {
   const user = await requireUser();
   if (!isManager(user)) throw new Error("Somente gestores excluem tarefas.");
-  run("DELETE FROM tasks WHERE id = ?", str(formData.get("task_id")));
+  await run("DELETE FROM tasks WHERE id = ?", str(formData.get("task_id")));
   refresh();
   redirect("/tarefas");
 }

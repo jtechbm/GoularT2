@@ -19,15 +19,15 @@ export default async function EquipePage({
   const sp = await searchParams;
   const manager = isManager(user);
 
-  const users = listUsers(manager);
-  const board = new Map(leaderboard().map((b) => [b.id, b]));
-  const carteira = clientRows(currentMonth());
-  const openTasks = tasks({ status: "em_andamento" });
+  const users = await listUsers(manager);
+  const board = new Map((await leaderboard()).map((b) => [b.id, b] as const));
+  const carteira = await clientRows(currentMonth());
+  const openTasks = await tasks({ status: "em_andamento" });
 
-  const memberships = all<{ user_id: string; client_id: string; name: string; role: string }>(
+  const memberships = await all<{ user_id: string; client_id: string; name: string; role: string }>(
     `SELECT ct.user_id, ct.client_id, c.name, ct.role
        FROM client_team ct JOIN clients c ON c.id = ct.client_id
-      ORDER BY c.name COLLATE NOCASE`,
+      ORDER BY lower(c.name)`,
   );
 
   const selected = sp.u ? users.find((u) => u.id === sp.u) : undefined;

@@ -20,9 +20,9 @@ export default async function AdsPage({
   const months = lastMonths(12);
   const ref = sp.mes && months.includes(sp.mes) ? sp.mes : currentMonth();
 
-  const rows = adsRows({ refMonth: ref, clientId: sp.cliente, marketplace: sp.canal });
-  const clients = clientOptions();
-  const breakdown = marketplaceBreakdown(ref);
+  const rows = await adsRows({ refMonth: ref, clientId: sp.cliente, marketplace: sp.canal });
+  const clients = await clientOptions();
+  const breakdown = await marketplaceBreakdown(ref);
 
   const totals = rows.reduce(
     (a, e) => ({

@@ -5,8 +5,8 @@ import { ChatShell } from "./chat-shell";
 
 export default async function ChatPage() {
   await requireUser();
-  const list = channels();
-  const clients = clientOptions();
+  const list = await channels();
+  const clients = await clientOptions();
 
   return (
     <>

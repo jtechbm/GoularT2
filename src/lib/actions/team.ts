@@ -17,7 +17,7 @@ export async function createTeamMemberAction(formData: FormData) {
   const email = str(formData.get("email"));
   const password = String(formData.get("password") ?? "");
   if (!email || password.length < 6) throw new Error("E-mail válido e senha de ao menos 6 caracteres.");
-  if (one("SELECT id FROM users WHERE lower(email) = lower(?)", email)) {
+  if (await one("SELECT id FROM users WHERE lower(email) = lower(?)", email)) {
     throw new Error("Já existe um usuário com este e-mail.");
   }
 
@@ -44,7 +44,7 @@ export async function updateTeamMemberAction(formData: FormData) {
 
   // Só admin/gestor mexem em papel e status; cada um edita os próprios dados.
   if (actor.role === "admin" || actor.role === "gestor") {
-    run(
+    await run(
       "UPDATE users SET name=?, email=?, role=?, job_title=?, color=?, active=? WHERE id=?",
       str(formData.get("name")),
       str(formData.get("email")).toLowerCase(),
@@ -55,7 +55,7 @@ export async function updateTeamMemberAction(formData: FormData) {
       userId,
     );
   } else {
-    run(
+    await run(
       "UPDATE users SET name=?, job_title=?, color=? WHERE id=?",
       str(formData.get("name")),
       strOrNull(formData.get("job_title")),
@@ -67,9 +67,9 @@ export async function updateTeamMemberAction(formData: FormData) {
   const password = String(formData.get("password") ?? "");
   if (password) {
     if (password.length < 6) throw new Error("A senha precisa ter ao menos 6 caracteres.");
-    run("UPDATE users SET password_hash=? WHERE id=?", hashPassword(password), userId);
+    await run("UPDATE users SET password_hash=? WHERE id=?", hashPassword(password), userId);
     // troca de senha de outra pessoa derruba as sessões dela
-    if (!isSelf) run("DELETE FROM sessions WHERE user_id=?", userId);
+    if (!isSelf) await run("DELETE FROM sessions WHERE user_id=?", userId);
   }
 
   refresh();
@@ -79,8 +79,8 @@ export async function updateTeamMemberAction(formData: FormData) {
 export async function toggleTeamMemberAction(formData: FormData) {
   await requireRole("admin", "gestor");
   const userId = str(formData.get("user_id"));
-  run("UPDATE users SET active = 1 - active WHERE id = ?", userId);
-  run("DELETE FROM sessions WHERE user_id = ?", userId);
+  await run("UPDATE users SET active = 1 - active WHERE id = ?", userId);
+  await run("DELETE FROM sessions WHERE user_id = ?", userId);
   refresh();
   redirect("/equipe");
 }

@@ -22,7 +22,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ marketplace
   const accountId = params.get("state");
   if (!code || !accountId) return NextResponse.redirect(new URL("/integracoes?erro=callback", req.url));
 
-  const account = one<{ id: string; marketplace: string }>(
+  const account = await one<{ id: string; marketplace: string }>(
     "SELECT id, marketplace FROM client_marketplaces WHERE id = ?",
     accountId,
   );

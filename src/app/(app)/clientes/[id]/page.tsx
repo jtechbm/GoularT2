@@ -50,24 +50,24 @@ export default async function ClientePage({
   const { id } = await params;
   const sp = await searchParams;
 
-  const client = getClient(id);
+  const client = await getClient(id);
   if (!client) notFound();
 
   const months = lastMonths(12);
   const ref = sp.mes && months.includes(sp.mes) ? sp.mes : currentMonth();
   const tab = TABS.some((t) => t.key === sp.tab) ? sp.tab! : "visao";
 
-  const totals = totalsForClient(client.id, ref);
-  const prev = totalsForClient(client.id, addMonths(ref, -1));
-  const series = monthlySeries(6, client.id);
-  const team = clientTeam(client.id);
-  const accounts = clientMarketplaces(client.id);
-  const snapshots = clientSnapshots(client.id, 12);
-  const notes = clientNotes(client.id);
-  const ads = clientAds(client.id);
-  const clientTasks = tasks({ clientId: client.id });
-  const breakdown = marketplaceBreakdown(ref, client.id);
-  const allUsers = listUsers();
+  const totals = await totalsForClient(client.id, ref);
+  const prev = await totalsForClient(client.id, addMonths(ref, -1));
+  const series = await monthlySeries(6, client.id);
+  const team = await clientTeam(client.id);
+  const accounts = await clientMarketplaces(client.id);
+  const snapshots = await clientSnapshots(client.id, 12);
+  const notes = await clientNotes(client.id);
+  const ads = await clientAds(client.id);
+  const clientTasks = await tasks({ clientId: client.id });
+  const breakdown = await marketplaceBreakdown(ref, client.id);
+  const allUsers = await listUsers();
   const manager = isManager(user);
   const margin = totals.revenue ? totals.profit / totals.revenue : 0;
 

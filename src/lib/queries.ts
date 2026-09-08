@@ -26,14 +26,17 @@ const SUM = `
   COALESCE(SUM(cogs),0)     AS cogs,
   COALESCE(SUM(orders),0)   AS orders`;
 
-export function totalsForMonth(refMonth: string): Totals {
-  return one<Totals>(`SELECT ${SUM} FROM finance_snapshots WHERE ref_month = ?`, refMonth) ?? EMPTY;
+export async function totalsForMonth(refMonth: string): Promise<Totals> {
+  return (await one<Totals>(`SELECT ${SUM} FROM finance_snapshots WHERE ref_month = ?`, refMonth)) ?? EMPTY;
 }
 
-export function totalsForClient(clientId: string, refMonth: string): Totals {
+export async function totalsForClient(clientId: string, refMonth: string): Promise<Totals> {
   return (
-    one<Totals>(`SELECT ${SUM} FROM finance_snapshots WHERE client_id = ? AND ref_month = ?`, clientId, refMonth) ??
-    EMPTY
+    (await one<Totals>(
+      `SELECT ${SUM} FROM finance_snapshots WHERE client_id = ? AND ref_month = ?`,
+      clientId,
+      refMonth,
+    )) ?? EMPTY
   );
 }
 
@@ -53,7 +56,7 @@ export interface ClientRow extends Client {
   last_note_at: string | null;
 }
 
-export function clientRows(refMonth = currentMonth()): ClientRow[] {
+export async function clientRows(refMonth = currentMonth()): Promise<ClientRow[]> {
   const prev = addMonths(refMonth, -1);
   return all<ClientRow>(
     `SELECT c.*,
@@ -77,15 +80,16 @@ export function clientRows(refMonth = currentMonth()): ClientRow[] {
                     FROM finance_snapshots WHERE ref_month = ? GROUP BY client_id) f ON f.client_id = c.id
        LEFT JOIN (SELECT client_id, SUM(revenue) revenue, SUM(profit) profit
                     FROM finance_snapshots WHERE ref_month = ? GROUP BY client_id) p ON p.client_id = c.id
-       LEFT JOIN (SELECT client_id, GROUP_CONCAT(DISTINCT marketplace) list
-                    FROM client_marketplaces WHERE status != 'desativado' GROUP BY client_id) m ON m.client_id = c.id
+       LEFT JOIN (SELECT client_id, string_agg(DISTINCT marketplace, ',') list
+                    FROM client_marketplaces WHERE status <> 'desativado' GROUP BY client_id) m ON m.client_id = c.id
        LEFT JOIN (SELECT client_id, COUNT(*) n FROM client_team GROUP BY client_id) t ON t.client_id = c.id
        LEFT JOIN (SELECT client_id, COUNT(*) n FROM tasks
-                   WHERE status != 'concluida' AND client_id IS NOT NULL GROUP BY client_id) k ON k.client_id = c.id
+                   WHERE status <> 'concluida' AND client_id IS NOT NULL GROUP BY client_id) k ON k.client_id = c.id
        LEFT JOIN (SELECT client_id, MAX(created_at) last_note_at FROM client_notes GROUP BY client_id) n
               ON n.client_id = c.id
       ORDER BY (CASE c.status WHEN 'atencao' THEN 0 WHEN 'ativo' THEN 1 WHEN 'onboarding' THEN 2
-                              WHEN 'pausado' THEN 3 ELSE 4 END), revenue DESC, c.name COLLATE NOCASE`,
+                              WHEN 'pausado' THEN 3 ELSE 4 END),
+               COALESCE(f.revenue,0) DESC, lower(c.name)`,
     refMonth,
     prev,
   );
@@ -95,11 +99,11 @@ export interface MonthPoint extends Totals {
   ref_month: string;
 }
 
-export function monthlySeries(months: number, clientId?: string): MonthPoint[] {
+export async function monthlySeries(months: number, clientId?: string): Promise<MonthPoint[]> {
   const refs = lastMonths(months);
   const where = clientId ? "WHERE client_id = ? AND ref_month >= ?" : "WHERE ref_month >= ?";
   const params = clientId ? [clientId, refs[0]] : [refs[0]];
-  const rows = all<MonthPoint>(
+  const rows = await all<MonthPoint>(
     `SELECT ref_month, ${SUM} FROM finance_snapshots ${where} GROUP BY ref_month`,
     ...params,
   );
@@ -107,7 +111,7 @@ export function monthlySeries(months: number, clientId?: string): MonthPoint[] {
   return refs.map((ref) => map.get(ref) ?? { ref_month: ref, ...EMPTY });
 }
 
-export function marketplaceBreakdown(refMonth: string, clientId?: string) {
+export async function marketplaceBreakdown(refMonth: string, clientId?: string) {
   const where = clientId ? "WHERE ref_month = ? AND client_id = ?" : "WHERE ref_month = ?";
   const params = clientId ? [refMonth, clientId] : [refMonth];
   return all<Totals & { marketplace: string }>(
@@ -116,27 +120,29 @@ export function marketplaceBreakdown(refMonth: string, clientId?: string) {
   );
 }
 
-export function getClient(clientId: string): Client | null {
+export async function getClient(clientId: string): Promise<Client | null> {
   return one<Client>("SELECT * FROM clients WHERE id = ?", clientId);
 }
 
-export function clientTeam(clientId: string) {
+export async function clientTeam(clientId: string) {
   return all<User & { team_role: string }>(
-    `SELECT u.id, u.name, u.email, u.role, u.job_title, u.color, u.active, u.created_at, ct.role AS team_role FROM client_team ct
+    `SELECT u.id, u.name, u.email, u.role, u.job_title, u.color, u.active, u.created_at,
+            ct.role AS team_role
+       FROM client_team ct
        JOIN users u ON u.id = ct.user_id
-      WHERE ct.client_id = ? ORDER BY u.name COLLATE NOCASE`,
+      WHERE ct.client_id = ? ORDER BY lower(u.name)`,
     clientId,
   );
 }
 
-export function clientMarketplaces(clientId: string): ClientMarketplace[] {
+export async function clientMarketplaces(clientId: string): Promise<ClientMarketplace[]> {
   return all<ClientMarketplace>(
     "SELECT * FROM client_marketplaces WHERE client_id = ? ORDER BY marketplace",
     clientId,
   );
 }
 
-export function clientSnapshots(clientId: string, months = 6): FinanceSnapshot[] {
+export async function clientSnapshots(clientId: string, months = 6): Promise<FinanceSnapshot[]> {
   const refs = lastMonths(months);
   return all<FinanceSnapshot>(
     "SELECT * FROM finance_snapshots WHERE client_id = ? AND ref_month >= ? ORDER BY ref_month DESC, marketplace",
@@ -145,7 +151,7 @@ export function clientSnapshots(clientId: string, months = 6): FinanceSnapshot[]
   );
 }
 
-export function clientNotes(clientId: string, limit = 50) {
+export async function clientNotes(clientId: string, limit = 50) {
   return all<ClientNote & { user_name: string | null; user_color: string | null }>(
     `SELECT n.*, u.name AS user_name, u.color AS user_color
        FROM client_notes n LEFT JOIN users u ON u.id = n.user_id
@@ -156,7 +162,7 @@ export function clientNotes(clientId: string, limit = 50) {
   );
 }
 
-export function clientAds(clientId: string, limit = 50) {
+export async function clientAds(clientId: string, limit = 50) {
   return all<AdsEntry & { author: string | null }>(
     `SELECT a.*, u.name AS author FROM ads_entries a
        LEFT JOIN users u ON u.id = a.created_by
@@ -182,7 +188,9 @@ const TASK_SELECT = `
     LEFT JOIN users a   ON a.id = t.assignee_id
     LEFT JOIN users cr  ON cr.id = t.created_by`;
 
-export function tasks(filter: { status?: string; assignee?: string; clientId?: string } = {}): TaskRow[] {
+export async function tasks(
+  filter: { status?: string; assignee?: string; clientId?: string } = {},
+): Promise<TaskRow[]> {
   const where: string[] = [];
   const params: unknown[] = [];
   if (filter.status) {
@@ -205,12 +213,12 @@ export function tasks(filter: { status?: string; assignee?: string; clientId?: s
   );
 }
 
-export function getTask(taskId: string): TaskRow | null {
+export async function getTask(taskId: string): Promise<TaskRow | null> {
   return one<TaskRow>(`${TASK_SELECT} WHERE t.id = ?`, taskId);
 }
 
 /** Placar de pontos — base para a gamificação futura. */
-export function leaderboard(sinceIso?: string) {
+export async function leaderboard(sinceIso?: string) {
   const since = sinceIso ?? new Date(Date.now() - 30 * 864e5).toISOString();
   return all<{ id: string; name: string; color: string; points: number; done: number }>(
     `SELECT u.id, u.name, u.color,
@@ -220,12 +228,13 @@ export function leaderboard(sinceIso?: string) {
        LEFT JOIN task_events e
               ON e.user_id = u.id AND e.type = 'concluida' AND e.created_at >= ?
       WHERE u.active = 1
-      GROUP BY u.id ORDER BY points DESC, done DESC, u.name COLLATE NOCASE`,
+      GROUP BY u.id, u.name, u.color
+      ORDER BY points DESC, done DESC, lower(u.name)`,
     since,
   );
 }
 
-export function channels() {
+export async function channels() {
   return all<{
     id: string;
     slug: string;
@@ -243,12 +252,12 @@ export function channels() {
        LEFT JOIN clients c ON c.id = ch.client_id
        LEFT JOIN (SELECT channel_id, COUNT(*) n, MAX(created_at) last_at
                     FROM chat_messages GROUP BY channel_id) m ON m.channel_id = ch.id
-      ORDER BY (m.last_at IS NULL), m.last_at DESC, ch.name COLLATE NOCASE`,
+      ORDER BY (m.last_at IS NULL), m.last_at DESC, lower(ch.name)`,
   );
 }
 
-export function messages(channelId: string, limit = 200) {
-  const rows = all<{
+export async function messages(channelId: string, limit = 200) {
+  const rows = await all<{
     id: string;
     body: string;
     created_at: string;
@@ -265,7 +274,7 @@ export function messages(channelId: string, limit = 200) {
   return rows.reverse();
 }
 
-export function adsRows(filter: { refMonth?: string; clientId?: string; marketplace?: string } = {}) {
+export async function adsRows(filter: { refMonth?: string; clientId?: string; marketplace?: string } = {}) {
   const where: string[] = [];
   const params: unknown[] = [];
   if (filter.refMonth) {
@@ -286,18 +295,18 @@ export function adsRows(filter: { refMonth?: string; clientId?: string; marketpl
        JOIN clients c ON c.id = a.client_id
        LEFT JOIN users u ON u.id = a.created_by
       ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
-      ORDER BY a.period_start DESC, c.name COLLATE NOCASE`,
+      ORDER BY a.period_start DESC, lower(c.name)`,
     ...params,
   );
 }
 
-export function clientOptions() {
+export async function clientOptions() {
   return all<{ id: string; name: string; status: string }>(
-    "SELECT id, name, status FROM clients ORDER BY name COLLATE NOCASE",
+    "SELECT id, name, status FROM clients ORDER BY lower(name)",
   );
 }
 
-export function syncLogs(limit = 20) {
+export async function syncLogs(limit = 20) {
   return all<{
     id: string;
     marketplace: string;

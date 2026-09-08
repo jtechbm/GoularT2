@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { one, run } from "@/lib/db";
+import { all, one, run } from "@/lib/db";
 import { requireRole, requireUser } from "@/lib/auth";
 import { str } from "@/lib/format";
 import { adapterFor, syncAccount } from "@/lib/integrations";
@@ -12,7 +12,7 @@ import { currentMonth } from "@/lib/format";
 export async function connectAccountAction(formData: FormData) {
   await requireRole("admin", "gestor");
   const accountId = str(formData.get("account_id"));
-  const account = one<{ marketplace: string; client_id: string }>(
+  const account = await one<{ marketplace: string; client_id: string }>(
     "SELECT marketplace, client_id FROM client_marketplaces WHERE id = ?",
     accountId,
   );
@@ -43,17 +43,13 @@ export async function syncAccountAction(formData: FormData) {
 export async function syncAllAction(formData: FormData) {
   const user = await requireUser();
   const refMonth = str(formData.get("ref_month")) || currentMonth();
-  const accounts = (
-    one<{ ids: string }>(
-      "SELECT GROUP_CONCAT(id) ids FROM client_marketplaces WHERE status IN ('conectado','erro')",
-    )?.ids ?? ""
-  )
-    .split(",")
-    .filter(Boolean);
+  const accounts = await all<{ id: string }>(
+    "SELECT id FROM client_marketplaces WHERE status IN ('conectado','erro')",
+  );
 
   let ok = 0;
-  for (const accountId of accounts) {
-    const outcome = await syncAccount(accountId, refMonth, user.id);
+  for (const account of accounts) {
+    const outcome = await syncAccount(account.id, refMonth, user.id);
     if (outcome.ok) ok += 1;
   }
 
@@ -66,7 +62,7 @@ export async function syncAllAction(formData: FormData) {
 export async function disconnectAccountAction(formData: FormData) {
   await requireRole("admin", "gestor");
   const accountId = str(formData.get("account_id"));
-  run(
+  await run(
     "UPDATE client_marketplaces SET credentials = NULL, status = 'pendente', last_error = NULL WHERE id = ?",
     accountId,
   );

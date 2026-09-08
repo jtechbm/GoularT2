@@ -21,10 +21,10 @@ export default async function IntegracoesPage({
   const ref = sp.mes && months.includes(sp.mes) ? sp.mes : currentMonth();
   const manager = isManager(user);
 
-  const status = integrationStatus();
-  const logs = syncLogs(15);
+  const status = await integrationStatus();
+  const logs = await syncLogs(15);
 
-  const accounts = all<{
+  const accounts = await all<{
     id: string;
     marketplace: string;
     nickname: string | null;
@@ -37,7 +37,7 @@ export default async function IntegracoesPage({
   }>(
     `SELECT cm.*, c.name AS client_name
        FROM client_marketplaces cm JOIN clients c ON c.id = cm.client_id
-      ORDER BY c.name COLLATE NOCASE, cm.marketplace`,
+      ORDER BY lower(c.name), cm.marketplace`,
   );
 
   const connected = accounts.filter((a) => a.status === "conectado").length;

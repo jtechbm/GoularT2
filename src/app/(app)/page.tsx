@@ -31,11 +31,11 @@ export default async function DashboardPage({
   const ref = params.mes && months.includes(params.mes) ? params.mes : currentMonth();
   const prevRef = addMonths(ref, -1);
 
-  const totals = totalsForMonth(ref);
-  const prev = totalsForMonth(prevRef);
-  const rows = clientRows(ref);
-  const series = monthlySeries(6).map((p) => ({ ...p, ref_month: p.ref_month }));
-  const byMarketplace = marketplaceBreakdown(ref);
+  const totals = await totalsForMonth(ref);
+  const prev = await totalsForMonth(prevRef);
+  const rows = await clientRows(ref);
+  const series = await monthlySeries(6);
+  const byMarketplace = await marketplaceBreakdown(ref);
 
   const active = rows.filter((r) => r.status === "ativo" || r.status === "atencao").length;
   const margin = totals.revenue ? totals.profit / totals.revenue : 0;
@@ -48,9 +48,9 @@ export default async function DashboardPage({
     .filter((r) => r.status === "atencao" || (r.prev_revenue > 0 && growth(r.revenue, r.prev_revenue) < -0.15))
     .slice(0, 5);
 
-  const openTasks = tasks({ status: "disponivel" });
-  const myTasks = tasks({ status: "em_andamento", assignee: user.id });
-  const board = leaderboard();
+  const openTasks = await tasks({ status: "disponivel" });
+  const myTasks = await tasks({ status: "em_andamento", assignee: user.id });
+  const board = await leaderboard();
   const top = rows.slice(0, 8);
 
   const colors = ["var(--primary)", "var(--accent)", "var(--info)", "var(--success)"];
