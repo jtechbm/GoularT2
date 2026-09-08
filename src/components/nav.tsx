@@ -11,6 +11,7 @@ import {
   IconChat,
   IconChevronDown,
   IconCheckSquare,
+  IconDollar,
   IconHome,
   IconMegaphone,
   IconMenu,
@@ -21,10 +22,11 @@ import {
 } from "./icons";
 import type { User } from "@/lib/types";
 
-const NAV = [
+const NAV: { href: string; label: string; Icon: typeof IconHome; exact?: boolean; roles?: string[] }[] = [
   { href: "/", label: "Dashboard", Icon: IconHome, exact: true },
   { href: "/clientes", label: "Clientes", Icon: IconUser },
   { href: "/ads", label: "Ads", Icon: IconMegaphone },
+  { href: "/financeiro", label: "Financeiro", Icon: IconDollar, roles: ["admin", "gestor"] },
   { href: "/tarefas", label: "Tarefas", Icon: IconCheckSquare },
   { href: "/equipe", label: "Equipe", Icon: IconUsers },
   { href: "/chat", label: "Chat", Icon: IconChat },
@@ -47,7 +49,7 @@ export function Sidebar({ user, pendingTasks = 0 }: { user: User; pendingTasks?:
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
 
-  const items = NAV.map(({ href, label, Icon, exact }) => {
+  const items = NAV.filter((i) => !i.roles || i.roles.includes(user.role)).map(({ href, label, Icon, exact }) => {
     const active = exact ? pathname === href : pathname === href || pathname.startsWith(`${href}/`);
     return (
       <Link

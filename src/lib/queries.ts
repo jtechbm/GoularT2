@@ -1,7 +1,17 @@
 import "server-only";
 import { all, one } from "./db";
 import { addMonths, currentMonth, lastMonths } from "./format";
-import type { AdsEntry, Client, ClientMarketplace, ClientNote, FinanceSnapshot, Task, User } from "./types";
+import type {
+  AdsEntry,
+  AgencyCharge,
+  AgencyExpense,
+  Client,
+  ClientMarketplace,
+  ClientNote,
+  FinanceSnapshot,
+  Task,
+  User,
+} from "./types";
 
 export interface Totals {
   revenue: number;
@@ -322,5 +332,112 @@ export async function syncLogs(limit = 20) {
        LEFT JOIN clients c ON c.id = cm.client_id
       ORDER BY s.created_at DESC LIMIT ?`,
     limit,
+  );
+}
+
+// ---------------------------------------------------------------- financeiro da agência
+
+export interface ChargeRow extends AgencyCharge {
+  client_name: string;
+  client_status: string;
+  fee_model: string;
+}
+
+/** Cobranças do mês, já com o cliente. Inclui clientes sem cobrança gerada ainda. */
+export async function chargesForMonth(refMonth: string): Promise<ChargeRow[]> {
+  return all<ChargeRow>(
+    `SELECT ch.*, c.name AS client_name, c.status AS client_status, c.fee_model
+       FROM agency_charges ch
+       JOIN clients c ON c.id = ch.client_id
+      WHERE ch.ref_month = ?
+      ORDER BY (ch.status = 'pago'), ch.total DESC, lower(c.name)`,
+    refMonth,
+  );
+}
+
+/** Clientes ativos que ainda não têm cobrança no mês. */
+export async function clientsWithoutCharge(refMonth: string) {
+  return all<{ id: string; name: string; fee_model: string; monthly_fee: number; commission_pct: number }>(
+    `SELECT c.id, c.name, c.fee_model, c.monthly_fee, c.commission_pct
+       FROM clients c
+      WHERE c.status NOT IN ('encerrado', 'pausado')
+        AND NOT EXISTS (SELECT 1 FROM agency_charges ch WHERE ch.client_id = c.id AND ch.ref_month = ?)
+      ORDER BY lower(c.name)`,
+    refMonth,
+  );
+}
+
+export async function expensesForMonth(refMonth: string) {
+  return all<AgencyExpense & { author: string | null }>(
+    `SELECT e.*, u.name AS author
+       FROM agency_expenses e LEFT JOIN users u ON u.id = e.created_by
+      WHERE e.ref_month = ?
+      ORDER BY e.paid, e.due_date NULLS LAST, e.amount DESC`,
+    refMonth,
+  );
+}
+
+export interface AgencyMonth {
+  ref_month: string;
+  billed: number;
+  received: number;
+  pending: number;
+  expenses: number;
+  expenses_paid: number;
+}
+
+const AGENCY_EMPTY = { billed: 0, received: 0, pending: 0, expenses: 0, expenses_paid: 0 };
+
+export async function agencyTotals(refMonth: string): Promise<AgencyMonth> {
+  const charges = await one<{ billed: number; received: number; pending: number }>(
+    `SELECT COALESCE(SUM(total) FILTER (WHERE status <> 'cancelado'),0)  AS billed,
+            COALESCE(SUM(total) FILTER (WHERE status = 'pago'),0)        AS received,
+            COALESCE(SUM(total) FILTER (WHERE status = 'pendente'),0)    AS pending
+       FROM agency_charges WHERE ref_month = ?`,
+    refMonth,
+  );
+  const expenses = await one<{ expenses: number; expenses_paid: number }>(
+    `SELECT COALESCE(SUM(amount),0) AS expenses,
+            COALESCE(SUM(amount) FILTER (WHERE paid = 1),0) AS expenses_paid
+       FROM agency_expenses WHERE ref_month = ?`,
+    refMonth,
+  );
+  return { ref_month: refMonth, ...AGENCY_EMPTY, ...charges, ...expenses };
+}
+
+/** Série de receita e despesa da agência para o gráfico. */
+export async function agencySeries(months: number): Promise<AgencyMonth[]> {
+  const refs = lastMonths(months);
+  const rows = await all<AgencyMonth>(
+    `SELECT m.ref_month,
+            COALESCE(c.billed,0)        AS billed,
+            COALESCE(c.received,0)      AS received,
+            COALESCE(c.pending,0)       AS pending,
+            COALESCE(e.expenses,0)      AS expenses,
+            COALESCE(e.expenses_paid,0) AS expenses_paid
+       FROM (SELECT ref_month FROM agency_charges WHERE ref_month >= ?
+             UNION SELECT ref_month FROM agency_expenses WHERE ref_month >= ?) m
+       LEFT JOIN (SELECT ref_month,
+                         SUM(total) FILTER (WHERE status <> 'cancelado') billed,
+                         SUM(total) FILTER (WHERE status = 'pago')       received,
+                         SUM(total) FILTER (WHERE status = 'pendente')   pending
+                    FROM agency_charges GROUP BY ref_month) c ON c.ref_month = m.ref_month
+       LEFT JOIN (SELECT ref_month, SUM(amount) expenses,
+                         SUM(amount) FILTER (WHERE paid = 1) expenses_paid
+                    FROM agency_expenses GROUP BY ref_month) e ON e.ref_month = m.ref_month`,
+    refs[0],
+    refs[0],
+  );
+  const map = new Map(rows.map((r) => [r.ref_month, r]));
+  return refs.map((ref) => map.get(ref) ?? { ref_month: ref, ...AGENCY_EMPTY });
+}
+
+/** Quebra das despesas por categoria no mês. */
+export async function expensesByCategory(refMonth: string) {
+  return all<{ category: string; amount: number }>(
+    `SELECT category, COALESCE(SUM(amount),0) AS amount
+       FROM agency_expenses WHERE ref_month = ?
+      GROUP BY category ORDER BY amount DESC`,
+    refMonth,
   );
 }

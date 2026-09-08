@@ -170,6 +170,45 @@ CREATE TABLE IF NOT EXISTS sync_logs (
   created_at            text NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS agency_charges (
+  id            text PRIMARY KEY,
+  client_id     text NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+  ref_month     text NOT NULL,
+  fee           double precision NOT NULL DEFAULT 0,
+  commission    double precision NOT NULL DEFAULT 0,
+  extra         double precision NOT NULL DEFAULT 0,
+  revenue_base  double precision NOT NULL DEFAULT 0,
+  total         double precision NOT NULL DEFAULT 0,
+  status        text NOT NULL DEFAULT 'pendente',
+  due_date      text,
+  paid_at       text,
+  method        text,
+  notes         text,
+  created_by    text REFERENCES users(id) ON DELETE SET NULL,
+  created_at    text NOT NULL,
+  updated_at    text NOT NULL,
+  UNIQUE (client_id, ref_month)
+);
+
+CREATE TABLE IF NOT EXISTS agency_expenses (
+  id          text PRIMARY KEY,
+  ref_month   text NOT NULL,
+  category    text NOT NULL DEFAULT 'outros',
+  description text NOT NULL,
+  amount      double precision NOT NULL DEFAULT 0,
+  recurring   integer NOT NULL DEFAULT 0,
+  paid        integer NOT NULL DEFAULT 0,
+  due_date    text,
+  paid_at     text,
+  notes       text,
+  created_by  text REFERENCES users(id) ON DELETE SET NULL,
+  created_at  text NOT NULL,
+  updated_at  text NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_charges_month  ON agency_charges(ref_month, status);
+CREATE INDEX IF NOT EXISTS idx_expenses_month ON agency_expenses(ref_month);
+
 CREATE INDEX IF NOT EXISTS idx_fin_client   ON finance_snapshots(client_id, ref_month);
 CREATE INDEX IF NOT EXISTS idx_ads_client   ON ads_entries(client_id, period_start);
 CREATE INDEX IF NOT EXISTS idx_notes_client ON client_notes(client_id, created_at);
@@ -180,6 +219,8 @@ CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
 
 /** Tabelas na ordem segura para limpeza (filhas antes das pais). */
 export const TABLES = [
+  "agency_charges",
+  "agency_expenses",
   "task_events",
   "tasks",
   "chat_messages",

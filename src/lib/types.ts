@@ -140,3 +140,62 @@ export const ROLES: { value: Role; label: string; description: string }[] = [
 export function marketplaceLabel(value: string): string {
   return MARKETPLACES.find((m) => m.value === value)?.label ?? value;
 }
+
+// ---------------------------------------------------------------- financeiro da agência
+
+export type ChargeStatus = "pendente" | "pago" | "cancelado";
+
+export interface AgencyCharge {
+  id: string;
+  client_id: string;
+  ref_month: string;
+  fee: number;
+  commission: number;
+  extra: number;
+  revenue_base: number;
+  total: number;
+  status: ChargeStatus;
+  due_date: string | null;
+  paid_at: string | null;
+  method: string | null;
+  notes: string | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AgencyExpense {
+  id: string;
+  ref_month: string;
+  category: string;
+  description: string;
+  amount: number;
+  recurring: number;
+  paid: number;
+  due_date: string | null;
+  paid_at: string | null;
+  notes: string | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export const EXPENSE_CATEGORIES: { value: string; label: string }[] = [
+  { value: "pessoal", label: "Pessoal e pró-labore" },
+  { value: "ferramentas", label: "Ferramentas e software" },
+  { value: "impostos", label: "Impostos e contabilidade" },
+  { value: "marketing", label: "Marketing e comercial" },
+  { value: "estrutura", label: "Estrutura e escritório" },
+  { value: "terceiros", label: "Terceiros e freelas" },
+  { value: "outros", label: "Outros" },
+];
+
+export const CHARGE_STATUS: { value: ChargeStatus; label: string }[] = [
+  { value: "pendente", label: "A receber" },
+  { value: "pago", label: "Recebido" },
+  { value: "cancelado", label: "Cancelado" },
+];
+
+export function expenseCategoryLabel(value: string): string {
+  return EXPENSE_CATEGORIES.find((c) => c.value === value)?.label ?? value;
+}
