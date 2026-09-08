@@ -1,0 +1,344 @@
+@import "tailwindcss";
+
+/* ---------------------------------------------------------------
+   GoularT — paleta roxo / laranja / preto
+   Tema escuro é o padrão; [data-theme="light"] troca os tokens.
+   --------------------------------------------------------------- */
+
+:root {
+  color-scheme: dark;
+
+  --bg: #08060d;
+  --bg-grad-a: #1a0b2e;
+  --bg-grad-b: #2a1005;
+  --surface: #120e1c;
+  --surface-2: #191327;
+  --surface-3: #201830;
+  --border: #2b2140;
+  --border-strong: #3d2f5c;
+
+  --text: #f4f1fa;
+  --text-muted: #b3a8cc;
+  --text-dim: #7c7195;
+
+  --primary: #a855f7;
+  --primary-strong: #8b3ef0;
+  --primary-soft: #2a1442;
+  --primary-contrast: #ffffff;
+
+  --accent: #fb8b1e;
+  --accent-strong: #f97316;
+  --accent-soft: #3a1f08;
+  --accent-contrast: #1a0e02;
+
+  --success: #34d399;
+  --success-soft: #08281f;
+  --warn: #fbbf24;
+  --warn-soft: #2e2205;
+  --danger: #f87171;
+  --danger-soft: #2e0f12;
+  --info: #60a5fa;
+  --info-soft: #0d1b30;
+
+  --ring: #a855f7;
+  --shadow: 0 18px 40px -22px rgba(0, 0, 0, 0.9);
+}
+
+[data-theme="light"] {
+  color-scheme: light;
+
+  --bg: #faf8fd;
+  --bg-grad-a: #f0e6ff;
+  --bg-grad-b: #ffeede;
+  --surface: #ffffff;
+  --surface-2: #f6f2fc;
+  --surface-3: #efe8f9;
+  --border: #e4dcf1;
+  --border-strong: #cfc0e6;
+
+  --text: #1c1030;
+  --text-muted: #5f5479;
+  --text-dim: #8b82a3;
+
+  --primary: #7c3aed;
+  --primary-strong: #6d28d9;
+  --primary-soft: #f1e8ff;
+  --primary-contrast: #ffffff;
+
+  --accent: #ea6a08;
+  --accent-strong: #d95c00;
+  --accent-soft: #fff0e0;
+  --accent-contrast: #ffffff;
+
+  --success: #059669;
+  --success-soft: #e3f7ef;
+  --warn: #b45309;
+  --warn-soft: #fdf1dc;
+  --danger: #dc2626;
+  --danger-soft: #fdeaea;
+  --info: #2563eb;
+  --info-soft: #e6efff;
+
+  --ring: #7c3aed;
+  --shadow: 0 14px 34px -20px rgba(60, 30, 110, 0.45);
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-line: var(--border);
+  --color-line-strong: var(--border-strong);
+  --color-ink: var(--text);
+  --color-muted: var(--text-muted);
+  --color-dim: var(--text-dim);
+  --color-brand: var(--primary);
+  --color-brand-strong: var(--primary-strong);
+  --color-brand-soft: var(--primary-soft);
+  --color-accent: var(--accent);
+  --color-accent-strong: var(--accent-strong);
+  --color-accent-soft: var(--accent-soft);
+  --color-ok: var(--success);
+  --color-ok-soft: var(--success-soft);
+  --color-warn: var(--warn);
+  --color-warn-soft: var(--warn-soft);
+  --color-bad: var(--danger);
+  --color-bad-soft: var(--danger-soft);
+  --color-info: var(--info);
+  --color-info-soft: var(--info-soft);
+
+  --font-sans: ui-sans-serif, system-ui, "Segoe UI", Inter, Roboto, sans-serif;
+  --radius-xl2: 1.15rem;
+}
+
+* {
+  border-color: var(--border);
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* brilho ambiente roxo/laranja no topo da aplicação */
+.app-shell {
+  min-height: 100vh;
+  background-image:
+    radial-gradient(900px 420px at 12% -8%, var(--bg-grad-a), transparent 70%),
+    radial-gradient(760px 380px at 92% -12%, var(--bg-grad-b), transparent 72%);
+}
+
+::selection {
+  background: var(--primary);
+  color: var(--primary-contrast);
+}
+
+/* ---------------- scrollbar ---------------- */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--primary);
+  background-clip: content-box;
+}
+
+/* ---------------- componentes base ---------------- */
+@layer components {
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-xl2);
+    box-shadow: var(--shadow);
+  }
+
+  .card-flat {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 0.9rem;
+  }
+
+  .label {
+    display: block;
+    font-size: 0.7rem;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    margin-bottom: 0.4rem;
+  }
+
+  .input,
+  .select,
+  .textarea {
+    width: 100%;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 0.7rem;
+    padding: 0.6rem 0.75rem;
+    font-size: 0.875rem;
+    color: var(--text);
+    outline: none;
+    transition: border-color 0.15s, box-shadow 0.15s;
+  }
+  .input::placeholder,
+  .textarea::placeholder {
+    color: var(--text-dim);
+  }
+  .input:focus,
+  .select:focus,
+  .textarea:focus {
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 25%, transparent);
+  }
+  .select {
+    appearance: none;
+    background-image: linear-gradient(45deg, transparent 50%, var(--text-dim) 50%),
+      linear-gradient(135deg, var(--text-dim) 50%, transparent 50%);
+    background-position: calc(100% - 18px) 55%, calc(100% - 13px) 55%;
+    background-size: 5px 5px, 5px 5px;
+    background-repeat: no-repeat;
+    padding-right: 2rem;
+  }
+  .textarea {
+    min-height: 5rem;
+    resize: vertical;
+    line-height: 1.5;
+  }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.45rem;
+    border-radius: 0.7rem;
+    padding: 0.55rem 0.95rem;
+    font-size: 0.85rem;
+    font-weight: 600;
+    border: 1px solid transparent;
+    cursor: pointer;
+    transition: filter 0.15s, background 0.15s, border-color 0.15s, transform 0.05s;
+    white-space: nowrap;
+  }
+  .btn:active {
+    transform: translateY(1px);
+  }
+  .btn:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
+  .btn-primary {
+    background: linear-gradient(135deg, var(--primary-strong), var(--primary));
+    color: var(--primary-contrast);
+  }
+  .btn-primary:hover:not(:disabled) {
+    filter: brightness(1.1);
+  }
+  .btn-accent {
+    background: linear-gradient(135deg, var(--accent-strong), var(--accent));
+    color: var(--accent-contrast);
+  }
+  .btn-accent:hover:not(:disabled) {
+    filter: brightness(1.08);
+  }
+  .btn-ghost {
+    background: var(--surface-2);
+    border-color: var(--border);
+    color: var(--text-muted);
+  }
+  .btn-ghost:hover:not(:disabled) {
+    color: var(--text);
+    border-color: var(--border-strong);
+  }
+  .btn-danger {
+    background: var(--danger-soft);
+    border-color: color-mix(in srgb, var(--danger) 40%, transparent);
+    color: var(--danger);
+  }
+  .btn-sm {
+    padding: 0.35rem 0.65rem;
+    font-size: 0.78rem;
+    border-radius: 0.55rem;
+  }
+
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    border-radius: 999px;
+    padding: 0.15rem 0.55rem;
+    font-size: 0.7rem;
+    font-weight: 600;
+    line-height: 1.4;
+    border: 1px solid transparent;
+    white-space: nowrap;
+  }
+
+  .table-wrap {
+    overflow-x: auto;
+  }
+  table.data {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.85rem;
+  }
+  table.data th {
+    text-align: left;
+    font-size: 0.68rem;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    font-weight: 600;
+    padding: 0.65rem 0.85rem;
+    border-bottom: 1px solid var(--border);
+    white-space: nowrap;
+  }
+  table.data td {
+    padding: 0.7rem 0.85rem;
+    border-bottom: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+    vertical-align: middle;
+  }
+  table.data tbody tr:hover {
+    background: var(--surface-2);
+  }
+  table.data tbody tr:last-child td {
+    border-bottom: none;
+  }
+  .num {
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+    white-space: nowrap;
+  }
+}
+
+/* barra de "salvo com sucesso" */
+@keyframes fadeslide {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.flash {
+  animation: fadeslide 0.25s ease-out;
+}
