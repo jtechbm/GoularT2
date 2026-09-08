@@ -17,6 +17,10 @@ marketplaces, tarefas e canais são cadastrados por dentro dele.
 
 Dentro do sistema, o admin cria os demais acessos em **Equipe**.
 
+Não rode `npm run build` com o `npm run dev` aberto: os dois escrevem na mesma pasta `.next` e o
+servidor de desenvolvimento quebra com `__webpack_modules__[moduleId] is not a function` e/ou perde o CSS.
+Se acontecer, pare o dev, apague a pasta `.next` e suba de novo.
+
 ## O que já está de pé
 
 - **Dashboard** — faturamento, lucro, margem, impostos e Ads da carteira inteira, com comparativo mês a mês,
