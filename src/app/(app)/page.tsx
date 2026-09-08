@@ -10,8 +10,20 @@ import {
   totalsForMonth,
 } from "@/lib/queries";
 import { addMonths, brl, brlShort, currentMonth, dateBR, lastMonths, num, pct } from "@/lib/format";
-import { Avatar, Card, Chip, Delta, Empty, MarketplaceChip, PageHeader, Stat, StatusChip } from "@/components/ui";
-import { RevenueProfitChart, ChartLegend, SplitBar } from "@/components/charts";
+import {
+  Avatar,
+  Card,
+  Chip,
+  Delta,
+  Empty,
+  MARKETPLACE_COLOR,
+  MarketplaceChip,
+  PageHeader,
+  Stat,
+  StatusChip,
+} from "@/components/ui";
+import { RevenueProfitChart, ChartLegend, Donut } from "@/components/charts";
+import { IconBarChart, IconDollar, IconPlus, IconReceipt, IconTrendUp, IconUsers } from "@/components/icons";
 import { MonthPicker } from "@/components/month-picker";
 import { marketplaceLabel } from "@/lib/types";
 
@@ -53,14 +65,13 @@ export default async function DashboardPage({
   const board = await leaderboard();
   const top = rows.slice(0, 8);
 
-  const colors = ["var(--primary)", "var(--accent)", "var(--info)", "var(--success)"];
+  const totalRevenue = byMarketplace.reduce((s, m) => s + m.revenue, 0);
 
   return (
     <>
       <PageHeader
-        eyebrow={`Olá, ${user.name.split(" ")[0]}`}
-        title="Visão geral da carteira"
-        subtitle={`Consolidado de ${rows.length} ${rows.length === 1 ? "cliente" : "clientes"} · Mercado Livre e Shopee`}
+        title={`Olá, ${user.name.split(" ")[0]} 👋`}
+        subtitle="Aqui está o resumo da sua operação."
         actions={
           <Suspense fallback={null}>
             <MonthPicker months={months} value={ref} />
@@ -75,6 +86,7 @@ export default async function DashboardPage({
           delta={growth(totals.revenue, prev.revenue)}
           hint="vs. mês anterior"
           tone="brand"
+          icon={<IconBarChart size={20} />}
         />
         <Stat
           label="Lucro"
@@ -82,6 +94,7 @@ export default async function DashboardPage({
           delta={growth(totals.profit, prev.profit)}
           hint={`margem ${pct(margin)}`}
           tone="accent"
+          icon={<IconDollar size={20} />}
         />
         <Stat
           label="Investimento em Ads"
@@ -89,17 +102,26 @@ export default async function DashboardPage({
           hint={totals.revenue ? `${pct(totals.ads / totals.revenue)} do faturamento` : "sem faturamento"}
           tone="warn"
           href="/ads"
+          icon={<IconTrendUp size={20} />}
         />
         <Stat
           label="Impostos"
           value={brl(totals.tax)}
           hint={totals.revenue ? `${pct(totals.tax / totals.revenue)} do faturamento` : "—"}
           tone="info"
+          icon={<IconReceipt size={20} />}
         />
       </div>
 
       <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <Stat label="Clientes ativos" value={num(active)} hint={`${rows.length} na carteira`} tone="ok" href="/clientes" />
+        <Stat
+          label="Clientes ativos"
+          value={num(active)}
+          hint={`${rows.length} na carteira`}
+          tone="ok"
+          href="/clientes"
+          icon={<IconUsers size={20} />}
+        />
         <Stat label="Pedidos no mês" value={num(totals.orders)} hint="somando os marketplaces" tone="neutral" />
         <Stat label="Fee recorrente" value={brl(mrr)} hint="contratos ativos" tone="brand" />
         <Stat
@@ -119,7 +141,7 @@ export default async function DashboardPage({
             <ChartLegend
               items={[
                 { label: "Faturamento", color: "var(--primary)" },
-                { label: "Lucro", color: "var(--accent)" },
+                { label: "Lucro", color: "var(--primary-light)" },
               ]}
             />
           }
@@ -142,32 +164,35 @@ export default async function DashboardPage({
         <Card title="Onde está o faturamento" subtitle="Composição por marketplace no mês">
           {byMarketplace.length ? (
             <div className="space-y-5">
-              <SplitBar
-                parts={byMarketplace.map((m, i) => ({
+              <Donut
+                parts={byMarketplace.map((m) => ({
                   label: marketplaceLabel(m.marketplace),
                   value: m.revenue,
-                  color: colors[i % colors.length],
+                  color: MARKETPLACE_COLOR[m.marketplace] ?? "var(--primary)",
                 }))}
+                total={totalRevenue}
+                totalLabel="faturamento"
+                formatValue={(v) => brlShort(v)}
               />
-              <div className="space-y-3">
+              <div className="space-y-2">
                 {byMarketplace.map((m) => (
-                  <div key={m.marketplace} className="rounded-lg border border-line bg-surface-2 p-3">
+                  <div key={m.marketplace} className="rounded-[10px] border border-line bg-surface-2 p-3">
                     <div className="mb-2 flex items-center justify-between">
                       <MarketplaceChip value={m.marketplace} />
                       <span className="text-sm font-semibold text-ink">{brlShort(m.revenue)}</span>
                     </div>
-                    <div className="grid grid-cols-3 gap-2 text-center text-[0.7rem]">
+                    <div className="grid grid-cols-3 gap-2 text-center text-xs">
                       <div>
-                        <div className="text-dim">Lucro</div>
-                        <div className="font-semibold text-ink">{brlShort(m.profit)}</div>
+                        <div className="text-muted">Lucro</div>
+                        <div className="font-medium text-ink">{brlShort(m.profit)}</div>
                       </div>
                       <div>
-                        <div className="text-dim">Ads</div>
-                        <div className="font-semibold text-ink">{brlShort(m.ads)}</div>
+                        <div className="text-muted">Ads</div>
+                        <div className="font-medium text-ink">{brlShort(m.ads)}</div>
                       </div>
                       <div>
-                        <div className="text-dim">Pedidos</div>
-                        <div className="font-semibold text-ink">{num(m.orders)}</div>
+                        <div className="text-muted">Pedidos</div>
+                        <div className="font-medium text-ink">{num(m.orders)}</div>
                       </div>
                     </div>
                   </div>
@@ -329,7 +354,26 @@ export default async function DashboardPage({
         </div>
       </div>
 
-      <p className="mt-4 text-center text-[0.7rem] text-dim">
+      <section className="relative mt-3 overflow-hidden rounded-[var(--radius-card)] border border-line bg-surface">
+        <div className="pointer-events-none absolute inset-y-0 right-0 w-1/2 bg-gradient-to-l from-brand-soft to-transparent" />
+        <div className="relative flex flex-wrap items-center justify-between gap-4 px-6 py-5">
+          <div className="flex items-center gap-3">
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brand-soft text-brand">
+              <IconTrendUp size={20} />
+            </span>
+            <div>
+              <p className="text-[0.95rem] font-semibold text-ink">Tudo no lugar, para você ir mais longe.</p>
+              <p className="text-sm text-muted">Clientes, marketplaces, ads e finanças em um só sistema.</p>
+            </div>
+          </div>
+          <Link href="/clientes/novo" className="btn btn-primary">
+            <IconPlus size={16} />
+            Novo cliente
+          </Link>
+        </div>
+      </section>
+
+      <p className="mt-4 text-center text-xs text-dim">
         Mês de referência: {dateBR(`${ref}-01`)} · dados consolidados de fechamentos manuais e sincronizações de API
       </p>
     </>

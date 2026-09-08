@@ -11,9 +11,14 @@ export function LoginForm({ hasUsers }: { hasUsers: boolean }) {
 
   return (
     <main className="app-shell flex min-h-screen items-center justify-center p-5">
-      <div className="w-full max-w-sm">
+      <div className="w-full max-w-[380px]">
         <div className="mb-7 text-center">
           <Wordmark size="lg" />
+          <p className="mt-3 text-2xl font-bold tracking-tight text-ink">
+            Mais controle.
+            <br />
+            <span className="text-brand">Mais resultado.</span>
+          </p>
           <p className="mt-2 text-sm text-muted">Operação interna · acesso restrito à equipe</p>
         </div>
 
@@ -50,9 +55,7 @@ export function LoginForm({ hasUsers }: { hasUsers: boolean }) {
           </div>
 
           {state.error && (
-            <p className="flash rounded-lg border border-bad/30 bg-bad-soft px-3 py-2 text-xs font-medium text-bad">
-              {state.error}
-            </p>
+            <p className="flash rounded-[10px] bg-bad-soft px-3 py-2 text-sm font-medium text-bad">{state.error}</p>
           )}
 
           <SubmitButton className="w-full" pendingLabel="Entrando…">
@@ -60,14 +63,14 @@ export function LoginForm({ hasUsers }: { hasUsers: boolean }) {
           </SubmitButton>
 
           {!hasUsers && (
-            <p className="rounded-lg border border-warn/30 bg-warn-soft px-3 py-2 text-xs text-warn">
+            <p className="rounded-[10px] bg-warn-soft px-3 py-2 text-xs leading-relaxed text-warn">
               Nenhum usuário cadastrado ainda. Rode{" "}
               <code className="font-mono">npm run criar-admin -- seu@email</code> para criar o primeiro acesso.
             </p>
           )}
         </form>
 
-        <div className="mx-auto mt-5 w-40">
+        <div className="mx-auto mt-5 w-44">
           <ThemeToggle />
         </div>
       </div>

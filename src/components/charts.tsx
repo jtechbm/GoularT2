@@ -1,49 +1,42 @@
-import { brlShort, monthLabel } from "@/lib/format";
+import { brlShort, monthLabel, num } from "@/lib/format";
 
 /**
- * Faturamento (barras roxas) + lucro (linha laranja) por mês.
- * SVG puro, renderizado no servidor — sem biblioteca de gráfico.
+ * Faturamento e lucro lado a lado, em barras — como no material de marca:
+ * laranja cheio para faturamento, laranja claro para lucro.
  */
 export function RevenueProfitChart({
   data,
-  height = 200,
+  height = 220,
 }: {
   data: { ref_month: string; revenue: number; profit: number }[];
   height?: number;
 }) {
   if (!data.length) return null;
-  const W = 720;
+  const W = 760;
   const H = height;
-  const padX = 44;
-  const padTop = 16;
-  const padBottom = 26;
+  const padLeft = 52;
+  const padRight = 12;
+  const padTop = 12;
+  const padBottom = 28;
   const max = Math.max(1, ...data.map((d) => Math.max(d.revenue, d.profit)));
-  const innerW = W - padX * 2;
+  const innerW = W - padLeft - padRight;
   const innerH = H - padTop - padBottom;
   const step = innerW / data.length;
-  const barW = Math.min(38, step * 0.5);
+  const barW = Math.min(14, step * 0.26);
+  const gap = 3;
   const y = (v: number) => padTop + innerH - (Math.max(0, v) / max) * innerH;
-  const cx = (i: number) => padX + step * i + step / 2;
-
-  const line = data.map((d, i) => `${i === 0 ? "M" : "L"}${cx(i).toFixed(1)},${y(d.profit).toFixed(1)}`).join(" ");
-  const grid = [0, 0.25, 0.5, 0.75, 1];
+  const cx = (i: number) => padLeft + step * i + step / 2;
+  const grid = [1, 0.75, 0.5, 0.25, 0];
 
   return (
     <svg viewBox={`0 0 ${W} ${H}`} className="h-auto w-full" role="img" aria-label="Faturamento e lucro por mês">
-      <defs>
-        <linearGradient id="barGrad" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="var(--primary)" stopOpacity="0.95" />
-          <stop offset="100%" stopColor="var(--primary)" stopOpacity="0.35" />
-        </linearGradient>
-      </defs>
-
       {grid.map((g) => {
-        const gy = padTop + innerH * g;
+        const gy = padTop + innerH * (1 - g);
         return (
           <g key={g}>
-            <line x1={padX} x2={W - padX} y1={gy} y2={gy} stroke="var(--border)" strokeDasharray="3 4" />
-            <text x={padX - 8} y={gy + 3.5} textAnchor="end" fontSize="9" fill="var(--text-dim)">
-              {brlShort(max * (1 - g)).replace("R$ ", "")}
+            <line x1={padLeft} x2={W - padRight} y1={gy} y2={gy} stroke="var(--border)" strokeWidth="1" />
+            <text x={padLeft - 10} y={gy + 3.5} textAnchor="end" fontSize="10" fill="var(--text-dim)">
+              {g === 0 ? "R$ 0" : brlShort(max * g).replace("R$ ", "R$ ")}
             </text>
           </g>
         );
@@ -52,24 +45,29 @@ export function RevenueProfitChart({
       {data.map((d, i) => (
         <g key={d.ref_month}>
           <rect
-            x={cx(i) - barW / 2}
+            x={cx(i) - barW - gap / 2}
             y={y(d.revenue)}
             width={barW}
             height={Math.max(1, padTop + innerH - y(d.revenue))}
-            rx="4"
-            fill="url(#barGrad)"
-          />
-          <text x={cx(i)} y={H - 8} textAnchor="middle" fontSize="9.5" fill="var(--text-dim)">
-            {monthLabel(d.ref_month)}
+            rx="3"
+            fill="var(--primary)"
+          >
+            <title>{`${monthLabel(d.ref_month)} — faturamento ${brlShort(d.revenue)}`}</title>
+          </rect>
+          <rect
+            x={cx(i) + gap / 2}
+            y={y(d.profit)}
+            width={barW}
+            height={Math.max(1, padTop + innerH - y(d.profit))}
+            rx="3"
+            fill="var(--primary-light)"
+          >
+            <title>{`${monthLabel(d.ref_month)} — lucro ${brlShort(d.profit)}`}</title>
+          </rect>
+          <text x={cx(i)} y={H - 9} textAnchor="middle" fontSize="10.5" fill="var(--text-muted)">
+            {monthLabel(d.ref_month).split("/")[0]}
           </text>
         </g>
-      ))}
-
-      <path d={line} fill="none" stroke="var(--accent)" strokeWidth="2.5" strokeLinejoin="round" />
-      {data.map((d, i) => (
-        <circle key={d.ref_month} cx={cx(i)} cy={y(d.profit)} r="3.5" fill="var(--accent)" stroke="var(--surface)" strokeWidth="1.5">
-          <title>{`${monthLabel(d.ref_month)} — lucro ${brlShort(d.profit)} / faturamento ${brlShort(d.revenue)}`}</title>
-        </circle>
       ))}
     </svg>
   );
@@ -80,7 +78,7 @@ export function ChartLegend({ items }: { items: { label: string; color: string }
     <div className="flex flex-wrap items-center gap-4">
       {items.map((i) => (
         <span key={i.label} className="flex items-center gap-1.5 text-xs text-muted">
-          <span className="h-2.5 w-2.5 rounded-sm" style={{ background: i.color }} />
+          <span className="h-2.5 w-2.5 rounded-full" style={{ background: i.color }} />
           {i.label}
         </span>
       ))}
@@ -88,13 +86,95 @@ export function ChartLegend({ items }: { items: { label: string; color: string }
   );
 }
 
-/** Barra de composição (faturamento por marketplace, etc). */
+/**
+ * Rosca com o total no centro e legenda ao lado — o formato de
+ * "Pedidos por marketplace" do material de marca.
+ */
+export function Donut({
+  parts,
+  total,
+  totalLabel,
+  formatValue = (v: number) => num(v),
+}: {
+  parts: { label: string; value: number; color: string }[];
+  total?: number;
+  totalLabel?: string;
+  formatValue?: (v: number) => string;
+}) {
+  const sum = parts.reduce((s, p) => s + Math.max(0, p.value), 0);
+  const shown = total ?? sum;
+  const size = 152;
+  const r = 58;
+  const stroke = 22;
+  const c = 2 * Math.PI * r;
+
+  let offset = 0;
+  const segments = parts.map((p) => {
+    const frac = sum > 0 ? Math.max(0, p.value) / sum : 0;
+    const seg = { ...p, frac, dash: frac * c, offset };
+    offset += frac * c;
+    return seg;
+  });
+
+  return (
+    <div className="flex flex-wrap items-center justify-center gap-6">
+      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} role="img" aria-label={totalLabel ?? "Composição"}>
+        <g transform={`rotate(-90 ${size / 2} ${size / 2})`}>
+          <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="var(--surface-3)" strokeWidth={stroke} />
+          {sum > 0 &&
+            segments.map((s) => (
+              <circle
+                key={s.label}
+                cx={size / 2}
+                cy={size / 2}
+                r={r}
+                fill="none"
+                stroke={s.color}
+                strokeWidth={stroke}
+                strokeDasharray={`${s.dash} ${c - s.dash}`}
+                strokeDashoffset={-s.offset}
+              >
+                <title>{`${s.label}: ${formatValue(s.value)}`}</title>
+              </circle>
+            ))}
+        </g>
+        <text
+          x={size / 2}
+          y={size / 2 - 2}
+          textAnchor="middle"
+          fontSize="22"
+          fontWeight="700"
+          fill="var(--text)"
+        >
+          {formatValue(shown)}
+        </text>
+        {totalLabel && (
+          <text x={size / 2} y={size / 2 + 16} textAnchor="middle" fontSize="11" fill="var(--text-muted)">
+            {totalLabel}
+          </text>
+        )}
+      </svg>
+
+      <ul className="space-y-2.5">
+        {segments.map((s) => (
+          <li key={s.label} className="flex items-center gap-2.5 text-sm">
+            <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: s.color }} />
+            <span className="flex-1 text-muted">{s.label}</span>
+            <span className="font-medium text-ink">{Math.round(s.frac * 100)}%</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+/** Barra de composição para espaços estreitos. */
 export function SplitBar({ parts }: { parts: { label: string; value: number; color: string }[] }) {
   const total = parts.reduce((s, p) => s + Math.max(0, p.value), 0);
-  if (total <= 0) return <div className="h-2.5 w-full rounded-full bg-surface-3" />;
+  if (total <= 0) return <div className="h-2 w-full rounded-full bg-surface-3" />;
   return (
-    <div className="space-y-2">
-      <div className="flex h-2.5 w-full overflow-hidden rounded-full bg-surface-3">
+    <div className="space-y-3">
+      <div className="flex h-2 w-full gap-0.5 overflow-hidden rounded-full bg-surface-3">
         {parts.map((p) => (
           <div
             key={p.label}
@@ -103,13 +183,13 @@ export function SplitBar({ parts }: { parts: { label: string; value: number; col
           />
         ))}
       </div>
-      <div className="flex flex-wrap gap-x-4 gap-y-1">
+      <div className="flex flex-wrap gap-x-4 gap-y-1.5">
         {parts.map((p) => (
           <span key={p.label} className="flex items-center gap-1.5 text-xs">
             <span className="h-2 w-2 rounded-full" style={{ background: p.color }} />
             <span className="text-muted">{p.label}</span>
-            <span className="font-semibold text-ink">{brlShort(p.value)}</span>
-            <span className="text-dim">({Math.round((Math.max(0, p.value) / total) * 100)}%)</span>
+            <span className="font-medium text-ink">{brlShort(p.value)}</span>
+            <span className="text-dim">{Math.round((Math.max(0, p.value) / total) * 100)}%</span>
           </span>
         ))}
       </div>

@@ -2,6 +2,7 @@
 
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { monthLabel } from "@/lib/format";
+import { IconCalendar, IconChevronDown } from "./icons";
 
 /** Troca o mês de referência mantendo os demais filtros da URL. */
 export function MonthPicker({ months, value, param = "mes" }: { months: string[]; value: string; param?: string }) {
@@ -15,35 +16,22 @@ export function MonthPicker({ months, value, param = "mes" }: { months: string[]
     router.push(`${pathname}?${params}`);
   }
 
-  const idx = months.indexOf(value);
-
   return (
-    <div className="flex items-center gap-1 rounded-lg border border-line bg-surface p-1">
-      <button
-        type="button"
-        className="btn btn-ghost btn-sm border-0 bg-transparent"
-        disabled={idx <= 0}
-        onClick={() => go(months[idx - 1])}
-        aria-label="Mês anterior"
+    <label className="relative flex cursor-pointer items-center gap-2 rounded-[10px] border border-line-strong bg-surface py-2 pl-3 pr-8 text-sm text-ink transition-colors hover:border-brand">
+      <IconCalendar size={16} className="shrink-0 text-muted" />
+      <select
+        className="cursor-pointer appearance-none bg-transparent pr-1 text-sm font-medium text-ink outline-none"
+        value={value}
+        onChange={(e) => go(e.target.value)}
+        aria-label="Mês de referência"
       >
-        ‹
-      </button>
-      <select className="select !w-auto !border-0 !bg-transparent !py-1 text-sm font-semibold" value={value} onChange={(e) => go(e.target.value)}>
         {months.map((m) => (
           <option key={m} value={m}>
             {monthLabel(m)}
           </option>
         ))}
       </select>
-      <button
-        type="button"
-        className="btn btn-ghost btn-sm border-0 bg-transparent"
-        disabled={idx < 0 || idx >= months.length - 1}
-        onClick={() => go(months[idx + 1])}
-        aria-label="Próximo mês"
-      >
-        ›
-      </button>
-    </div>
+      <IconChevronDown size={15} className="pointer-events-none absolute right-2.5 text-muted" />
+    </label>
   );
 }

@@ -56,7 +56,7 @@ export function SaveBar({
   extra?: ReactNode;
 }) {
   return (
-    <div className="sticky bottom-0 z-20 -mx-5 mt-6 flex flex-wrap items-center justify-between gap-3 rounded-b-[var(--radius-xl2)] border-t border-line bg-surface/95 px-5 py-3 backdrop-blur">
+    <div className="sticky bottom-0 z-20 -mx-5 mt-6 flex flex-wrap items-center justify-between gap-3 rounded-b-[var(--radius-card)] border-t border-line bg-surface/95 px-5 py-3 backdrop-blur">
       <div className="text-xs text-dim">{hint ?? "As alterações só são gravadas ao clicar em salvar."}</div>
       <div className="flex items-center gap-2">
         {extra}

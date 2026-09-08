@@ -131,7 +131,7 @@ export default async function TarefasPage({
                       {t.description && (
                         <p className="mt-1 whitespace-pre-wrap text-xs leading-relaxed text-muted">{t.description}</p>
                       )}
-                      <p className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[0.68rem] text-dim">
+                      <p className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted">
                         <span>criada por {t.creator_name ?? "—"} · {relativeBR(t.created_at)}</span>
                         {t.due_date && <span className={isLate(t) ? "text-bad" : ""}>prazo {dateBR(t.due_date)}</span>}
                         {t.completed_at && <span>concluída {relativeBR(t.completed_at)}</span>}
@@ -293,7 +293,7 @@ export default async function TarefasPage({
                   <span className="w-4 text-xs font-bold text-dim">{i + 1}</span>
                   <Avatar name={b.name} color={b.color} size={26} />
                   <span className="min-w-0 flex-1 truncate text-xs text-muted">{b.name}</span>
-                  <span className="text-[0.7rem] text-dim">{b.done} tarefas</span>
+                  <span className="text-xs text-muted">{b.done} tarefas</span>
                   <span className="text-xs font-bold text-accent">{b.points}</span>
                 </li>
               ))}

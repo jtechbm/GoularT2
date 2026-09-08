@@ -1,6 +1,6 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { Avatar, Card, Chip, Empty, MarketplaceChip, StatusChip } from "@/components/ui";
+import { Avatar, Card, Chip, Empty, MARKETPLACE_COLOR, MarketplaceChip, StatusChip } from "@/components/ui";
 import { SplitBar } from "@/components/charts";
 import { brlShort, dateBR, num, relativeBR } from "@/lib/format";
 import { marketplaceLabel, type Client, type ClientMarketplace, type ClientNote, type User } from "@/lib/types";
@@ -24,7 +24,6 @@ export function TabVisao({
   chart: ReactNode;
 }) {
   const openTasks = tasks.filter((t) => t.status !== "concluida");
-  const colors = ["var(--primary)", "var(--accent)", "var(--info)"];
 
   return (
     <div className="grid gap-3 lg:grid-cols-3">
@@ -40,10 +39,10 @@ export function TabVisao({
         <Card title="Composição do mês" subtitle="Faturamento por marketplace">
           {breakdown.length ? (
             <SplitBar
-              parts={breakdown.map((b, i) => ({
+              parts={breakdown.map((b) => ({
                 label: marketplaceLabel(b.marketplace),
                 value: b.revenue,
-                color: colors[i % colors.length],
+                color: MARKETPLACE_COLOR[b.marketplace] ?? "var(--primary)",
               }))}
             />
           ) : (
@@ -74,7 +73,7 @@ export function TabVisao({
                 <li key={t.id} className="flex items-center justify-between gap-3 px-5 py-3">
                   <span className="min-w-0">
                     <span className="block truncate text-sm font-medium text-ink">{t.title}</span>
-                    <span className="text-[0.7rem] text-dim">
+                    <span className="text-xs text-muted">
                       {t.assignee_name ? `com ${t.assignee_name}` : "disponível no mural"}
                       {t.due_date && ` · vence ${dateBR(t.due_date)}`}
                     </span>
@@ -101,7 +100,7 @@ export function TabVisao({
                   <Avatar name={m.name} color={m.color} size={30} />
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-sm font-medium text-ink">{m.name}</span>
-                    <span className="text-[0.7rem] text-dim">{m.job_title ?? m.role}</span>
+                    <span className="text-xs text-muted">{m.job_title ?? m.role}</span>
                   </span>
                   {m.id === client.owner_id ? <Chip tone="accent">responsável</Chip> : <Chip>{m.team_role}</Chip>}
                 </li>
@@ -128,7 +127,7 @@ export function TabVisao({
                     <MarketplaceChip value={a.marketplace} />
                     <StatusChip value={a.status} />
                   </div>
-                  <div className="mt-1.5 text-[0.7rem] text-dim">
+                  <div className="mt-1.5 text-xs text-muted">
                     {a.nickname ?? "conta sem apelido"}
                     {a.last_sync_at ? ` · sincronizada ${relativeBR(a.last_sync_at)}` : " · nunca sincronizada"}
                   </div>
@@ -175,7 +174,7 @@ export function TabVisao({
               {notes.map((n) => (
                 <li key={n.id} className="border-l-2 border-brand pl-3">
                   <p className="line-clamp-3 whitespace-pre-wrap text-xs leading-relaxed text-muted">{n.body}</p>
-                  <p className="mt-1 text-[0.68rem] text-dim">
+                  <p className="mt-1 text-xs text-muted">
                     {n.user_name ?? "equipe"} · {relativeBR(n.created_at)}
                   </p>
                 </li>

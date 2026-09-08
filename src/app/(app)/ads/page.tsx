@@ -3,7 +3,7 @@ import { Suspense } from "react";
 import { requireUser } from "@/lib/auth";
 import { adsRows, clientOptions, marketplaceBreakdown } from "@/lib/queries";
 import { brl, brlShort, currentMonth, dateBR, lastMonths, monthLabel, num, pct } from "@/lib/format";
-import { Card, Empty, Field, MarketplaceChip, PageHeader, Stat } from "@/components/ui";
+import { Card, Empty, Field, MARKETPLACE_COLOR, MarketplaceChip, PageHeader, Stat } from "@/components/ui";
 import { SaveBar, SubmitButton } from "@/components/submit";
 import { MonthPicker } from "@/components/month-picker";
 import { SplitBar } from "@/components/charts";
@@ -201,7 +201,7 @@ export default async function AdsPage({
                       </div>
                       <div className="h-2 w-full overflow-hidden rounded-full bg-surface-3">
                         <div
-                          className="h-full rounded-full bg-gradient-to-r from-brand to-accent"
+                          className="h-full rounded-full bg-brand"
                           style={{ width: `${Math.max(2, share * 100)}%` }}
                         />
                       </div>
@@ -273,10 +273,10 @@ export default async function AdsPage({
           <Card title="Ads por marketplace" subtitle="Valor lançado no fechamento do mês">
             {breakdown.length ? (
               <SplitBar
-                parts={breakdown.map((b, i) => ({
+                parts={breakdown.map((b) => ({
                   label: marketplaceLabel(b.marketplace),
                   value: b.ads,
-                  color: i === 0 ? "var(--primary)" : "var(--accent)",
+                  color: MARKETPLACE_COLOR[b.marketplace] ?? "var(--primary)",
                 }))}
               />
             ) : (

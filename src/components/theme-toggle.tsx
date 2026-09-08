@@ -1,16 +1,17 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { IconMoon, IconSun } from "./icons";
 
 type Theme = "dark" | "light";
 
-export const THEME_SCRIPT = `(function(){try{var t=localStorage.getItem('goulart-theme')||'dark';document.documentElement.setAttribute('data-theme',t);}catch(e){document.documentElement.setAttribute('data-theme','dark');}})();`;
+export const THEME_SCRIPT = `(function(){try{var t=localStorage.getItem('elleva-theme')||'light';document.documentElement.setAttribute('data-theme',t);}catch(e){document.documentElement.setAttribute('data-theme','light');}})();`;
 
 export function ThemeToggle({ compact = false }: { compact?: boolean }) {
-  const [theme, setTheme] = useState<Theme>("dark");
+  const [theme, setTheme] = useState<Theme>("light");
 
   useEffect(() => {
-    const stored = (document.documentElement.getAttribute("data-theme") as Theme) || "dark";
+    const stored = (document.documentElement.getAttribute("data-theme") as Theme) || "light";
     setTheme(stored);
   }, []);
 
@@ -18,7 +19,7 @@ export function ThemeToggle({ compact = false }: { compact?: boolean }) {
     setTheme(next);
     document.documentElement.setAttribute("data-theme", next);
     try {
-      localStorage.setItem("goulart-theme", next);
+      localStorage.setItem("elleva-theme", next);
     } catch {
       /* storage indisponível — apenas mantém na sessão */
     }
@@ -35,23 +36,24 @@ export function ThemeToggle({ compact = false }: { compact?: boolean }) {
         title={isDark ? "Mudar para modo claro" : "Mudar para modo escuro"}
         aria-label="Alternar tema"
       >
-        {isDark ? "☀" : "☾"}
+        {isDark ? <IconSun size={16} /> : <IconMoon size={16} />}
       </button>
     );
   }
 
   return (
-    <div className="flex items-center gap-1 rounded-lg border border-line bg-surface-2 p-1">
-      {(["dark", "light"] as Theme[]).map((t) => (
+    <div className="flex items-center gap-1 rounded-[10px] border border-line bg-surface-2 p-1">
+      {(["light", "dark"] as Theme[]).map((t) => (
         <button
           key={t}
           type="button"
           onClick={() => apply(t)}
-          className={`flex-1 rounded-md px-2.5 py-1 text-xs font-semibold transition-colors ${
-            theme === t ? "bg-brand text-white" : "text-dim hover:text-ink"
+          className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg px-2 py-1.5 text-xs font-medium transition-colors ${
+            theme === t ? "bg-surface text-ink shadow-[var(--shadow-sm)]" : "text-muted hover:text-ink"
           }`}
         >
-          {t === "dark" ? "☾ Escuro" : "☀ Claro"}
+          {t === "light" ? <IconSun size={14} /> : <IconMoon size={14} />}
+          {t === "light" ? "Claro" : "Escuro"}
         </button>
       ))}
     </div>

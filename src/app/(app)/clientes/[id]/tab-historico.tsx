@@ -74,7 +74,7 @@ export function TabHistorico({
                     <span className="text-xs font-semibold text-ink">{n.user_name ?? "Equipe"}</span>
                     <Chip tone={kind(n.kind).tone}>{kind(n.kind).label}</Chip>
                     {n.pinned === 1 && <Chip tone="accent">fixada</Chip>}
-                    <span className="ml-auto text-[0.68rem] text-dim" title={dateTimeBR(n.created_at)}>
+                    <span className="ml-auto text-xs text-muted" title={dateTimeBR(n.created_at)}>
                       {relativeBR(n.created_at)}
                     </span>
                   </div>

@@ -81,7 +81,7 @@ export default async function CanalPage({ params }: { params: Promise<{ slug: st
                   <div className="min-w-0 flex-1">
                     <div className="flex items-baseline gap-2">
                       <span className="text-sm font-semibold text-ink">{g.user_name ?? "Equipe"}</span>
-                      <span className="text-[0.68rem] text-dim" title={dateTimeBR(g.at)}>
+                      <span className="text-xs text-muted" title={dateTimeBR(g.at)}>
                         {relativeBR(g.at)}
                       </span>
                       {g.user_id === user.id && <Chip tone="accent">você</Chip>}

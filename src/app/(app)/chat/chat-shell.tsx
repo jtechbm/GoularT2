@@ -48,7 +48,7 @@ export function ChatShell({
                       </span>
                       {c.kind === "cliente" && <Chip tone="brand">cliente</Chip>}
                     </span>
-                    <span className="mt-0.5 block text-[0.68rem] text-dim">
+                    <span className="mt-0.5 block text-xs text-muted">
                       {c.messages} {c.messages === 1 ? "mensagem" : "mensagens"}
                       {c.last_at && ` · ${relativeBR(c.last_at)}`}
                     </span>
