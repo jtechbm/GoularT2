@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { randomBytes } from "node:crypto";
-import { all, now, one, run } from "@/lib/db";
+import { all, id, now, one, run } from "@/lib/db";
 import { requireRole, requireUser } from "@/lib/auth";
 import { str } from "@/lib/format";
 import { adapterFor, syncAccount } from "@/lib/integrations";
@@ -47,6 +47,56 @@ export async function generateAuthLinkAction(formData: FormData) {
 
   revalidatePath("/integracoes");
   redirect(`${back}${back.includes("?") ? "&" : "?"}link=${accountId}`);
+}
+
+/**
+ * Caminho curto: um clique na página do cliente e o link fica pronto.
+ * Cria a conta do marketplace se ainda não existir — quem usa não precisa
+ * saber que existe um cadastro de "canal" por trás.
+ */
+export async function requestAccessAction(formData: FormData) {
+  const user = await requireRole("admin", "gestor");
+  const clientId = str(formData.get("client_id"));
+  const marketplace = str(formData.get("marketplace"));
+
+  const adapter = adapterFor(marketplace);
+  if (!adapter.isConfigured()) {
+    redirect(`/clientes/${clientId}?erro=env&mk=${marketplace}`);
+  }
+
+  let conta = await one<{ id: string }>(
+    "SELECT id FROM client_marketplaces WHERE client_id = ? AND marketplace = ? ORDER BY created_at LIMIT 1",
+    clientId,
+    marketplace,
+  );
+
+  if (!conta) {
+    const novo = id();
+    await run(
+      `INSERT INTO client_marketplaces (id, client_id, marketplace, status, created_at)
+       VALUES (?,?,?,'pendente',?)`,
+      novo,
+      clientId,
+      marketplace,
+      now(),
+    );
+    conta = { id: novo };
+  }
+
+  const token = randomBytes(32).toString("hex");
+  await run(
+    `UPDATE client_marketplaces
+        SET auth_token = ?, auth_expires_at = ?, auth_used_at = NULL, auth_created_by = ?
+      WHERE id = ?`,
+    token,
+    new Date(Date.now() + DIAS_VALIDADE * 864e5).toISOString(),
+    user.id,
+    conta.id,
+  );
+
+  revalidatePath(`/clientes/${clientId}`);
+  revalidatePath("/integracoes");
+  redirect(`/clientes/${clientId}?acesso=${marketplace}`);
 }
 
 /** Invalida o link sem mexer na conexão já feita. */

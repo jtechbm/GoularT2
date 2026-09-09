@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { Avatar, Card, Chip, Empty, MARKETPLACE_COLOR, MarketplaceChip, StatusChip } from "@/components/ui";
 import { SplitBar } from "@/components/charts";
+import { ConectarLojas } from "@/components/conectar-lojas";
 import { brlShort, dateBR, num, relativeBR } from "@/lib/format";
 import { marketplaceLabel, type Client, type ClientMarketplace, type ClientNote, type User } from "@/lib/types";
 import type { TaskRow, Totals } from "@/lib/queries";
@@ -14,6 +15,8 @@ export function TabVisao({
   tasks,
   breakdown,
   chart,
+  manager,
+  destaqueAcesso,
 }: {
   client: Client;
   team: (User & { team_role: string })[];
@@ -22,12 +25,16 @@ export function TabVisao({
   tasks: TaskRow[];
   breakdown: (Totals & { marketplace: string })[];
   chart: ReactNode;
+  manager: boolean;
+  destaqueAcesso?: string;
 }) {
   const openTasks = tasks.filter((t) => t.status !== "concluida");
 
   return (
     <div className="grid gap-3 lg:grid-cols-3">
       <div className="space-y-3 lg:col-span-2">
+        <ConectarLojas client={client} accounts={accounts} manager={manager} destaque={destaqueAcesso} />
+
         {client.summary && (
           <Card title="Resumo da operação">
             <p className="whitespace-pre-wrap text-sm leading-relaxed text-muted">{client.summary}</p>

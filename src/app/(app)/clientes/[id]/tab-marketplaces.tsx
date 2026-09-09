@@ -13,7 +13,7 @@ import {
 } from "@/lib/actions/integrations";
 import { AuthLink } from "@/components/auth-link";
 import { dateTimeBR, monthLabel } from "@/lib/format";
-import { MARKETPLACES, type Client, type ClientMarketplace } from "@/lib/types";
+import { MARKETPLACES, marketplaceLabel, type Client, type ClientMarketplace } from "@/lib/types";
 
 export function TabMarketplaces({
   client,
@@ -123,7 +123,12 @@ export function TabMarketplaces({
 
               {a.auth_token && (
                 <div className="-mx-5 border-t border-line px-5 py-3">
-                  <AuthLink token={a.auth_token} expiresAt={a.auth_expires_at} />
+                  <AuthLink
+                    token={a.auth_token}
+                    expiresAt={a.auth_expires_at}
+                    marketplaceLabel={marketplaceLabel(a.marketplace)}
+                    clientPhone={client.contact_phone}
+                  />
                 </div>
               )}
 

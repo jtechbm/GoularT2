@@ -47,7 +47,7 @@ export default async function ClientePage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ tab?: string; mes?: string; ok?: string; sync?: string }>;
+  searchParams: Promise<{ tab?: string; mes?: string; ok?: string; sync?: string; acesso?: string; erro?: string }>;
 }) {
   const user = await requireUser();
   const { id } = await params;
@@ -154,6 +154,8 @@ export default async function ClientePage({
             team={team}
             accounts={accounts}
             notes={notes.slice(0, 5)}
+            manager={manager}
+            destaqueAcesso={sp.acesso}
             tasks={clientTasks}
             breakdown={breakdown}
             chart={
