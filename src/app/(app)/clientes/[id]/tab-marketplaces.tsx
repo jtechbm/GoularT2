@@ -77,12 +77,25 @@ export function TabMarketplaces({
                   </SubmitButton>
                 </form>
 
-                {manager && a.status !== "conectado" && (
+                {manager && (
                   <form action={generateAuthLinkAction}>
                     <input type="hidden" name="account_id" value={a.id} />
                     <input type="hidden" name="redirect_to" value={`/clientes/${client.id}?tab=marketplaces`} />
-                    <SubmitButton variant="primary" size="sm" pendingLabel="Gerando…">
-                      {a.auth_token ? "Gerar novo link" : "Gerar link de autorização"}
+                    <SubmitButton
+                      variant={a.status === "conectado" ? "ghost" : "primary"}
+                      size="sm"
+                      pendingLabel="Gerando…"
+                      title={
+                        a.status === "conectado"
+                          ? "Use quando as permissões do app mudarem ou o lojista revogar o acesso"
+                          : undefined
+                      }
+                    >
+                      {a.status === "conectado"
+                        ? "Pedir nova autorização"
+                        : a.auth_token
+                          ? "Gerar novo link"
+                          : "Gerar link de autorização"}
                     </SubmitButton>
                   </form>
                 )}
@@ -121,7 +134,7 @@ export function TabMarketplaces({
                 </span>
               </div>
 
-              {a.auth_token && (
+              {a.auth_token && !a.auth_used_at && (
                 <div className="-mx-5 border-t border-line px-5 py-3">
                   <AuthLink
                     token={a.auth_token}

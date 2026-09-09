@@ -72,6 +72,48 @@ async function refreshIfNeeded(ctx: AdapterContext): Promise<string> {
   return next.access_token!;
 }
 
+/**
+ * Investimento em Product Ads no período.
+ *
+ * Devolve null quando não há como saber — conta sem Product Ads (404), token
+ * sem a permissão de publicidade (403) ou qualquer falha. Nesses casos o valor
+ * lançado à mão continua valendo, em vez de ser zerado por engano.
+ */
+async function buscarAds(token: string, refMonth: string): Promise<number | null> {
+  const cabecalhos = { authorization: `Bearer ${token}`, accept: "application/json", "Api-Version": "1" };
+  const { start, end } = monthRange(refMonth);
+  const de = start.toISOString().slice(0, 10);
+  const ate = new Date(end.getTime() - 864e5).toISOString().slice(0, 10);
+
+  const resAnunciante = await fetch(`${API}/advertising/advertisers?product_id=PADS`, { headers: cabecalhos });
+  if (!resAnunciante.ok) return null; // 404 = conta não anuncia; 403 = sem permissão
+
+  const anunciantes = ((await resAnunciante.json()) as { advertisers?: { advertiser_id: number }[] }).advertisers ?? [];
+  if (!anunciantes.length) return null;
+
+  let total = 0;
+  let algumRespondeu = false;
+
+  for (const a of anunciantes) {
+    const qs = new URLSearchParams({ date_from: de, date_to: ate, metrics: "cost,clicks,prints" });
+    const res = await fetch(
+      `${API}/advertising/advertisers/${a.advertiser_id}/product_ads/campaigns?${qs}`,
+      { headers: cabecalhos },
+    );
+    if (!res.ok) continue;
+
+    const corpo = (await res.json()) as {
+      results?: { metrics?: { cost?: number }; cost?: number }[];
+    };
+    algumRespondeu = true;
+    for (const campanha of corpo.results ?? []) {
+      total += campanha.metrics?.cost ?? campanha.cost ?? 0;
+    }
+  }
+
+  return algumRespondeu ? total : null;
+}
+
 export const mercadoLivre: MarketplaceAdapter = {
   marketplace: "mercado_livre",
   label: "Mercado Livre",
@@ -211,6 +253,14 @@ export const mercadoLivre: MarketplaceAdapter = {
       } catch {
         out.shipping = 0;
       }
+    }
+
+    // investimento em Ads, quando a conta anuncia e o token tem a permissão
+    try {
+      const ads = await buscarAds(token, refMonth);
+      if (ads !== null) out.ads = ads;
+    } catch {
+      /* Ads é complemento: nunca derruba a apuração do faturamento */
     }
 
     // custo de produto não vem da API — fica com o time e entra pela tela do cliente

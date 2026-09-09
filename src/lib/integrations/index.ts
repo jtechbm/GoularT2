@@ -111,7 +111,8 @@ export async function syncAccount(
       refMonth,
     );
     const cogs = existing?.cogs ?? result.cogs;
-    const ads = existing?.ads ?? result.ads;
+    // API manda quando trouxe número; senão vale o lançamento manual
+    const ads = result.ads || existing?.ads || 0;
     // a API do ML não informa o frete pago pelo vendedor; o lançado à mão manda
     const shipping = result.shipping || existing?.shipping || 0;
     const profit = result.revenue - result.fees - shipping - result.tax - ads - cogs;
