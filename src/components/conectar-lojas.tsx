@@ -73,7 +73,7 @@ export function ConectarLojas({
                     <input type="hidden" name="client_id" value={client.id} />
                     <input type="hidden" name="marketplace" value={m.value} />
                     <SubmitButton variant={temLink ? "ghost" : "primary"} pendingLabel="Gerando…">
-                      {temLink ? "Gerar link novo" : `Pedir acesso à ${m.label}`}
+                      {temLink ? "Gerar link novo" : `Pedir acesso ${m.prep} ${m.label}`}
                     </SubmitButton>
                   </form>
                 )}

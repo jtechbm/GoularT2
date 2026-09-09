@@ -118,9 +118,10 @@ export interface Task {
   updated_at: string;
 }
 
-export const MARKETPLACES: { value: Marketplace; label: string; short: string }[] = [
-  { value: "mercado_livre", label: "Mercado Livre", short: "ML" },
-  { value: "shopee", label: "Shopee", short: "SP" },
+export const MARKETPLACES: { value: Marketplace; label: string; short: string; prep: string }[] = [
+  // prep: "acesso ao Mercado Livre" x "acesso à Shopee"
+  { value: "mercado_livre", label: "Mercado Livre", short: "ML", prep: "ao" },
+  { value: "shopee", label: "Shopee", short: "SP", prep: "à" },
 ];
 
 export const CLIENT_STATUS: { value: ClientStatus; label: string }[] = [
