@@ -47,6 +47,13 @@ export interface ClientMarketplace {
   last_sync_at: string | null;
   last_error: string | null;
   created_at: string;
+  /** link de autorização enviado ao lojista */
+  auth_token: string | null;
+  auth_expires_at: string | null;
+  auth_used_at: string | null;
+  authorized_at: string | null;
+  authorized_ip: string | null;
+  auth_created_by: string | null;
 }
 
 export interface FinanceSnapshot {

@@ -209,6 +209,17 @@ CREATE TABLE IF NOT EXISTS agency_expenses (
 CREATE INDEX IF NOT EXISTS idx_charges_month  ON agency_charges(ref_month, status);
 CREATE INDEX IF NOT EXISTS idx_expenses_month ON agency_expenses(ref_month);
 
+-- link de autorização enviado ao lojista (Fase 1 das integrações)
+ALTER TABLE client_marketplaces ADD COLUMN IF NOT EXISTS auth_token      text;
+ALTER TABLE client_marketplaces ADD COLUMN IF NOT EXISTS auth_expires_at text;
+ALTER TABLE client_marketplaces ADD COLUMN IF NOT EXISTS auth_used_at    text;
+ALTER TABLE client_marketplaces ADD COLUMN IF NOT EXISTS authorized_at   text;
+ALTER TABLE client_marketplaces ADD COLUMN IF NOT EXISTS authorized_ip   text;
+ALTER TABLE client_marketplaces ADD COLUMN IF NOT EXISTS auth_created_by text;
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_cm_auth_token ON client_marketplaces(auth_token)
+  WHERE auth_token IS NOT NULL;
+
 CREATE INDEX IF NOT EXISTS idx_fin_client   ON finance_snapshots(client_id, ref_month);
 CREATE INDEX IF NOT EXISTS idx_ads_client   ON ads_entries(client_id, period_start);
 CREATE INDEX IF NOT EXISTS idx_notes_client ON client_notes(client_id, created_at);

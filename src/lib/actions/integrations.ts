@@ -2,27 +2,64 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { all, one, run } from "@/lib/db";
+import { randomBytes } from "node:crypto";
+import { all, now, one, run } from "@/lib/db";
 import { requireRole, requireUser } from "@/lib/auth";
 import { str } from "@/lib/format";
 import { adapterFor, syncAccount } from "@/lib/integrations";
 import { currentMonth } from "@/lib/format";
 
-/** Leva o usuário para o consentimento OAuth do marketplace. */
-export async function connectAccountAction(formData: FormData) {
-  await requireRole("admin", "gestor");
+const DIAS_VALIDADE = 7;
+
+/**
+ * Gera o link de autorização que o Kadu manda para o lojista pelo WhatsApp.
+ * Token longo, de uso único e com prazo — é ele que autoriza a gravação no
+ * callback, já que o lojista não tem sessão no Elleva.
+ */
+export async function generateAuthLinkAction(formData: FormData) {
+  const user = await requireRole("admin", "gestor");
   const accountId = str(formData.get("account_id"));
-  const account = await one<{ marketplace: string; client_id: string }>(
-    "SELECT marketplace, client_id FROM client_marketplaces WHERE id = ?",
+  const back = str(formData.get("redirect_to")) || "/integracoes";
+
+  const conta = await one<{ marketplace: string }>(
+    "SELECT marketplace FROM client_marketplaces WHERE id = ?",
     accountId,
   );
-  if (!account) redirect("/integracoes?erro=conta");
+  if (!conta) redirect(`${back}${back.includes("?") ? "&" : "?"}erro=conta`);
 
-  const adapter = adapterFor(account.marketplace);
+  const adapter = adapterFor(conta.marketplace);
   if (!adapter.isConfigured()) {
-    redirect(`/integracoes?erro=env&mk=${account.marketplace}`);
+    redirect(`${back}${back.includes("?") ? "&" : "?"}erro=env&mk=${conta.marketplace}`);
   }
-  redirect(adapter.authorizeUrl(accountId));
+
+  const token = randomBytes(32).toString("hex");
+  const expira = new Date(Date.now() + DIAS_VALIDADE * 864e5).toISOString();
+
+  await run(
+    `UPDATE client_marketplaces
+        SET auth_token = ?, auth_expires_at = ?, auth_used_at = NULL, auth_created_by = ?
+      WHERE id = ?`,
+    token,
+    expira,
+    user.id,
+    accountId,
+  );
+
+  revalidatePath("/integracoes");
+  redirect(`${back}${back.includes("?") ? "&" : "?"}link=${accountId}`);
+}
+
+/** Invalida o link sem mexer na conexão já feita. */
+export async function revokeAuthLinkAction(formData: FormData) {
+  await requireRole("admin", "gestor");
+  const accountId = str(formData.get("account_id"));
+  const back = str(formData.get("redirect_to")) || "/integracoes";
+  await run(
+    "UPDATE client_marketplaces SET auth_token = NULL, auth_expires_at = NULL WHERE id = ?",
+    accountId,
+  );
+  revalidatePath("/integracoes");
+  redirect(back);
 }
 
 /** Sincroniza o fechamento do mês de uma conta. */
@@ -63,7 +100,10 @@ export async function disconnectAccountAction(formData: FormData) {
   await requireRole("admin", "gestor");
   const accountId = str(formData.get("account_id"));
   await run(
-    "UPDATE client_marketplaces SET credentials = NULL, status = 'pendente', last_error = NULL WHERE id = ?",
+    `UPDATE client_marketplaces
+        SET credentials = NULL, status = 'pendente', last_error = NULL,
+            authorized_at = NULL, auth_token = NULL, auth_expires_at = NULL, auth_used_at = NULL
+      WHERE id = ?`,
     accountId,
   );
   revalidatePath("/integracoes");

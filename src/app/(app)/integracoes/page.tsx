@@ -8,7 +8,12 @@ import { currentMonth, dateTimeBR, lastMonths, monthLabel, relativeBR } from "@/
 import { Card, Chip, Empty, MarketplaceChip, PageHeader, Stat, StatusChip } from "@/components/ui";
 import { SubmitButton } from "@/components/submit";
 import { MonthPicker } from "@/components/month-picker";
-import { connectAccountAction, disconnectAccountAction, syncAccountAction, syncAllAction } from "@/lib/actions/integrations";
+import {
+  disconnectAccountAction,
+  generateAuthLinkAction,
+  syncAccountAction,
+  syncAllAction,
+} from "@/lib/actions/integrations";
 
 // a sincronização com os marketplaces pode levar dezenas de segundos
 export const maxDuration = 60;
@@ -177,10 +182,11 @@ export default async function IntegracoesPage({
                               </SubmitButton>
                             </form>
                           ) : (
-                            <form action={connectAccountAction}>
+                            <form action={generateAuthLinkAction}>
                               <input type="hidden" name="account_id" value={a.id} />
-                              <SubmitButton variant="primary" size="sm">
-                                Conectar
+                              <input type="hidden" name="redirect_to" value={`/integracoes?mes=${ref}`} />
+                              <SubmitButton variant="primary" size="sm" pendingLabel="Gerando…">
+                                Gerar link
                               </SubmitButton>
                             </form>
                           ))}

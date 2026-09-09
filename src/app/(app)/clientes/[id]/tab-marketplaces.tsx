@@ -5,7 +5,13 @@ import {
   removeMarketplaceAction,
   updateMarketplaceAction,
 } from "@/lib/actions/clients";
-import { connectAccountAction, disconnectAccountAction, syncAccountAction } from "@/lib/actions/integrations";
+import {
+  disconnectAccountAction,
+  generateAuthLinkAction,
+  revokeAuthLinkAction,
+  syncAccountAction,
+} from "@/lib/actions/integrations";
+import { AuthLink } from "@/components/auth-link";
 import { dateTimeBR, monthLabel } from "@/lib/format";
 import { MARKETPLACES, type Client, type ClientMarketplace } from "@/lib/types";
 
@@ -72,10 +78,21 @@ export function TabMarketplaces({
                 </form>
 
                 {manager && a.status !== "conectado" && (
-                  <form action={connectAccountAction}>
+                  <form action={generateAuthLinkAction}>
                     <input type="hidden" name="account_id" value={a.id} />
-                    <SubmitButton variant="primary" size="sm" pendingLabel="Redirecionando…">
-                      Conectar via OAuth
+                    <input type="hidden" name="redirect_to" value={`/clientes/${client.id}?tab=marketplaces`} />
+                    <SubmitButton variant="primary" size="sm" pendingLabel="Gerando…">
+                      {a.auth_token ? "Gerar novo link" : "Gerar link de autorização"}
+                    </SubmitButton>
+                  </form>
+                )}
+
+                {manager && a.auth_token && (
+                  <form action={revokeAuthLinkAction}>
+                    <input type="hidden" name="account_id" value={a.id} />
+                    <input type="hidden" name="redirect_to" value={`/clientes/${client.id}?tab=marketplaces`} />
+                    <SubmitButton variant="ghost" size="sm" confirm="Invalidar o link enviado?">
+                      Invalidar link
                     </SubmitButton>
                   </form>
                 )}
@@ -103,6 +120,13 @@ export function TabMarketplaces({
                   A sincronização traz apenas os valores finais do mês (faturamento, taxas, impostos, pedidos).
                 </span>
               </div>
+
+              {a.auth_token && (
+                <div className="-mx-5 border-t border-line px-5 py-3">
+                  <AuthLink token={a.auth_token} expiresAt={a.auth_expires_at} />
+                </div>
+              )}
+
             </Card>
           ))
         ) : (
@@ -152,8 +176,8 @@ export function TabMarketplaces({
               partner key da Shopee e client id/secret do Mercado Livre.
             </li>
             <li>
-              <Chip tone="brand">3</Chip> Clique em <strong>Conectar via OAuth</strong>: o cliente autoriza e o token
-              fica guardado cifrado.
+              <Chip tone="brand">3</Chip> Gere o <strong>link de autorização</strong> e mande para o lojista. Ele
+              aprova no painel do próprio marketplace — não entra aqui e não vê nada do sistema.
             </li>
             <li>
               <Chip tone="brand">4</Chip> Sincronize o mês. Só os valores finais entram no GoularT — nada de pedido a
