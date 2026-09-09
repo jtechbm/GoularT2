@@ -349,6 +349,38 @@ export async function clientOptions() {
   );
 }
 
+/** Saúde das integrações: o que está quebrado ou parado de atualizar. */
+export async function integrationHealth() {
+  const contas = await all<{
+    id: string;
+    client_id: string;
+    client_name: string;
+    marketplace: string;
+    status: string;
+    last_error: string | null;
+    last_sync_at: string | null;
+  }>(
+    `SELECT cm.id, cm.client_id, cl.name AS client_name, cm.marketplace, cm.status,
+            cm.last_error, cm.last_sync_at
+       FROM client_marketplaces cm
+       JOIN clients cl ON cl.id = cm.client_id
+      WHERE cm.status IN ('conectado', 'erro')
+      ORDER BY cm.last_sync_at ASC NULLS FIRST`,
+  );
+
+  const limite = Date.now() - 3 * 864e5;
+  const comErro = contas.filter((c) => c.status === "erro");
+  const paradas = contas.filter(
+    (c) => c.status === "conectado" && (!c.last_sync_at || new Date(c.last_sync_at).getTime() < limite),
+  );
+
+  const ultimoCron = await one<{ created_at: string; status: string; message: string | null }>(
+    "SELECT created_at, status, message FROM sync_logs WHERE marketplace = 'cron' ORDER BY created_at DESC LIMIT 1",
+  );
+
+  return { conectadas: contas.length - comErro.length, comErro, paradas, ultimoCron };
+}
+
 export async function syncLogs(limit = 20) {
   return all<{
     id: string;

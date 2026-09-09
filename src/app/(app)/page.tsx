@@ -9,6 +9,7 @@ import {
   tasks,
   totalsForMonth,
   ownStoreTotals,
+  integrationHealth,
 } from "@/lib/queries";
 import { addMonths, brl, brlShort, currentMonth, dateBR, lastMonths, num, pct } from "@/lib/format";
 import {
@@ -26,6 +27,7 @@ import {
 import { RevenueProfitChart, ChartLegend, Donut } from "@/components/charts";
 import { IconBarChart, IconDollar, IconPlus, IconReceipt, IconTrendUp, IconUsers } from "@/components/icons";
 import { MonthPicker } from "@/components/month-picker";
+import { SaudeIntegracoes } from "@/components/saude-integracoes";
 import { marketplaceLabel } from "@/lib/types";
 
 function growth(current: number, previous: number): number {
@@ -65,6 +67,7 @@ export default async function DashboardPage({
   const openTasks = await tasks({ status: "disponivel" });
   const myTasks = await tasks({ status: "em_andamento", assignee: user.id });
   const board = await leaderboard();
+  const saude = await integrationHealth();
   const top = rows.slice(0, 8);
 
   const totalRevenue = byMarketplace.reduce((s, m) => s + m.revenue, 0);
@@ -298,6 +301,13 @@ export default async function DashboardPage({
         </Card>
 
         <div className="space-y-3">
+          <SaudeIntegracoes
+            conectadas={saude.conectadas}
+            comErro={saude.comErro}
+            paradas={saude.paradas}
+            ultimoCron={saude.ultimoCron}
+          />
+
           <Card title="Precisa de atenção" subtitle="Queda relevante ou status crítico">
             {attention.length ? (
               <ul className="space-y-2">

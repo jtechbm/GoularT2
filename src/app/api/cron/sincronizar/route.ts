@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { all } from "@/lib/db";
+import { all, id, now, run } from "@/lib/db";
 import { syncAccount } from "@/lib/integrations";
 import { addMonths, currentMonth } from "@/lib/format";
 
@@ -58,11 +58,24 @@ export async function GET(req: NextRequest) {
     if (semTempo) break;
   }
 
+  // batimento cardíaco: sem isto, um cron que nunca roda é indistinguível
+  // de um cron que roda e não encontra nada para fazer
+  const erros = resultados.filter((r) => !r.ok).length;
+  await run(
+    `INSERT INTO sync_logs (id, client_marketplace_id, marketplace, ref_month, status, message, created_at)
+     VALUES (?,NULL,'cron',?,?,?,?)`,
+    id(),
+    mesAtual,
+    erros ? "parcial" : "ok",
+    `${resultados.length} sincronizações · ${erros} com erro${semTempo ? " · fila incompleta" : ""}`,
+    now(),
+  );
+
   return NextResponse.json({
     contas: contas.length,
     processadas: resultados.length,
     ok: resultados.filter((r) => r.ok).length,
-    erros: resultados.filter((r) => !r.ok).length,
+    erros,
     incompleto: semTempo,
     resultados,
   });

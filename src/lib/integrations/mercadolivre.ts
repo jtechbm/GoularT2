@@ -139,6 +139,8 @@ export const mercadoLivre: MarketplaceAdapter = {
     const { start, end } = monthRange(refMonth);
     const out = emptyMonth(refMonth);
     const limit = 50;
+    const prazo = syncDeadline();
+    const envios = new Set<number>();
 
     const buscarPagina = async (offset: number) => {
       const qs = new URLSearchParams({
@@ -166,12 +168,11 @@ export const mercadoLivre: MarketplaceAdapter = {
           out.fees += item.sale_fee ?? 0;
         }
         for (const payment of order.payments ?? []) {
-          // shipping_cost aqui é o frete que o COMPRADOR pagou, não custo do
-          // vendedor: somar isso como despesa derrubava o lucro indevidamente.
-          // O custo real do vendedor está no envio (senders_cost) e exigiria
-          // uma chamada por pedido — por ora o frete fica com a equipe.
+          // shipping_cost aqui é o frete que o COMPRADOR pagou — não é custo do
+          // vendedor. O custo dele vem de /shipments/{id}/costs, mais abaixo.
           out.tax += payment.taxes_amount ?? 0;
         }
+        if (order.shipping?.id) envios.add(order.shipping.id);
       }
     };
 
@@ -184,13 +185,31 @@ export const mercadoLivre: MarketplaceAdapter = {
     for (let offset = limit; offset < total; offset += limit) offsets.push(offset);
 
     if (offsets.length) {
-      const { results, done, timedOut } = await mapLimit(offsets, 5, syncDeadline(), buscarPagina);
+      const { results, done, timedOut } = await mapLimit(offsets, 5, prazo, buscarPagina);
       for (const page of results) somar(page.results ?? []);
       if (timedOut) {
         throw new IntegrationError(
           `Mês grande demais para sincronizar de uma vez: ${(done + 1) * limit} de ${total} pedidos ` +
             "processados antes do tempo limite.",
         );
+      }
+    }
+
+    // frete que o VENDEDOR paga: uma chamada por envio, em paralelo.
+    // Se falhar ou faltar tempo, o faturamento já apurado continua valendo e o
+    // frete fica zerado para lançamento manual — melhor do que perder tudo.
+    if (envios.size) {
+      try {
+        const { results } = await mapLimit([...envios], 8, prazo, async (envioId) => {
+          const res = await fetch(`${API}/shipments/${envioId}/costs`, { headers: { authorization: `Bearer ${token}`, accept: "application/json" } });
+          if (!res.ok) return null;
+          return (await res.json()) as { senders?: { cost?: number }[] };
+        });
+        for (const custo of results) {
+          for (const remetente of custo?.senders ?? []) out.shipping += remetente.cost ?? 0;
+        }
+      } catch {
+        out.shipping = 0;
       }
     }
 
