@@ -154,7 +154,22 @@ export const shopee: MarketplaceAdapter = {
     });
     if (!res.ok) throw new IntegrationError(`Shopee recusou o código (${res.status}).`, "auth");
 
-    const json = (await res.json()) as { access_token: string; refresh_token: string; expire_in: number };
+    const json = (await res.json()) as {
+      access_token?: string;
+      refresh_token?: string;
+      expire_in?: number;
+      error?: string;
+      message?: string;
+    };
+    // a Shopee responde 200 mesmo quando recusa: o erro vem no corpo
+    if (json.error || !json.access_token) {
+      throw new IntegrationError(
+        `Shopee recusou a autorização: ${json.error || "resposta sem access_token"}${json.message ? ` — ${json.message}` : ""}`,
+        "auth",
+      );
+    }
+    if (!shopId) throw new IntegrationError("A Shopee não devolveu o shop_id no retorno.", "auth");
+
     return {
       access_token: json.access_token,
       refresh_token: json.refresh_token,
@@ -173,11 +188,15 @@ export const shopee: MarketplaceAdapter = {
 
     const { start, end } = monthRange(refMonth);
     const out = emptyMonth(refMonth);
-    const orderIds: string[] = [];
+    // Set porque as janelas e a paginação da Shopee podem repetir o mesmo pedido,
+    // e pedido contado duas vezes vira faturamento inflado
+    const vistos = new Set<string>();
     const WINDOW = 14 * 86400;
+    const inicio = Math.floor(start.getTime() / 1000);
+    const fim = Math.floor(end.getTime() / 1000) - 1; // o intervalo da Shopee é inclusivo nas duas pontas
 
-    for (let from = Math.floor(start.getTime() / 1000); from < Math.floor(end.getTime() / 1000); from += WINDOW) {
-      const to = Math.min(from + WINDOW, Math.floor(end.getTime() / 1000));
+    for (let from = inicio; from <= fim; from += WINDOW) {
+      const to = Math.min(from + WINDOW - 1, fim);
       let cursor = "";
       do {
         const page = await call<{ response: { order_list: { order_sn: string }[]; next_cursor: string; more: boolean } }>(
@@ -192,11 +211,12 @@ export const shopee: MarketplaceAdapter = {
           },
           creds,
         );
-        orderIds.push(...(page.response?.order_list ?? []).map((o) => o.order_sn));
+        for (const o of page.response?.order_list ?? []) vistos.add(o.order_sn);
         cursor = page.response?.more ? page.response.next_cursor : "";
       } while (cursor);
     }
 
+    const orderIds = [...vistos];
     out.orders = orderIds.length;
 
     // o escrow é uma chamada por pedido: em paralelo, com limite e prazo

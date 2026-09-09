@@ -9,7 +9,8 @@
     "criar-admin": "node --experimental-strip-types --env-file-if-exists=.env scripts/criar-admin.ts",
     "migrar": "node --experimental-strip-types --env-file-if-exists=.env scripts/migrar.ts",
     "testar-conexao": "node --experimental-strip-types --env-file-if-exists=.env scripts/testar-conexao.ts",
-    "gerar-logo": "node --experimental-strip-types scripts/gerar-logo.ts"
+    "gerar-logo": "node --experimental-strip-types scripts/gerar-logo.ts",
+    "testar-shopee": "node --experimental-strip-types --env-file-if-exists=.env scripts/testar-shopee.ts"
   },
   "dependencies": {
     "next": "^15.5.25",
