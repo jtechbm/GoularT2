@@ -17,6 +17,7 @@ export function TabVisao({
   chart,
   manager,
   destaqueAcesso,
+  marketplacesDisponiveis,
 }: {
   client: Client;
   team: (User & { team_role: string })[];
@@ -27,13 +28,20 @@ export function TabVisao({
   chart: ReactNode;
   manager: boolean;
   destaqueAcesso?: string;
+  marketplacesDisponiveis: string[];
 }) {
   const openTasks = tasks.filter((t) => t.status !== "concluida");
 
   return (
     <div className="grid gap-3 lg:grid-cols-3">
       <div className="space-y-3 lg:col-span-2">
-        <ConectarLojas client={client} accounts={accounts} manager={manager} destaque={destaqueAcesso} />
+        <ConectarLojas
+          client={client}
+          accounts={accounts}
+          manager={manager}
+          destaque={destaqueAcesso}
+          disponiveis={marketplacesDisponiveis}
+        />
 
         {client.summary && (
           <Card title="Resumo da operação">

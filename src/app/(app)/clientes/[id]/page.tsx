@@ -16,6 +16,7 @@ import {
 import { addMonths, brl, brlShort, currentMonth, dateBR, lastMonths, num, pct } from "@/lib/format";
 import { Avatar, Card, Chip, Delta, PageHeader, Stat, StatusChip } from "@/components/ui";
 import { RevenueProfitChart, ChartLegend } from "@/components/charts";
+import { integrationStatus } from "@/lib/integrations";
 import { TabVisao } from "./tab-visao";
 import { TabFinanceiro } from "./tab-financeiro";
 import { TabMarketplaces } from "./tab-marketplaces";
@@ -71,6 +72,7 @@ export default async function ClientePage({
   const clientTasks = await tasks({ clientId: client.id });
   const breakdown = await marketplaceBreakdown(ref, client.id);
   const allUsers = await listUsers();
+  const marketplacesDisponiveis = (await integrationStatus()).filter((i) => i.configured).map((i) => i.marketplace);
   const manager = isManager(user);
   const margin = totals.revenue ? totals.profit / totals.revenue : 0;
 
@@ -102,6 +104,11 @@ export default async function ClientePage({
       {sp.ok && (
         <div className="flash mb-4 rounded-lg border border-ok/30 bg-ok-soft px-4 py-2.5 text-sm font-medium text-ok">
           Alterações salvas.
+        </div>
+      )}
+      {sp.erro === "env" && (
+        <div className="flash mb-4 rounded-[10px] bg-warn-soft px-4 py-2.5 text-sm font-medium text-warn">
+          Essa integração ainda não está configurada no sistema. Fale com quem cuida da configuração.
         </div>
       )}
       {sp.sync && (
@@ -156,6 +163,7 @@ export default async function ClientePage({
             notes={notes.slice(0, 5)}
             manager={manager}
             destaqueAcesso={sp.acesso}
+            marketplacesDisponiveis={marketplacesDisponiveis}
             tasks={clientTasks}
             breakdown={breakdown}
             chart={

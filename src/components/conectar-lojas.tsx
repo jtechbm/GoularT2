@@ -15,12 +15,15 @@ export function ConectarLojas({
   accounts,
   manager,
   destaque,
+  disponiveis,
 }: {
   client: Client;
   accounts: ClientMarketplace[];
   manager: boolean;
   /** marketplace cujo link acabou de ser gerado */
   destaque?: string;
+  /** marketplaces com chaves configuradas no ambiente */
+  disponiveis: string[];
 }) {
   if (!manager) return null;
 
@@ -41,6 +44,7 @@ export function ConectarLojas({
           const conta = porMarketplace.get(m.value);
           const conectado = conta?.status === "conectado";
           const temLink = Boolean(conta?.auth_token);
+          const disponivel = disponiveis.includes(m.value);
 
           return (
             <div key={m.value} className="space-y-3">
@@ -48,7 +52,9 @@ export function ConectarLojas({
                 <div className="min-w-0">
                   <div className="text-sm font-medium text-ink">{m.label}</div>
                   <div className="text-xs text-muted">
-                    {conectado
+                    {!disponivel
+                      ? "Integração ainda não configurada no sistema"
+                      : conectado
                       ? conta?.last_sync_at
                         ? `Conectada · atualizada ${relativeBR(conta.last_sync_at)}`
                         : "Conectada · ainda não sincronizada"
@@ -58,7 +64,9 @@ export function ConectarLojas({
                   </div>
                 </div>
 
-                {conectado ? (
+                {!disponivel ? (
+                  <Chip tone="neutral">Indisponível</Chip>
+                ) : conectado ? (
                   <Chip tone="ok">Conectada</Chip>
                 ) : (
                   <form action={requestAccessAction}>
@@ -71,7 +79,7 @@ export function ConectarLojas({
                 )}
               </div>
 
-              {temLink && !conectado && (destaque === m.value || !destaque) && conta?.auth_token && (
+              {disponivel && temLink && !conectado && (destaque === m.value || !destaque) && conta?.auth_token && (
                 <AuthLink
                   token={conta.auth_token}
                   expiresAt={conta.auth_expires_at}
