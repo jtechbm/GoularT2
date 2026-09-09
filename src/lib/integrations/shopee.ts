@@ -6,6 +6,8 @@ import {
   type AdapterContext,
   type MarketplaceAdapter,
   type MonthlyResult,
+  mapLimit,
+  syncDeadline,
   type StoredCredentials,
 } from "./types";
 
@@ -26,6 +28,55 @@ function sign(path: string, timestamp: number, accessToken?: string, shopId?: st
   const { partnerId, partnerKey } = env();
   const base = `${partnerId}${path}${timestamp}${accessToken ?? ""}${shopId ?? ""}`;
   return createHmac("sha256", partnerKey).update(base).digest("hex");
+}
+
+/**
+ * O access_token da Shopee vale 4 horas. Renova quando falta menos de 5 minutos,
+ * guardando o novo par de tokens — o refresh_token também é rotativo.
+ */
+async function refreshIfNeeded(ctx: AdapterContext): Promise<StoredCredentials> {
+  const creds = ctx.credentials;
+  if (!creds?.access_token || !creds.shop_id) {
+    throw new IntegrationError("Loja Shopee ainda não autorizada.", "auth");
+  }
+  if (!creds.expires_at || creds.expires_at > Date.now() + 300_000) return creds;
+  if (!creds.refresh_token) throw new IntegrationError("Token da Shopee expirado e sem refresh_token.", "auth");
+
+  const { partnerId, partnerKey, host } = env();
+  const path = "/api/v2/auth/access_token/get";
+  const timestamp = Math.floor(Date.now() / 1000);
+  const signature = createHmac("sha256", partnerKey).update(`${partnerId}${path}${timestamp}`).digest("hex");
+
+  const res = await fetch(`${host}${path}?partner_id=${partnerId}&timestamp=${timestamp}&sign=${signature}`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      refresh_token: creds.refresh_token,
+      partner_id: Number(partnerId),
+      shop_id: Number(creds.shop_id),
+    }),
+  });
+  if (!res.ok) throw new IntegrationError(`Falha ao renovar token da Shopee (${res.status}).`, "auth");
+
+  const json = (await res.json()) as {
+    access_token?: string;
+    refresh_token?: string;
+    expire_in?: number;
+    error?: string;
+    message?: string;
+  };
+  if (json.error || !json.access_token) {
+    throw new IntegrationError(`Shopee recusou a renovação: ${json.error ?? "resposta sem token"} ${json.message ?? ""}`, "auth");
+  }
+
+  const next: StoredCredentials = {
+    ...creds,
+    access_token: json.access_token,
+    refresh_token: json.refresh_token ?? creds.refresh_token,
+    expires_at: Date.now() + (json.expire_in ?? 14400) * 1000,
+  };
+  await ctx.saveCredentials(next);
+  return next;
 }
 
 async function call<T>(
@@ -118,10 +169,7 @@ export const shopee: MarketplaceAdapter = {
    * A Shopee limita a janela de get_order_list a 15 dias — por isso o fatiamento.
    */
   async fetchMonth(ctx: AdapterContext, refMonth: string): Promise<MonthlyResult> {
-    const creds = ctx.credentials;
-    if (!creds?.access_token || !creds.shop_id) {
-      throw new IntegrationError("Loja Shopee ainda não autorizada.", "auth");
-    }
+    const creds = await refreshIfNeeded(ctx);
 
     const { start, end } = monthRange(refMonth);
     const out = emptyMonth(refMonth);
@@ -151,8 +199,19 @@ export const shopee: MarketplaceAdapter = {
 
     out.orders = orderIds.length;
 
-    for (const orderSn of orderIds) {
-      const detail = await call<EscrowDetail>("/api/v2/payment/get_escrow_detail", { order_sn: orderSn }, creds);
+    // o escrow é uma chamada por pedido: em paralelo, com limite e prazo
+    const { results, done, timedOut } = await mapLimit(orderIds, 8, syncDeadline(), (orderSn) =>
+      call<EscrowDetail>("/api/v2/payment/get_escrow_detail", { order_sn: orderSn }, creds),
+    );
+
+    if (timedOut) {
+      throw new IntegrationError(
+        `Mês grande demais para sincronizar de uma vez: ${done} de ${orderIds.length} pedidos processados ` +
+          "antes do tempo limite. Sincronize um mês por vez ou reduza o período.",
+      );
+    }
+
+    for (const detail of results) {
       const income = detail.response?.order_income;
       if (!income) continue;
       out.revenue += income.original_price ?? income.escrow_amount ?? 0;

@@ -45,12 +45,14 @@ export interface MarketplaceAdapter {
 }
 
 export class IntegrationError extends Error {
-  constructor(
-    message: string,
-    readonly kind: "config" | "auth" | "api" = "api",
-  ) {
+  // campo explícito em vez de parameter property: assim o módulo também
+  // roda nos scripts com --experimental-strip-types
+  readonly kind: "config" | "auth" | "api";
+
+  constructor(message: string, kind: "config" | "auth" | "api" = "api") {
     super(message);
     this.name = "IntegrationError";
+    this.kind = kind;
   }
 }
 
@@ -72,4 +74,40 @@ export function emptyMonth(refMonth: string): MonthlyResult {
     cogs: 0,
     profit: 0,
   };
+}
+
+/**
+ * Executa em paralelo com limite de simultaneidade e um prazo.
+ * Devolve o que conseguiu e avisa se o prazo estourou — melhor uma
+ * resposta honesta de "incompleto" do que a função ser cortada no meio.
+ */
+export async function mapLimit<T, R>(
+  items: T[],
+  limit: number,
+  deadline: number,
+  fn: (item: T) => Promise<R>,
+): Promise<{ results: R[]; done: number; timedOut: boolean }> {
+  const results: R[] = [];
+  let next = 0;
+  let timedOut = false;
+
+  async function worker() {
+    while (true) {
+      if (Date.now() > deadline) {
+        timedOut = true;
+        return;
+      }
+      const i = next++;
+      if (i >= items.length) return;
+      results.push(await fn(items[i]));
+    }
+  }
+
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return { results, done: results.length, timedOut };
+}
+
+/** Prazo padrão de uma sincronização, deixando folga para gravar o resultado. */
+export function syncDeadline(seconds = 45): number {
+  return Date.now() + seconds * 1000;
 }

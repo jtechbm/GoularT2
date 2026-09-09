@@ -5,6 +5,8 @@ import {
   type AdapterContext,
   type MarketplaceAdapter,
   type MonthlyResult,
+  mapLimit,
+  syncDeadline,
   type StoredCredentials,
 } from "./types";
 
@@ -127,7 +129,7 @@ export const mercadoLivre: MarketplaceAdapter = {
     const out = emptyMonth(refMonth);
     const limit = 50;
 
-    for (let offset = 0; offset < 2000; offset += limit) {
+    const buscarPagina = async (offset: number) => {
       const qs = new URLSearchParams({
         seller: String(sellerId),
         "order.status": "paid",
@@ -141,9 +143,11 @@ export const mercadoLivre: MarketplaceAdapter = {
         headers: { authorization: `Bearer ${token}`, accept: "application/json" },
       });
       if (!res.ok) throw new IntegrationError(`Erro ao listar pedidos do ML (${res.status}).`);
+      return (await res.json()) as { results: MLOrder[]; paging: { total: number } };
+    };
 
-      const page = (await res.json()) as { results: MLOrder[]; paging: { total: number } };
-      for (const order of page.results ?? []) {
+    const somar = (orders: MLOrder[]) => {
+      for (const order of orders) {
         out.orders += 1;
         out.revenue += order.total_amount ?? 0;
         for (const item of order.order_items ?? []) {
@@ -155,7 +159,25 @@ export const mercadoLivre: MarketplaceAdapter = {
           out.tax += payment.taxes_amount ?? 0;
         }
       }
-      if (!page.results?.length || offset + limit >= (page.paging?.total ?? 0)) break;
+    };
+
+    // a primeira página informa o total; as demais vão em paralelo
+    const primeira = await buscarPagina(0);
+    somar(primeira.results ?? []);
+
+    const total = Math.min(primeira.paging?.total ?? 0, 10000);
+    const offsets: number[] = [];
+    for (let offset = limit; offset < total; offset += limit) offsets.push(offset);
+
+    if (offsets.length) {
+      const { results, done, timedOut } = await mapLimit(offsets, 5, syncDeadline(), buscarPagina);
+      for (const page of results) somar(page.results ?? []);
+      if (timedOut) {
+        throw new IntegrationError(
+          `Mês grande demais para sincronizar de uma vez: ${(done + 1) * limit} de ${total} pedidos ` +
+            "processados antes do tempo limite.",
+        );
+      }
     }
 
     // custo de produto não vem da API — fica com o time e entra pela tela do cliente

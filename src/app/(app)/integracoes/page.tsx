@@ -10,6 +10,9 @@ import { SubmitButton } from "@/components/submit";
 import { MonthPicker } from "@/components/month-picker";
 import { connectAccountAction, disconnectAccountAction, syncAccountAction, syncAllAction } from "@/lib/actions/integrations";
 
+// a sincronização com os marketplaces pode levar dezenas de segundos
+export const maxDuration = 60;
+
 export default async function IntegracoesPage({
   searchParams,
 }: {

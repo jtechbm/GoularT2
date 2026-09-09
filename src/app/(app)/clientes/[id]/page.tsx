@@ -24,6 +24,9 @@ import { TabHistorico } from "./tab-historico";
 import { TabEquipe } from "./tab-equipe";
 import { TabDados } from "./tab-dados";
 
+// a sincronização com os marketplaces pode levar dezenas de segundos
+export const maxDuration = 60;
+
 const TABS = [
   { key: "visao", label: "Visão geral" },
   { key: "financeiro", label: "Financeiro" },
