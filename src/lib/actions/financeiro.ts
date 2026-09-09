@@ -34,8 +34,9 @@ export async function generateChargesAction(formData: FormData) {
     monthly_fee: number;
     commission_pct: number;
   }>(
+    // loja própria não entra: ninguém cobra de si mesmo
     `SELECT id, fee_model, monthly_fee, commission_pct
-       FROM clients WHERE status NOT IN ('encerrado', 'pausado')`,
+       FROM clients WHERE status NOT IN ('encerrado', 'pausado') AND kind = 'cliente'`,
   );
 
   // vencimento padrão: dia 10 do mês seguinte ao de referência

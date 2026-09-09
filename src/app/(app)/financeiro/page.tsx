@@ -8,6 +8,8 @@ import {
   clientsWithoutCharge,
   expensesByCategory,
   expensesForMonth,
+  ownStoreTotals,
+  clientRows,
 } from "@/lib/queries";
 import { brl, brlShort, currentMonth, dateBR, lastMonths, monthLabel, pct } from "@/lib/format";
 import { Card, Chip, Empty, Field, PageHeader, Stat } from "@/components/ui";
@@ -25,7 +27,7 @@ import {
   toggleExpensePaidAction,
   updateChargeAction,
 } from "@/lib/actions/financeiro";
-import { EXPENSE_CATEGORIES, expenseCategoryLabel } from "@/lib/types";
+import { EXPENSE_CATEGORIES, expenseCategoryLabel, marketplaceLabel } from "@/lib/types";
 
 const ABAS = [
   { key: "receita", label: "Receita e cobrança" },
@@ -66,9 +68,14 @@ export default async function FinanceiroPage({
   const expenses = isAdmin ? await expensesForMonth(ref) : [];
   const byCategory = isAdmin ? await expensesByCategory(ref) : [];
   const series = isAdmin ? await agencySeries(6) : [];
+  const propria = await ownStoreTotals(ref);
+  const lojasProprias = propria.stores > 0 ? await clientRows(ref, "propria") : [];
 
-  const profit = totals.billed - totals.expenses;
-  const margin = totals.billed ? profit / totals.billed : 0;
+  // o dinheiro do Kadu vem de duas fontes: o que ele cobra dos clientes
+  // e o que a loja dele mesmo dá de lucro
+  const entradas = totals.billed + propria.profit;
+  const profit = entradas - totals.expenses;
+  const margin = entradas ? profit / entradas : 0;
   const late = charges.filter((c) => isLate(c.due_date, c.status));
   const today = new Date().toISOString().slice(0, 10);
 
@@ -129,7 +136,7 @@ export default async function FinanceiroPage({
           <Stat
             label="Lucro da agência"
             value={brl(profit)}
-            hint={`despesas ${brlShort(totals.expenses)} · margem ${pct(margin)}`}
+            hint={`agência ${brlShort(totals.billed)} + loja ${brlShort(propria.profit)} − despesas ${brlShort(totals.expenses)}`}
             tone={profit > 0 ? "ok" : "bad"}
             icon={<IconBarChart size={20} />}
           />
@@ -158,6 +165,60 @@ export default async function FinanceiroPage({
 
       {aba === "receita" ? (
         <div className="mt-4 space-y-3">
+          {propria.stores > 0 && (
+            <Card
+              title="Minhas lojas"
+              subtitle="Resultado das lojas próprias — separado da carteira de clientes"
+              bodyClassName="p-0"
+            >
+              <div className="table-wrap">
+                <table className="data">
+                  <thead>
+                    <tr>
+                      <th>Loja</th>
+                      <th>Canais</th>
+                      <th className="num">Faturamento</th>
+                      <th className="num">Ads</th>
+                      <th className="num">Impostos</th>
+                      <th className="num">Lucro</th>
+                      <th className="num">Margem</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {lojasProprias.map((l) => (
+                      <tr key={l.id}>
+                        <td>
+                          <Link href={`/clientes/${l.id}`} className="font-medium text-ink hover:text-brand">
+                            {l.name}
+                          </Link>
+                        </td>
+                        <td className="text-xs text-muted">
+                          {l.marketplaces ? l.marketplaces.split(",").map((m) => marketplaceLabel(m)).join(" · ") : "—"}
+                        </td>
+                        <td className="num font-semibold text-ink">{brl(l.revenue)}</td>
+                        <td className="num text-muted">{brl(l.ads)}</td>
+                        <td className="num text-muted">{brl(l.tax)}</td>
+                        <td className="num font-semibold text-ink">{brl(l.profit)}</td>
+                        <td className="num">{l.revenue ? pct(l.profit / l.revenue) : "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr className="bg-surface-2">
+                      <td colSpan={2} className="text-xs font-medium text-muted">
+                        Total das lojas próprias
+                      </td>
+                      <td className="num font-bold text-ink">{brl(propria.revenue)}</td>
+                      <td className="num">{brl(propria.ads)}</td>
+                      <td className="num">{brl(propria.tax)}</td>
+                      <td className="num font-bold text-ink">{brl(propria.profit)}</td>
+                      <td className="num">{propria.revenue ? pct(propria.profit / propria.revenue) : "—"}</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </Card>
+          )}
           <Card
             title="Cobranças do mês"
             subtitle="Fee do contrato + comissão sobre o faturamento do cliente"

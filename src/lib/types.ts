@@ -15,8 +15,12 @@ export interface User {
   created_at: string;
 }
 
+/** 'cliente' é atendido pela operação; 'propria' é loja do próprio Kadu. */
+export type ClientKind = "cliente" | "propria";
+
 export interface Client {
   id: string;
+  kind: ClientKind;
   name: string;
   trade_name: string | null;
   doc: string | null;

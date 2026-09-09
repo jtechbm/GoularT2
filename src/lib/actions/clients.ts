@@ -27,11 +27,12 @@ export async function createClientAction(formData: FormData) {
   if (!name) throw new Error("Nome do cliente é obrigatório.");
 
   await run(
-    `INSERT INTO clients (id, name, trade_name, doc, status, segment, tier, contact_name, contact_email,
+    `INSERT INTO clients (id, kind, name, trade_name, doc, status, segment, tier, contact_name, contact_email,
                           contact_phone, fee_model, monthly_fee, commission_pct, started_at, owner_id, summary,
                           created_at, updated_at)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     clientId,
+    formData.get("kind") === "propria" ? "propria" : "cliente",
     name,
     strOrNull(formData.get("trade_name")),
     strOrNull(formData.get("doc")),
@@ -80,10 +81,11 @@ export async function updateClientAction(formData: FormData) {
   await assertManager();
   const clientId = str(formData.get("client_id"));
   await run(
-    `UPDATE clients SET name=?, trade_name=?, doc=?, status=?, segment=?, tier=?, contact_name=?, contact_email=?,
-            contact_phone=?, fee_model=?, monthly_fee=?, commission_pct=?, started_at=?, owner_id=?, summary=?,
-            updated_at=?
+    `UPDATE clients SET kind=?, name=?, trade_name=?, doc=?, status=?, segment=?, tier=?, contact_name=?,
+            contact_email=?, contact_phone=?, fee_model=?, monthly_fee=?, commission_pct=?, started_at=?,
+            owner_id=?, summary=?, updated_at=?
       WHERE id=?`,
+    formData.get("kind") === "propria" ? "propria" : "cliente",
     str(formData.get("name")),
     strOrNull(formData.get("trade_name")),
     strOrNull(formData.get("doc")),

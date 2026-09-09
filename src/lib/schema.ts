@@ -209,6 +209,9 @@ CREATE TABLE IF NOT EXISTS agency_expenses (
 CREATE INDEX IF NOT EXISTS idx_charges_month  ON agency_charges(ref_month, status);
 CREATE INDEX IF NOT EXISTS idx_expenses_month ON agency_expenses(ref_month);
 
+-- loja própria do Kadu x cliente atendido
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS kind text NOT NULL DEFAULT 'cliente';
+
 -- link de autorização enviado ao lojista (Fase 1 das integrações)
 ALTER TABLE client_marketplaces ADD COLUMN IF NOT EXISTS auth_token      text;
 ALTER TABLE client_marketplaces ADD COLUMN IF NOT EXISTS auth_expires_at text;

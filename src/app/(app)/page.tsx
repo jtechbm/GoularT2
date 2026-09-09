@@ -8,6 +8,7 @@ import {
   monthlySeries,
   tasks,
   totalsForMonth,
+  ownStoreTotals,
 } from "@/lib/queries";
 import { addMonths, brl, brlShort, currentMonth, dateBR, lastMonths, num, pct } from "@/lib/format";
 import {
@@ -45,7 +46,8 @@ export default async function DashboardPage({
 
   const totals = await totalsForMonth(ref);
   const prev = await totalsForMonth(prevRef);
-  const rows = await clientRows(ref);
+  const rows = await clientRows(ref, "cliente");
+  const propria = await ownStoreTotals(ref);
   const series = await monthlySeries(6);
   const byMarketplace = await marketplaceBreakdown(ref);
 
@@ -123,7 +125,17 @@ export default async function DashboardPage({
           icon={<IconUsers size={20} />}
         />
         <Stat label="Pedidos no mês" value={num(totals.orders)} hint="somando os marketplaces" tone="neutral" />
-        <Stat label="Fee recorrente" value={brl(mrr)} hint="contratos ativos" tone="brand" />
+        {propria.stores > 0 ? (
+          <Stat
+            label="Loja própria"
+            value={brl(propria.revenue)}
+            hint={`lucro ${brlShort(propria.profit)} · fora da carteira`}
+            tone="accent"
+            icon={<IconBarChart size={20} />}
+          />
+        ) : (
+          <Stat label="Fee recorrente" value={brl(mrr)} hint="contratos ativos" tone="brand" />
+        )}
         <Stat
           label="Margem da carteira"
           value={pct(margin)}

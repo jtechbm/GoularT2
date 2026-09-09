@@ -66,7 +66,11 @@ export interface ClientRow extends Client {
   last_note_at: string | null;
 }
 
-export async function clientRows(refMonth = currentMonth()): Promise<ClientRow[]> {
+export async function clientRows(
+  refMonth = currentMonth(),
+  /** 'cliente' traz só a carteira; 'propria' só as lojas do Kadu; undefined traz tudo */
+  kind?: "cliente" | "propria",
+): Promise<ClientRow[]> {
   const prev = addMonths(refMonth, -1);
   return all<ClientRow>(
     `SELECT c.*,
@@ -97,11 +101,13 @@ export async function clientRows(refMonth = currentMonth()): Promise<ClientRow[]
                    WHERE status <> 'concluida' AND client_id IS NOT NULL GROUP BY client_id) k ON k.client_id = c.id
        LEFT JOIN (SELECT client_id, MAX(created_at) last_note_at FROM client_notes GROUP BY client_id) n
               ON n.client_id = c.id
+      ${kind ? "WHERE c.kind = ?" : ""}
       ORDER BY (CASE c.status WHEN 'atencao' THEN 0 WHEN 'ativo' THEN 1 WHEN 'onboarding' THEN 2
                               WHEN 'pausado' THEN 3 ELSE 4 END),
                COALESCE(f.revenue,0) DESC, lower(c.name)`,
     refMonth,
     prev,
+    ...(kind ? [kind] : []),
   );
 }
 
@@ -128,6 +134,33 @@ export async function marketplaceBreakdown(refMonth: string, clientId?: string) 
     `SELECT marketplace, ${SUM} FROM finance_snapshots ${where} GROUP BY marketplace ORDER BY revenue DESC`,
     ...params,
   );
+}
+
+/** Totais das lojas do próprio Kadu, separados da carteira. */
+export async function ownStoreTotals(refMonth: string): Promise<Totals & { stores: number }> {
+  const row = await one<Totals & { stores: number }>(
+    `SELECT ${SUM}, COUNT(DISTINCT f.client_id) AS stores
+       FROM finance_snapshots f
+       JOIN clients c ON c.id = f.client_id
+      WHERE f.ref_month = ? AND c.kind = 'propria'`,
+    refMonth,
+  );
+  return row ?? { ...EMPTY, stores: 0 };
+}
+
+/** Faturamento e lucro das lojas próprias, mês a mês. */
+export async function ownStoreSeries(months: number): Promise<MonthPoint[]> {
+  const refs = lastMonths(months);
+  const rows = await all<MonthPoint>(
+    `SELECT f.ref_month, ${SUM}
+       FROM finance_snapshots f
+       JOIN clients c ON c.id = f.client_id
+      WHERE f.ref_month >= ? AND c.kind = 'propria'
+      GROUP BY f.ref_month`,
+    refs[0],
+  );
+  const map = new Map(rows.map((r) => [r.ref_month, r]));
+  return refs.map((ref) => map.get(ref) ?? { ref_month: ref, ...EMPTY });
 }
 
 export async function getClient(clientId: string): Promise<Client | null> {
@@ -361,6 +394,7 @@ export async function clientsWithoutCharge(refMonth: string) {
     `SELECT c.id, c.name, c.fee_model, c.monthly_fee, c.commission_pct
        FROM clients c
       WHERE c.status NOT IN ('encerrado', 'pausado')
+        AND c.kind = 'cliente'
         AND NOT EXISTS (SELECT 1 FROM agency_charges ch WHERE ch.client_id = c.id AND ch.ref_month = ?)
       ORDER BY lower(c.name)`,
     refMonth,

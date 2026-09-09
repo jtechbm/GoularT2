@@ -58,6 +58,19 @@ export default async function NovoClientePage() {
               </select>
             </Field>
 
+            <Field label="Tipo de cadastro" className="sm:col-span-2">
+              <label className="flex cursor-pointer items-start gap-2.5 rounded-[10px] border border-line bg-surface-2 px-3 py-2.5">
+                <input type="checkbox" name="kind" value="propria" className="mt-0.5 accent-[var(--primary)]" />
+                <span className="text-sm text-ink">
+                  Esta é uma loja própria
+                  <span className="mt-0.5 block text-xs text-muted">
+                    Marque só se a loja for do próprio Kadu. Ela fica fora da carteira de clientes, não gera
+                    cobrança, e o resultado aparece separado no Financeiro.
+                  </span>
+                </span>
+              </label>
+            </Field>
+
             <Field label="Contato — nome">
               <input name="contact_name" className="input" />
             </Field>
