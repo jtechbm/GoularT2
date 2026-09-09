@@ -12,6 +12,8 @@ import {
 
 const API = "https://api.mercadolibre.com";
 const AUTH = "https://auth.mercadolivre.com.br/authorization";
+/** Só leitura, e offline_access para receber o refresh_token. */
+const SCOPE = "offline_access read";
 
 interface MLOrder {
   id: number;
@@ -38,7 +40,13 @@ async function refreshIfNeeded(ctx: AdapterContext): Promise<string> {
 
   const stillValid = !creds.expires_at || creds.expires_at > Date.now() + 60_000;
   if (stillValid) return creds.access_token;
-  if (!creds.refresh_token) throw new IntegrationError("Token expirado e sem refresh_token.", "auth");
+  if (!creds.refresh_token) {
+    throw new IntegrationError(
+      "Token expirado e sem refresh_token. A conta foi autorizada sem offline_access — " +
+        "peça uma nova autorização ao lojista.",
+      "auth",
+    );
+  }
 
   const { clientId, clientSecret } = env();
   const res = await fetch(`${API}/oauth/token`, {
@@ -80,6 +88,9 @@ export const mercadoLivre: MarketplaceAdapter = {
       response_type: "code",
       client_id: clientId,
       redirect_uri: redirectUri,
+      // offline_access é o que garante o refresh_token; sem ele a conexão
+      // morre em 6 horas. read basta: o sistema só consulta pedidos.
+      scope: SCOPE,
       state,
     });
     return `${AUTH}?${qs}`;

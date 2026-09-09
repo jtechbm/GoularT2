@@ -7,6 +7,8 @@
  * mostra o link de autorização que o sistema vai gerar, para comparar com o
  * redirect cadastrado na aplicação.
  */
+export {};
+
 const clientId = process.env.ML_CLIENT_ID ?? "";
 const clientSecret = process.env.ML_CLIENT_SECRET ?? "";
 const redirectUri = process.env.ML_REDIRECT_URI ?? "";
@@ -73,6 +75,7 @@ if (redirectUri) {
     response_type: "code",
     client_id: clientId,
     redirect_uri: redirectUri,
+    scope: "offline_access read",
     state: "EXEMPLO",
   });
   console.log("\nLink de autorização que o sistema gera:");
