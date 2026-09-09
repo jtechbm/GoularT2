@@ -146,6 +146,17 @@ body {
   color: var(--primary-contrast);
 }
 
+/* a marca tem uma versão para cada tema */
+.logo-escuro {
+  display: none;
+}
+[data-theme="dark"] .logo-claro {
+  display: none;
+}
+[data-theme="dark"] .logo-escuro {
+  display: inline-block;
+}
+
 /* ---------------- scrollbar ---------------- */
 ::-webkit-scrollbar {
   width: 10px;

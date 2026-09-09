@@ -168,35 +168,25 @@ export const IconPlus = (p: IconProps) => (
 );
 
 /**
- * Marca Elleva: foguete subindo sobre as barras de crescimento.
- * As partes escuras usam currentColor para acompanhar o tema —
- * ficam escuras no claro e claras no escuro. O laranja é fixo.
+ * Marca Elleva — o PNG original da marca.
+ * Duas versões do mesmo arquivo: a original e uma com os tons escuros
+ * clareados, trocadas por CSS conforme o tema (ver globals.css).
+ * Geradas por `npm run gerar-logo`.
  */
 export function EllevaMark({ size = 30 }: { size?: number }) {
+  const props = {
+    width: size,
+    height: Math.round((size * 277) / 320),
+    alt: "",
+    "aria-hidden": true as const,
+    draggable: false,
+  };
   return (
-    <svg
-      width={size}
-      height={(size * 112) / 128}
-      viewBox="0 0 128 112"
-      fill="none"
-      aria-hidden="true"
-    >
-      {/* barras de crescimento */}
-      <rect x="10" y="68" width="28" height="38" rx="3" fill="currentColor" />
-      <rect x="44" y="54" width="28" height="52" rx="3" fill="currentColor" />
-      <rect x="78" y="24" width="28" height="82" rx="3" fill="var(--primary)" />
-
-      {/* foguete deitado na diagonal, atravessando as barras */}
-      <g transform="translate(66 44) rotate(38) scale(1.25)">
-        <path d="M-8 18 L0 39 L8 18 Z" fill="var(--primary)" />
-        <path d="M-11 2 L-25 22 L-11 17 Z" fill="var(--primary)" />
-        <path d="M11 2 L25 22 L11 17 Z" fill="var(--primary)" />
-        <path
-          d="M0 -32 C8 -21 11 -10 11 1 L11 18 L-11 18 L-11 1 C-11 -10 -8 -21 0 -32 Z"
-          fill="currentColor"
-        />
-        <circle cx="0" cy="-8" r="6.5" fill="var(--surface)" />
-      </g>
-    </svg>
+    <>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src="/logo.png" className="logo-claro" {...props} />
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src="/logo-dark.png" className="logo-escuro" {...props} />
+    </>
   );
 }
