@@ -83,10 +83,17 @@ npm run sincronizar -- --diagnostico   # só inspeciona os tokens, não grava
 
 Do Mercado Livre vêm faturamento, taxas, impostos retidos e quantidade de pedidos.
 
-**Não vêm, e continuam sendo lançados pela equipe:** custo do produto, investimento
-em Ads e **frete**. O frete que aparece no pedido do ML é o que o *comprador* pagou,
-não o custo do vendedor — contá-lo como despesa derruba o lucro indevidamente.
+**Não vêm, e continuam sendo lançados pela equipe:** custo do produto e investimento
+em Ads.
 
+O **frete** do vendedor vem de `/shipments/{id}/costs` (`senders[].cost`) — atenção,
+o `shipping_cost` que aparece no pedido é o que o *comprador* pagou, e contá-lo como
+despesa derruba o lucro indevidamente.
+
+**Ads está pendente:** a consulta do anunciante funciona, mas a leitura das métricas
+de campanha não. O endpoint `/advertising/product_ads/campaigns/search` responde
+"Type mismatch" em toda combinação testada. Precisa da documentação oficial ou do
+suporte do Mercado Livre para fechar. 
 ## Gamificação (estrutura pronta, não ativada)
 
 Toda ação em tarefa grava uma linha em `task_events` com `type` e `points`. Pontuação padrão por prioridade:

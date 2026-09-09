@@ -75,9 +75,16 @@ async function refreshIfNeeded(ctx: AdapterContext): Promise<string> {
 /**
  * Investimento em Product Ads no período.
  *
- * Devolve null quando não há como saber — conta sem Product Ads (404), token
- * sem a permissão de publicidade (403) ou qualquer falha. Nesses casos o valor
- * lançado à mão continua valendo, em vez de ser zerado por engano.
+ * ATENÇÃO — incompleto. A consulta do anunciante funciona e está verificada
+ * contra conta real (devolve advertiser_id). A leitura das métricas de campanha
+ * ainda NÃO: o endpoint /advertising/product_ads/campaigns/search existe mas
+ * recusa com "Type mismatch" em toda combinação testada de verbo, versão de API,
+ * cabeçalho e parâmetros. Enquanto isso não se resolver, esta função devolve
+ * null e o investimento continua sendo lançado pela equipe.
+ *
+ * Devolve null também nos casos legítimos: conta sem Product Ads (404) e token
+ * sem a permissão de publicidade (403). Null preserva o valor lançado à mão,
+ * em vez de zerá-lo por engano.
  */
 async function buscarAds(token: string, refMonth: string): Promise<number | null> {
   const cabecalhos = { authorization: `Bearer ${token}`, accept: "application/json", "Api-Version": "1" };
@@ -95,11 +102,14 @@ async function buscarAds(token: string, refMonth: string): Promise<number | null
   let algumRespondeu = false;
 
   for (const a of anunciantes) {
-    const qs = new URLSearchParams({ date_from: de, date_to: ate, metrics: "cost,clicks,prints" });
-    const res = await fetch(
-      `${API}/advertising/advertisers/${a.advertiser_id}/product_ads/campaigns?${qs}`,
-      { headers: cabecalhos },
-    );
+    const qs = new URLSearchParams({
+      advertiser_id: String(a.advertiser_id),
+      date_from: de,
+      date_to: ate,
+      limit: "50",
+      offset: "0",
+    });
+    const res = await fetch(`${API}/advertising/product_ads/campaigns/search?${qs}`, { headers: cabecalhos });
     if (!res.ok) continue;
 
     const corpo = (await res.json()) as {
