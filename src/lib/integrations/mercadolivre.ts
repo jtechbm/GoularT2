@@ -75,27 +75,29 @@ async function refreshIfNeeded(ctx: AdapterContext): Promise<string> {
 /**
  * Investimento em Product Ads no período.
  *
- * ATENÇÃO — incompleto. A consulta do anunciante funciona e está verificada
- * contra conta real (devolve advertiser_id). A leitura das métricas de campanha
- * ainda NÃO: o endpoint /advertising/product_ads/campaigns/search existe mas
- * recusa com "Type mismatch" em toda combinação testada de verbo, versão de API,
- * cabeçalho e parâmetros. Enquanto isso não se resolver, esta função devolve
- * null e o investimento continua sendo lançado pela equipe.
+ * São duas chamadas com contratos diferentes, o que não é óbvio:
+ *  - o anunciante vem de /advertising/advertisers com Api-Version 1
+ *  - as campanhas vivem sob o site do anunciante (/advertising/MLB/...) e
+ *    exigem api-version 2. Sem o site no caminho a rota responde 404, e sem a
+ *    versão 2 ela recusa com "Type mismatch".
  *
- * Devolve null também nos casos legítimos: conta sem Product Ads (404) e token
- * sem a permissão de publicidade (403). Null preserva o valor lançado à mão,
- * em vez de zerá-lo por engano.
+ * Devolve null quando não há como saber: conta sem Product Ads (404), token
+ * sem a permissão de publicidade (403) ou qualquer falha. Null preserva o
+ * valor lançado à mão, em vez de zerá-lo por engano.
  */
 async function buscarAds(token: string, refMonth: string): Promise<number | null> {
-  const cabecalhos = { authorization: `Bearer ${token}`, accept: "application/json", "Api-Version": "1" };
+  const autorizacao = { authorization: `Bearer ${token}`, accept: "application/json" };
   const { start, end } = monthRange(refMonth);
   const de = start.toISOString().slice(0, 10);
   const ate = new Date(end.getTime() - 864e5).toISOString().slice(0, 10);
 
-  const resAnunciante = await fetch(`${API}/advertising/advertisers?product_id=PADS`, { headers: cabecalhos });
+  const resAnunciante = await fetch(`${API}/advertising/advertisers?product_id=PADS`, {
+    headers: { ...autorizacao, "Api-Version": "1" },
+  });
   if (!resAnunciante.ok) return null; // 404 = conta não anuncia; 403 = sem permissão
 
-  const anunciantes = ((await resAnunciante.json()) as { advertisers?: { advertiser_id: number }[] }).advertisers ?? [];
+  const anunciantes =
+    ((await resAnunciante.json()) as { advertisers?: { advertiser_id: number; site_id: string }[] }).advertisers ?? [];
   if (!anunciantes.length) return null;
 
   let total = 0;
@@ -103,22 +105,21 @@ async function buscarAds(token: string, refMonth: string): Promise<number | null
 
   for (const a of anunciantes) {
     const qs = new URLSearchParams({
-      advertiser_id: String(a.advertiser_id),
+      limit: "100",
+      offset: "0",
       date_from: de,
       date_to: ate,
-      limit: "50",
-      offset: "0",
+      metrics: "cost,clicks,prints",
     });
-    const res = await fetch(`${API}/advertising/product_ads/campaigns/search?${qs}`, { headers: cabecalhos });
+    const res = await fetch(
+      `${API}/advertising/${a.site_id}/advertisers/${a.advertiser_id}/product_ads/campaigns/search?${qs}`,
+      { headers: { ...autorizacao, "api-version": "2" } },
+    );
     if (!res.ok) continue;
 
-    const corpo = (await res.json()) as {
-      results?: { metrics?: { cost?: number }; cost?: number }[];
-    };
+    const corpo = (await res.json()) as { results?: { metrics?: { cost?: number } }[] };
     algumRespondeu = true;
-    for (const campanha of corpo.results ?? []) {
-      total += campanha.metrics?.cost ?? campanha.cost ?? 0;
-    }
+    for (const campanha of corpo.results ?? []) total += campanha.metrics?.cost ?? 0;
   }
 
   return algumRespondeu ? total : null;
