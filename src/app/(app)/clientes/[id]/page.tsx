@@ -30,8 +30,8 @@ export const maxDuration = 60;
 
 const TABS = [
   { key: "visao", label: "Visão geral" },
-  { key: "financeiro", label: "Financeiro" },
-  { key: "marketplaces", label: "Marketplaces" },
+  { key: "financeiro", label: "Resultados" },
+  { key: "marketplaces", label: "Lojas" },
   { key: "ads", label: "Ads" },
   { key: "historico", label: "Histórico" },
   { key: "equipe", label: "Equipe" },

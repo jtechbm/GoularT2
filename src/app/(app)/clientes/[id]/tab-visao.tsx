@@ -66,7 +66,7 @@ export function TabVisao({
           ) : (
             <Empty
               title="Sem fechamento neste mês"
-              hint="Lance os números na aba Financeiro ou sincronize a conta do marketplace."
+              hint="Lance os números na aba Resultados ou sincronize a conta do marketplace."
               action={
                 <Link href={`/clientes/${client.id}?tab=financeiro`} className="btn btn-primary btn-sm">
                   Lançar fechamento

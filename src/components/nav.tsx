@@ -30,7 +30,7 @@ const NAV: { href: string; label: string; Icon: typeof IconHome; exact?: boolean
   { href: "/tarefas", label: "Tarefas", Icon: IconCheckSquare },
   { href: "/equipe", label: "Equipe", Icon: IconUsers },
   { href: "/chat", label: "Chat", Icon: IconChat },
-  { href: "/integracoes", label: "Integrações", Icon: IconSync },
+  { href: "/integracoes", label: "Marketplaces", Icon: IconSync },
 ];
 
 const ROLE_LABEL: Record<string, string> = { admin: "Admin", gestor: "Gestor", membro: "Membro" };

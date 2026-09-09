@@ -64,6 +64,29 @@ Adaptadores em [`src/lib/integrations/`](src/lib/integrations/): `mercadolivre.t
 e `shopee.ts` (assinatura HMAC + `get_order_list` / `get_escrow_detail`). Para um marketplace novo, basta
 implementar a interface `MarketplaceAdapter` e registrá-lo em `index.ts`.
 
+## Sincronização
+
+Automática: a Vercel chama `/api/cron/sincronizar` uma vez por dia (03:00 de Brasília),
+protegida por `CRON_SECRET`. A fila é ordenada pela conta mais desatualizada e cada
+execução processa o que couber no tempo da função — como roda todo dia, a fila se
+resolve sozinha.
+
+Manual: pelo botão na página do cliente, ou por linha de comando:
+
+```bash
+npm run sincronizar                    # todas as contas, mês atual
+npm run sincronizar -- 2026-08         # mês específico
+npm run sincronizar -- --diagnostico   # só inspeciona os tokens, não grava
+```
+
+### O que a API traz e o que não traz
+
+Do Mercado Livre vêm faturamento, taxas, impostos retidos e quantidade de pedidos.
+
+**Não vêm, e continuam sendo lançados pela equipe:** custo do produto, investimento
+em Ads e **frete**. O frete que aparece no pedido do ML é o que o *comprador* pagou,
+não o custo do vendedor — contá-lo como despesa derruba o lucro indevidamente.
+
 ## Gamificação (estrutura pronta, não ativada)
 
 Toda ação em tarefa grava uma linha em `task_events` com `type` e `points`. Pontuação padrão por prioridade:
@@ -85,7 +108,15 @@ A conexão vem de `DATABASE_URL`. O Supabase oferece dois poolers:
 | Transaction | 6543 | ambientes serverless, onde cada requisição abre conexão nova |
 
 `npm run migrar` cria o esquema e é idempotente — pode rodar quantas vezes quiser.
-`npm run migrar -- --limpar` esvazia todas as tabelas antes (destrutivo).
+`npm run migrar -- --limpar` esvazia todas as tabelas antes, e por isso exige
+`PERMITIR_LIMPAR=sim` — sem isso ele recusa, para ninguém apagar produção sem querer.
+
+### Banco de desenvolvimento
+
+Hoje o `.env` local aponta para o mesmo banco da produção: qualquer teste escreve
+em cima dos dados reais. O certo é criar um **segundo projeto no Supabase** (grátis),
+apontar o `.env` local para ele e rodar `npm run migrar`. A produção continua usando
+a `DATABASE_URL` configurada na Vercel.
 
 A conexão é sempre TLS. Por padrão a cadeia do certificado não é validada, que é o que o
 pooler aceita sem configuração extra; para validação completa, aponte `DATABASE_SSL_CA`

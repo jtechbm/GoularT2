@@ -16,6 +16,13 @@ console.log(`Aplicando esquema em ${alvo || "(DATABASE_URL não definida)"}\n`);
 await exec(SCHEMA);
 console.log("Esquema aplicado.");
 
+if (limpar && process.env.PERMITIR_LIMPAR !== "sim") {
+  console.error("\n--limpar apaga TODAS as linhas do banco apontado acima.");
+  console.error("Se é isso mesmo, rode com PERMITIR_LIMPAR=sim");
+  await closePool();
+  process.exit(1);
+}
+
 if (limpar) {
   for (const t of TABLES) await exec(`DELETE FROM ${t}`);
   console.log("Todas as tabelas foram esvaziadas.");

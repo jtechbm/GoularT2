@@ -77,7 +77,12 @@ export interface SyncOutcome {
  * Puxa o fechamento do mês de uma conta e grava em finance_snapshots (source='api').
  * O que já foi preenchido à mão em cogs/ads é preservado — a API não sabe esses números.
  */
-export async function syncAccount(accountId: string, refMonth: string, userId: string): Promise<SyncOutcome> {
+export async function syncAccount(
+  accountId: string,
+  refMonth: string,
+  /** null quando a sincronização vem do agendamento, não de alguém clicando */
+  userId: string | null,
+): Promise<SyncOutcome> {
   const row = await one<ClientMarketplace>("SELECT * FROM client_marketplaces WHERE id = ?", accountId);
   if (!row) return { ok: false, status: "erro", message: "Conta não encontrada." };
 
@@ -99,15 +104,17 @@ export async function syncAccount(accountId: string, refMonth: string, userId: s
       refMonth,
     );
 
-    const existing = await one<{ id: string; cogs: number; ads: number }>(
-      "SELECT id, cogs, ads FROM finance_snapshots WHERE client_id=? AND marketplace=? AND ref_month=?",
+    const existing = await one<{ id: string; cogs: number; ads: number; shipping: number }>(
+      "SELECT id, cogs, ads, shipping FROM finance_snapshots WHERE client_id=? AND marketplace=? AND ref_month=?",
       row.client_id,
       row.marketplace,
       refMonth,
     );
     const cogs = existing?.cogs ?? result.cogs;
     const ads = existing?.ads ?? result.ads;
-    const profit = result.revenue - result.fees - result.shipping - result.tax - ads - cogs;
+    // a API do ML não informa o frete pago pelo vendedor; o lançado à mão manda
+    const shipping = result.shipping || existing?.shipping || 0;
+    const profit = result.revenue - result.fees - shipping - result.tax - ads - cogs;
 
     if (existing) {
       await run(
@@ -117,7 +124,7 @@ export async function syncAccount(accountId: string, refMonth: string, userId: s
         result.orders,
         result.units,
         result.fees,
-        result.shipping,
+        shipping,
         result.tax,
         cogs,
         ads,
@@ -140,7 +147,7 @@ export async function syncAccount(accountId: string, refMonth: string, userId: s
         result.units,
         cogs,
         result.fees,
-        result.shipping,
+        shipping,
         result.tax,
         ads,
         profit,

@@ -166,7 +166,10 @@ export const mercadoLivre: MarketplaceAdapter = {
           out.fees += item.sale_fee ?? 0;
         }
         for (const payment of order.payments ?? []) {
-          out.shipping += payment.shipping_cost ?? 0;
+          // shipping_cost aqui é o frete que o COMPRADOR pagou, não custo do
+          // vendedor: somar isso como despesa derrubava o lucro indevidamente.
+          // O custo real do vendedor está no envio (senders_cost) e exigiria
+          // uma chamada por pedido — por ora o frete fica com a equipe.
           out.tax += payment.taxes_amount ?? 0;
         }
       }
