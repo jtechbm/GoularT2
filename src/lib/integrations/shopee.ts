@@ -9,7 +9,7 @@ import {
   mapLimit,
   syncDeadline,
   type StoredCredentials,
-} from "./types";
+} from "./types.ts";
 
 function env() {
   return {

@@ -2,6 +2,11 @@ import { requireUser } from "@/lib/auth";
 import { one } from "@/lib/db";
 import { Sidebar } from "@/components/nav";
 
+// toda tela aqui depende da sessão e do banco: nada é pré-renderizado.
+// sem isto, o build tenta avaliar as páginas e passa a depender do banco
+// estar de pé no momento do deploy.
+export const dynamic = "force-dynamic";
+
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const user = await requireUser();
   const pending =

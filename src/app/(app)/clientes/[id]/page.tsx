@@ -164,6 +164,7 @@ export default async function ClientePage({
             manager={manager}
             destaqueAcesso={sp.acesso}
             marketplacesDisponiveis={marketplacesDisponiveis}
+            refMonth={ref}
             tasks={clientTasks}
             breakdown={breakdown}
             chart={

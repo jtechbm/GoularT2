@@ -18,6 +18,7 @@ export function TabVisao({
   manager,
   destaqueAcesso,
   marketplacesDisponiveis,
+  refMonth,
 }: {
   client: Client;
   team: (User & { team_role: string })[];
@@ -29,6 +30,7 @@ export function TabVisao({
   manager: boolean;
   destaqueAcesso?: string;
   marketplacesDisponiveis: string[];
+  refMonth: string;
 }) {
   const openTasks = tasks.filter((t) => t.status !== "concluida");
 
@@ -41,6 +43,7 @@ export function TabVisao({
           manager={manager}
           destaque={destaqueAcesso}
           disponiveis={marketplacesDisponiveis}
+          refMonth={refMonth}
         />
 
         {client.summary && (

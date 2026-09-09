@@ -11,7 +11,8 @@
     "testar-conexao": "node --experimental-strip-types --env-file-if-exists=.env scripts/testar-conexao.ts",
     "gerar-logo": "node --experimental-strip-types scripts/gerar-logo.ts",
     "testar-shopee": "node --experimental-strip-types --env-file-if-exists=.env scripts/testar-shopee.ts",
-    "testar-ml": "node --experimental-strip-types --env-file-if-exists=.env scripts/testar-ml.ts"
+    "testar-ml": "node --experimental-strip-types --env-file-if-exists=.env scripts/testar-ml.ts",
+    "sincronizar": "node --experimental-strip-types --env-file-if-exists=.env scripts/sincronizar.ts"
   },
   "dependencies": {
     "next": "^15.5.25",

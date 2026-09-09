@@ -8,7 +8,7 @@ import {
   mapLimit,
   syncDeadline,
   type StoredCredentials,
-} from "./types";
+} from "./types.ts";
 
 const API = "https://api.mercadolibre.com";
 const AUTH = "https://auth.mercadolivre.com.br/authorization";

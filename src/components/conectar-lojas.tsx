@@ -1,7 +1,7 @@
 import { AuthLink } from "./auth-link";
 import { Card, Chip } from "./ui";
 import { SubmitButton } from "./submit";
-import { requestAccessAction } from "@/lib/actions/integrations";
+import { requestAccessAction, syncAccountAction } from "@/lib/actions/integrations";
 import { relativeBR } from "@/lib/format";
 import { MARKETPLACES, type Client, type ClientMarketplace } from "@/lib/types";
 
@@ -16,6 +16,7 @@ export function ConectarLojas({
   manager,
   destaque,
   disponiveis,
+  refMonth,
 }: {
   client: Client;
   accounts: ClientMarketplace[];
@@ -24,6 +25,7 @@ export function ConectarLojas({
   destaque?: string;
   /** marketplaces com chaves configuradas no ambiente */
   disponiveis: string[];
+  refMonth: string;
 }) {
   if (!manager) return null;
 
@@ -67,7 +69,20 @@ export function ConectarLojas({
                 {!disponivel ? (
                   <Chip tone="neutral">Indisponível</Chip>
                 ) : conectado ? (
-                  <Chip tone="ok">Conectada</Chip>
+                  <span className="flex items-center gap-2">
+                    <Chip tone="ok">Conectada</Chip>
+                    <form action={syncAccountAction}>
+                      <input type="hidden" name="account_id" value={conta!.id} />
+                      <input type="hidden" name="ref_month" value={refMonth} />
+                      <input type="hidden" name="redirect_to" value={`/clientes/${client.id}`} />
+                      <SubmitButton
+                        variant={conta?.last_sync_at ? "ghost" : "primary"}
+                        pendingLabel="Buscando…"
+                      >
+                        {conta?.last_sync_at ? "Atualizar números" : "Buscar números agora"}
+                      </SubmitButton>
+                    </form>
+                  </span>
                 ) : (
                   <form action={requestAccessAction}>
                     <input type="hidden" name="client_id" value={client.id} />
