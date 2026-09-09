@@ -47,7 +47,8 @@ export async function createAdsAction(formData: FormData) {
 export async function deleteAdsAction(formData: FormData) {
   await requireUser();
   const clientId = str(formData.get("client_id"));
-  await run("DELETE FROM ads_entries WHERE id = ?", str(formData.get("entry_id")));
+  // linhas da sincronização não se apagam pela tela: voltariam na rodada seguinte
+  await run("DELETE FROM ads_entries WHERE id = ? AND source = 'manual'", str(formData.get("entry_id")));
   refresh(clientId);
   const back = str(formData.get("redirect_to"));
   redirect(back || "/ads");

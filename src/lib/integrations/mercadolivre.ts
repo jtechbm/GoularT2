@@ -3,6 +3,7 @@ import {
   IntegrationError,
   monthRange,
   type AdapterContext,
+  type AdsCampaign,
   type MarketplaceAdapter,
   type MonthlyResult,
   mapLimit,
@@ -85,7 +86,7 @@ async function refreshIfNeeded(ctx: AdapterContext): Promise<string> {
  * sem a permissão de publicidade (403) ou qualquer falha. Null preserva o
  * valor lançado à mão, em vez de zerá-lo por engano.
  */
-async function buscarAds(token: string, refMonth: string): Promise<number | null> {
+async function buscarAds(token: string, refMonth: string): Promise<AdsCampaign[] | null> {
   const autorizacao = { authorization: `Bearer ${token}`, accept: "application/json" };
   const { start, end } = monthRange(refMonth);
   const de = start.toISOString().slice(0, 10);
@@ -100,7 +101,7 @@ async function buscarAds(token: string, refMonth: string): Promise<number | null
     ((await resAnunciante.json()) as { advertisers?: { advertiser_id: number; site_id: string }[] }).advertisers ?? [];
   if (!anunciantes.length) return null;
 
-  let total = 0;
+  const campanhas: AdsCampaign[] = [];
   let algumRespondeu = false;
 
   for (const a of anunciantes) {
@@ -109,7 +110,9 @@ async function buscarAds(token: string, refMonth: string): Promise<number | null
       offset: "0",
       date_from: de,
       date_to: ate,
-      metrics: "cost,clicks,prints",
+      // total_amount = venda direta + indireta atribuída ao anúncio, que é
+      // o número do ROAS; units_quantity é a conversão em unidades
+      metrics: "cost,clicks,prints,total_amount,units_quantity",
     });
     const res = await fetch(
       `${API}/advertising/${a.site_id}/advertisers/${a.advertiser_id}/product_ads/campaigns/search?${qs}`,
@@ -117,12 +120,28 @@ async function buscarAds(token: string, refMonth: string): Promise<number | null
     );
     if (!res.ok) continue;
 
-    const corpo = (await res.json()) as { results?: { metrics?: { cost?: number } }[] };
+    const corpo = (await res.json()) as {
+      results?: {
+        id: number;
+        name?: string;
+        metrics?: { cost?: number; clicks?: number; total_amount?: number; units_quantity?: number };
+      }[];
+    };
     algumRespondeu = true;
-    for (const campanha of corpo.results ?? []) total += campanha.metrics?.cost ?? 0;
+
+    for (const c of corpo.results ?? []) {
+      campanhas.push({
+        external_id: String(c.id),
+        name: c.name ?? `Campanha ${c.id}`,
+        invested: c.metrics?.cost ?? 0,
+        revenue: c.metrics?.total_amount ?? 0,
+        clicks: c.metrics?.clicks ?? 0,
+        orders: c.metrics?.units_quantity ?? 0,
+      });
+    }
   }
 
-  return algumRespondeu ? total : null;
+  return algumRespondeu ? campanhas : null;
 }
 
 export const mercadoLivre: MarketplaceAdapter = {
@@ -268,8 +287,11 @@ export const mercadoLivre: MarketplaceAdapter = {
 
     // investimento em Ads, quando a conta anuncia e o token tem a permissão
     try {
-      const ads = await buscarAds(token, refMonth);
-      if (ads !== null) out.ads = ads;
+      const campanhas = await buscarAds(token, refMonth);
+      if (campanhas !== null) {
+        out.adsCampaigns = campanhas;
+        out.ads = campanhas.reduce((s, c) => s + c.invested, 0);
+      }
     } catch {
       /* Ads é complemento: nunca derruba a apuração do faturamento */
     }

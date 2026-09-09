@@ -223,6 +223,16 @@ ALTER TABLE client_marketplaces ADD COLUMN IF NOT EXISTS auth_created_by text;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_cm_auth_token ON client_marketplaces(auth_token)
   WHERE auth_token IS NOT NULL;
 
+-- campanhas trazidas da API convivem com os lançamentos feitos à mão:
+-- 'source' separa os dois para a sincronização substituir só o que é dela
+ALTER TABLE ads_entries ADD COLUMN IF NOT EXISTS source      text NOT NULL DEFAULT 'manual';
+ALTER TABLE ads_entries ADD COLUMN IF NOT EXISTS external_id text;
+ALTER TABLE ads_entries ADD COLUMN IF NOT EXISTS updated_at  text;
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_ads_api
+  ON ads_entries(client_id, marketplace, external_id, period_start)
+  WHERE source = 'api';
+
 CREATE INDEX IF NOT EXISTS idx_fin_client   ON finance_snapshots(client_id, ref_month);
 CREATE INDEX IF NOT EXISTS idx_ads_client   ON ads_entries(client_id, period_start);
 CREATE INDEX IF NOT EXISTS idx_notes_client ON client_notes(client_id, created_at);

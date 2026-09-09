@@ -1,5 +1,18 @@
 import type { Marketplace } from "@/lib/types";
 
+/** Uma campanha de Ads no mês, como o marketplace a reporta. */
+export interface AdsCampaign {
+  /** id da campanha no marketplace — chave para atualizar em vez de duplicar */
+  external_id: string;
+  name: string;
+  invested: number;
+  /** receita atribuída à campanha (venda direta + indireta) */
+  revenue: number;
+  clicks: number;
+  /** unidades vendidas via anúncio; é o que o marketplace reporta como conversão */
+  orders: number;
+}
+
 /** Números fechados que o GoularT consome de cada marketplace. */
 export interface MonthlyResult {
   ref_month: string;
@@ -12,6 +25,11 @@ export interface MonthlyResult {
   ads: number;
   cogs: number;
   profit: number;
+  /**
+   * Detalhe do investimento em Ads, quando a API abre por campanha.
+   * undefined = a API não respondeu; não apague o que já está gravado.
+   */
+  adsCampaigns?: AdsCampaign[];
 }
 
 export interface StoredCredentials {

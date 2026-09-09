@@ -1,4 +1,4 @@
-import { Card, Empty, Field, MarketplaceChip, Stat } from "@/components/ui";
+import { Card, Chip, Empty, Field, MarketplaceChip, Stat } from "@/components/ui";
 import { SaveBar, SubmitButton } from "@/components/submit";
 import { createAdsAction, deleteAdsAction } from "@/lib/actions/ads";
 import { brl, currentMonth, dateBR, num, pct } from "@/lib/format";
@@ -121,7 +121,14 @@ export function TabAds({
                         <td>
                           <MarketplaceChip value={e.marketplace} />
                         </td>
-                        <td className="text-xs text-muted">{e.campaign ?? "—"}</td>
+                        <td className="text-xs text-muted">
+                          {e.campaign ?? "—"}
+                          {e.source === "api" && (
+                            <span className="ml-1.5 align-middle">
+                              <Chip tone="info">automático</Chip>
+                            </span>
+                          )}
+                        </td>
                         <td className="num font-semibold text-ink">{brl(e.invested)}</td>
                         <td className="num text-muted">{brl(e.revenue)}</td>
                         <td className={`num font-semibold ${r >= 3 ? "text-ok" : r > 0 ? "text-warn" : "text-dim"}`}>
@@ -129,14 +136,18 @@ export function TabAds({
                         </td>
                         <td className="num text-muted">{num(e.orders)}</td>
                         <td className="num">
-                          <form action={deleteAdsAction}>
-                            <input type="hidden" name="entry_id" value={e.id} />
-                            <input type="hidden" name="client_id" value={client.id} />
-                            <input type="hidden" name="redirect_to" value={back} />
-                            <SubmitButton variant="ghost" size="sm" confirm="Excluir este lançamento?">
-                              ✕
-                            </SubmitButton>
-                          </form>
+                          {/* apagar linha automática não adianta: a próxima
+                              sincronização traz a campanha de volta */}
+                          {e.source !== "api" && (
+                            <form action={deleteAdsAction}>
+                              <input type="hidden" name="entry_id" value={e.id} />
+                              <input type="hidden" name="client_id" value={client.id} />
+                              <input type="hidden" name="redirect_to" value={back} />
+                              <SubmitButton variant="ghost" size="sm" confirm="Excluir este lançamento?">
+                                ✕
+                              </SubmitButton>
+                            </form>
+                          )}
                         </td>
                       </tr>
                     );

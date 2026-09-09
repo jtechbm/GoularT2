@@ -91,8 +91,12 @@ export interface AdsEntry {
   clicks: number;
   orders: number;
   notes: string | null;
+  /** 'api' = veio da sincronização e é reescrito a cada rodada; 'manual' = digitado. */
+  source: "manual" | "api";
+  external_id: string | null;
   created_by: string | null;
   created_at: string;
+  updated_at: string | null;
 }
 
 export interface ClientNote {

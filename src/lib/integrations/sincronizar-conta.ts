@@ -1,8 +1,15 @@
-import { id, now, one, run } from "../db.ts";
+import { all, id, now, one, run } from "../db.ts";
 import { decryptJSON, encryptJSON } from "../crypto.ts";
 import { mercadoLivre } from "./mercadolivre.ts";
 import { shopee } from "./shopee.ts";
-import { IntegrationError, type MarketplaceAdapter, type MonthlyResult, type StoredCredentials } from "./types.ts";
+import {
+  IntegrationError,
+  monthRange,
+  type AdsCampaign,
+  type MarketplaceAdapter,
+  type MonthlyResult,
+  type StoredCredentials,
+} from "./types.ts";
 
 /**
  * Sincronização de uma conta, em um único lugar.
@@ -55,6 +62,58 @@ async function log(
     message,
     now(),
   );
+}
+
+/**
+ * Espelha as campanhas do mês em ads_entries, que é o que alimenta a aba Ads.
+ *
+ * Só mexe nas linhas com source='api': o que a equipe lançou à mão continua
+ * intacto. Campanhas que sumiram da resposta são removidas, senão um mês
+ * corrigido pelo marketplace ficaria somando duas vezes.
+ */
+async function saveAdsCampaigns(
+  clientId: string,
+  marketplace: string,
+  refMonth: string,
+  campaigns: AdsCampaign[],
+  userId: string | null,
+) {
+  const { start, end } = monthRange(refMonth);
+  const periodStart = start.toISOString().slice(0, 10);
+  // no mês corrente o período fecha hoje, não numa data futura
+  const periodEnd = new Date(Math.min(end.getTime() - 864e5, Date.now())).toISOString().slice(0, 10);
+
+  const anteriores = await all<{ id: string; external_id: string | null }>(
+    `SELECT id, external_id FROM ads_entries
+      WHERE client_id=? AND marketplace=? AND source='api' AND period_start=?`,
+    clientId,
+    marketplace,
+    periodStart,
+  );
+
+  for (const c of campaigns) {
+    const existente = anteriores.find((a) => a.external_id === c.external_id);
+    if (existente) {
+      await run(
+        `UPDATE ads_entries SET campaign=?, period_end=?, invested=?, revenue=?, clicks=?, orders=?, updated_at=?
+          WHERE id=?`,
+        c.name, periodEnd, c.invested, c.revenue, c.clicks, c.orders, now(), existente.id,
+      );
+    } else {
+      await run(
+        `INSERT INTO ads_entries (id, client_id, marketplace, campaign, period_start, period_end, invested, revenue,
+                                  clicks, orders, notes, source, external_id, created_by, created_at, updated_at)
+         VALUES (?,?,?,?,?,?,?,?,?,?,NULL,'api',?,?,?,?)`,
+        id(), clientId, marketplace, c.name, periodStart, periodEnd, c.invested, c.revenue,
+        c.clicks, c.orders, c.external_id, userId, now(), now(),
+      );
+    }
+  }
+
+  const vivas = new Set(campaigns.map((c) => c.external_id));
+  for (const a of anteriores) {
+    if (!vivas.has(a.external_id ?? "")) await run("DELETE FROM ads_entries WHERE id = ?", a.id);
+  }
 }
 
 export interface SyncOutcome {
@@ -131,6 +190,12 @@ export async function syncAccount(
         id(), row.client_id, row.marketplace, refMonth, result.revenue, result.orders,
         result.units, cogs, result.fees, shipping, result.tax, ads, profit, userId, now(),
       );
+    }
+
+    // undefined = a API de Ads não respondeu; array vazio = respondeu e não há
+    // campanha. Só o segundo caso pode limpar o que estava gravado.
+    if (result.adsCampaigns) {
+      await saveAdsCampaigns(row.client_id, row.marketplace, refMonth, result.adsCampaigns, userId);
     }
 
     await run(
