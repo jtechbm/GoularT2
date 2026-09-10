@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { one, run } from "@/lib/db";
-import { createUser, hashPassword, requireRole, requireUser } from "@/lib/auth";
+import { createUser, hashPassword, requirePermission, requireUser } from "@/lib/auth";
 import { str, strOrNull } from "@/lib/format";
 import type { Role } from "@/lib/types";
 
@@ -13,7 +13,7 @@ function refresh() {
 }
 
 export async function createTeamMemberAction(formData: FormData) {
-  await requireRole("admin", "gestor");
+  await requirePermission("equipe.gerenciar");
   const email = str(formData.get("email"));
   const password = String(formData.get("password") ?? "");
   if (!email || password.length < 6) throw new Error("E-mail válido e senha de ao menos 6 caracteres.");
@@ -77,7 +77,7 @@ export async function updateTeamMemberAction(formData: FormData) {
 }
 
 export async function toggleTeamMemberAction(formData: FormData) {
-  await requireRole("admin", "gestor");
+  await requirePermission("equipe.gerenciar");
   const userId = str(formData.get("user_id"));
   await run("UPDATE users SET active = 1 - active WHERE id = ?", userId);
   await run("DELETE FROM sessions WHERE user_id = ?", userId);

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { isManager, requireUser } from "@/lib/auth";
+import { requireUser, visibleClientIds } from "@/lib/auth";
+import { can } from "@/lib/permissions";
 import { one } from "@/lib/db";
 import { channels, clientOptions, messages } from "@/lib/queries";
 import { Avatar, Card, Chip, Empty, PageHeader } from "@/components/ui";
@@ -24,7 +25,7 @@ export default async function CanalPage({ params }: { params: Promise<{ slug: st
   if (!channel) notFound();
 
   const list = await channels();
-  const clients = await clientOptions();
+  const clients = await clientOptions(await visibleClientIds(user));
   const msgs = await messages(channel.id);
 
   // agrupa mensagens seguidas da mesma pessoa
@@ -60,7 +61,7 @@ export default async function CanalPage({ params }: { params: Promise<{ slug: st
           </span>
         }
         actions={
-          isManager(user) && (
+          can(user, "chat.gerenciar") && (
             <form action={deleteChannelAction}>
               <input type="hidden" name="slug" value={channel.slug} />
               <SubmitButton variant="ghost" size="sm" confirm="Excluir o canal e todas as mensagens?">

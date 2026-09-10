@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { Suspense } from "react";
-import { requireUser } from "@/lib/auth";
+import { requireUser, visibleClientIds } from "@/lib/auth";
 import { adsRows, clientOptions, marketplaceBreakdown } from "@/lib/queries";
 import { brl, brlShort, currentMonth, dateBR, lastMonths, monthLabel, num, pct } from "@/lib/format";
 import { Card, Empty, Field, MARKETPLACE_COLOR, MarketplaceChip, PageHeader, Stat } from "@/components/ui";
@@ -15,14 +15,15 @@ export default async function AdsPage({
 }: {
   searchParams: Promise<{ mes?: string; cliente?: string; canal?: string; ok?: string }>;
 }) {
-  await requireUser();
+  const user = await requireUser();
   const sp = await searchParams;
   const months = lastMonths(12);
   const ref = sp.mes && months.includes(sp.mes) ? sp.mes : currentMonth();
 
-  const rows = await adsRows({ refMonth: ref, clientId: sp.cliente, marketplace: sp.canal });
-  const clients = await clientOptions();
-  const breakdown = await marketplaceBreakdown(ref);
+  const escopo = await visibleClientIds(user);
+  const rows = await adsRows({ refMonth: ref, clientId: sp.cliente, marketplace: sp.canal, scope: escopo });
+  const clients = await clientOptions(escopo);
+  const breakdown = await marketplaceBreakdown(ref, undefined, escopo);
 
   const totals = rows.reduce(
     (a, e) => ({

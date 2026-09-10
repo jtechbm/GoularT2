@@ -1,12 +1,12 @@
 import Link from "next/link";
-import { listUsers, requireRole } from "@/lib/auth";
+import { listUsers, requirePermission } from "@/lib/auth";
 import { createClientAction } from "@/lib/actions/clients";
 import { Card, Field, PageHeader } from "@/components/ui";
 import { SaveBar } from "@/components/submit";
 import { CLIENT_STATUS, MARKETPLACES } from "@/lib/types";
 
 export default async function NovoClientePage() {
-  await requireRole("admin", "gestor");
+  await requirePermission("clientes.gerenciar");
   const team = await listUsers();
 
   return (

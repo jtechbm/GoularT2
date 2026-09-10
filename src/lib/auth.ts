@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
 import { all, id, now, one, run } from "./db";
+import { can, type Permission } from "./permissions";
 import type { Role, User } from "./types";
 
 const COOKIE = "goulart_session";
@@ -89,8 +90,42 @@ export async function requireRole(...roles: Role[]): Promise<User> {
   return user;
 }
 
-export function isManager(user: { role: Role }): boolean {
-  return user.role === "admin" || user.role === "gestor";
+/** Guarda de página: sem a permissão, volta para o início em vez de dar erro. */
+export async function requirePermission(permission: Permission): Promise<User> {
+  const user = await requireUser();
+  if (!can(user, permission)) redirect("/");
+  return user;
+}
+
+/** Guarda de Server Action: aqui um erro é melhor do que um redirect silencioso. */
+export function assertCan(user: User, permission: Permission, message?: string): void {
+  if (!can(user, permission)) throw new Error(message ?? "Seu papel não permite esta ação.");
+}
+
+/**
+ * Clientes que a pessoa enxerga. `null` significa a carteira inteira.
+ *
+ * O membro só vê onde foi atribuído, que é o que a tela de Equipe promete ao
+ * dizer "opera clientes atribuídos". Sem ninguém o atribuindo, ele vê vazio —
+ * é melhor do que ver a carteira toda por omissão.
+ */
+export async function visibleClientIds(user: User): Promise<string[] | null> {
+  if (can(user, "carteira.completa")) return null;
+  const rows = await all<{ client_id: string }>(
+    "SELECT client_id FROM client_team WHERE user_id = ?",
+    user.id,
+  );
+  return rows.map((r) => r.client_id);
+}
+
+export async function canSeeClient(user: User, clientId: string): Promise<boolean> {
+  const ids = await visibleClientIds(user);
+  return ids === null || ids.includes(clientId);
+}
+
+/** Aborta a Server Action quando o cliente não é da pessoa. */
+export async function assertClientAccess(user: User, clientId: string): Promise<void> {
+  if (!(await canSeeClient(user, clientId))) throw new Error("Este cliente não está atribuído a você.");
 }
 
 export async function login(email: string, password: string): Promise<User | null> {

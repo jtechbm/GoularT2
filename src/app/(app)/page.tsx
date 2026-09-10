@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Suspense } from "react";
-import { requireUser } from "@/lib/auth";
+import { requireUser, visibleClientIds } from "@/lib/auth";
+import { can } from "@/lib/permissions";
 import {
   clientRows,
   leaderboard,
@@ -46,12 +47,16 @@ export default async function DashboardPage({
   const ref = params.mes && months.includes(params.mes) ? params.mes : currentMonth();
   const prevRef = addMonths(ref, -1);
 
-  const totals = await totalsForMonth(ref);
-  const prev = await totalsForMonth(prevRef);
-  const rows = await clientRows(ref, "cliente");
-  const propria = await ownStoreTotals(ref);
-  const series = await monthlySeries(6);
-  const byMarketplace = await marketplaceBreakdown(ref);
+  // membro só enxerga os clientes atribuídos a ele; gestor e admin, a carteira toda
+  const escopo = await visibleClientIds(user);
+  const verLojasProprias = can(user, "lojas.proprias");
+
+  const totals = await totalsForMonth(ref, escopo);
+  const prev = await totalsForMonth(prevRef, escopo);
+  const rows = await clientRows(ref, "cliente", escopo);
+  const propria = verLojasProprias ? await ownStoreTotals(ref) : null;
+  const series = await monthlySeries(6, undefined, escopo);
+  const byMarketplace = await marketplaceBreakdown(ref, undefined, escopo);
 
   const active = rows.filter((r) => r.status === "ativo" || r.status === "atencao").length;
   const margin = totals.revenue ? totals.profit / totals.revenue : 0;
@@ -67,7 +72,7 @@ export default async function DashboardPage({
   const openTasks = await tasks({ status: "disponivel" });
   const myTasks = await tasks({ status: "em_andamento", assignee: user.id });
   const board = await leaderboard();
-  const saude = await integrationHealth();
+  const saude = await integrationHealth(escopo);
   const top = rows.slice(0, 8);
 
   const totalRevenue = byMarketplace.reduce((s, m) => s + m.revenue, 0);
@@ -128,7 +133,7 @@ export default async function DashboardPage({
           icon={<IconUsers size={20} />}
         />
         <Stat label="Pedidos no mês" value={num(totals.orders)} hint="somando os marketplaces" tone="neutral" />
-        {propria.stores > 0 ? (
+        {propria && propria.stores > 0 ? (
           <Stat
             label="Loja própria"
             value={brl(propria.revenue)}

@@ -36,8 +36,30 @@ const SUM = `
   COALESCE(SUM(cogs),0)     AS cogs,
   COALESCE(SUM(orders),0)   AS orders`;
 
-export async function totalsForMonth(refMonth: string): Promise<Totals> {
-  return (await one<Totals>(`SELECT ${SUM} FROM finance_snapshots WHERE ref_month = ?`, refMonth)) ?? EMPTY;
+/**
+ * Lista de clientes que a pessoa enxerga, vinda de visibleClientIds().
+ * `null` ou `undefined` = a carteira inteira, sem restrição.
+ */
+export type Scope = string[] | null | undefined;
+
+/**
+ * Fragmento SQL que limita a consulta ao escopo.
+ *
+ * Escopo vazio precisa virar uma condição falsa, e não sumir: um membro
+ * sem cliente atribuído tem que ver zero, nunca tudo.
+ */
+function scoped(scope: Scope, column = "client_id"): { sql: string; params: string[] } {
+  if (!scope) return { sql: "", params: [] };
+  if (!scope.length) return { sql: " AND 1 = 0", params: [] };
+  return { sql: ` AND ${column} IN (${scope.map(() => "?").join(",")})`, params: scope };
+}
+
+export async function totalsForMonth(refMonth: string, scope?: Scope): Promise<Totals> {
+  const s = scoped(scope);
+  return (
+    (await one<Totals>(`SELECT ${SUM} FROM finance_snapshots WHERE ref_month = ?${s.sql}`, refMonth, ...s.params)) ??
+    EMPTY
+  );
 }
 
 export async function totalsForClient(clientId: string, refMonth: string): Promise<Totals> {
@@ -70,8 +92,10 @@ export async function clientRows(
   refMonth = currentMonth(),
   /** 'cliente' traz só a carteira; 'propria' só as lojas do Kadu; undefined traz tudo */
   kind?: "cliente" | "propria",
+  scope?: Scope,
 ): Promise<ClientRow[]> {
   const prev = addMonths(refMonth, -1);
+  const s = scoped(scope, "c.id");
   return all<ClientRow>(
     `SELECT c.*,
             u.name  AS owner_name,
@@ -101,13 +125,14 @@ export async function clientRows(
                    WHERE status <> 'concluida' AND client_id IS NOT NULL GROUP BY client_id) k ON k.client_id = c.id
        LEFT JOIN (SELECT client_id, MAX(created_at) last_note_at FROM client_notes GROUP BY client_id) n
               ON n.client_id = c.id
-      ${kind ? "WHERE c.kind = ?" : ""}
+      WHERE 1 = 1 ${kind ? "AND c.kind = ?" : ""}${s.sql}
       ORDER BY (CASE c.status WHEN 'atencao' THEN 0 WHEN 'ativo' THEN 1 WHEN 'onboarding' THEN 2
                               WHEN 'pausado' THEN 3 ELSE 4 END),
                COALESCE(f.revenue,0) DESC, lower(c.name)`,
     refMonth,
     prev,
     ...(kind ? [kind] : []),
+    ...s.params,
   );
 }
 
@@ -115,24 +140,28 @@ export interface MonthPoint extends Totals {
   ref_month: string;
 }
 
-export async function monthlySeries(months: number, clientId?: string): Promise<MonthPoint[]> {
+export async function monthlySeries(months: number, clientId?: string, scope?: Scope): Promise<MonthPoint[]> {
   const refs = lastMonths(months);
+  const s = scoped(scope);
   const where = clientId ? "WHERE client_id = ? AND ref_month >= ?" : "WHERE ref_month >= ?";
   const params = clientId ? [clientId, refs[0]] : [refs[0]];
   const rows = await all<MonthPoint>(
-    `SELECT ref_month, ${SUM} FROM finance_snapshots ${where} GROUP BY ref_month`,
+    `SELECT ref_month, ${SUM} FROM finance_snapshots ${where}${s.sql} GROUP BY ref_month`,
     ...params,
+    ...s.params,
   );
   const map = new Map(rows.map((r) => [r.ref_month, r]));
   return refs.map((ref) => map.get(ref) ?? { ref_month: ref, ...EMPTY });
 }
 
-export async function marketplaceBreakdown(refMonth: string, clientId?: string) {
+export async function marketplaceBreakdown(refMonth: string, clientId?: string, scope?: Scope) {
+  const s = scoped(scope);
   const where = clientId ? "WHERE ref_month = ? AND client_id = ?" : "WHERE ref_month = ?";
   const params = clientId ? [refMonth, clientId] : [refMonth];
   return all<Totals & { marketplace: string }>(
-    `SELECT marketplace, ${SUM} FROM finance_snapshots ${where} GROUP BY marketplace ORDER BY revenue DESC`,
+    `SELECT marketplace, ${SUM} FROM finance_snapshots ${where}${s.sql} GROUP BY marketplace ORDER BY revenue DESC`,
     ...params,
+    ...s.params,
   );
 }
 
@@ -317,9 +346,16 @@ export async function messages(channelId: string, limit = 200) {
   return rows.reverse();
 }
 
-export async function adsRows(filter: { refMonth?: string; clientId?: string; marketplace?: string } = {}) {
+export async function adsRows(
+  filter: { refMonth?: string; clientId?: string; marketplace?: string; scope?: Scope } = {},
+) {
   const where: string[] = [];
   const params: unknown[] = [];
+  if (filter.scope) {
+    // escopo vazio tem que zerar o resultado, não liberá-lo
+    where.push(filter.scope.length ? `a.client_id IN (${filter.scope.map(() => "?").join(",")})` : "1 = 0");
+    params.push(...filter.scope);
+  }
   if (filter.refMonth) {
     where.push("substr(a.period_start,1,7) <= ? AND substr(a.period_end,1,7) >= ?");
     params.push(filter.refMonth, filter.refMonth);
@@ -343,14 +379,17 @@ export async function adsRows(filter: { refMonth?: string; clientId?: string; ma
   );
 }
 
-export async function clientOptions() {
+export async function clientOptions(scope?: Scope) {
+  const s = scoped(scope, "id");
   return all<{ id: string; name: string; status: string }>(
-    "SELECT id, name, status FROM clients ORDER BY lower(name)",
+    `SELECT id, name, status FROM clients WHERE 1 = 1${s.sql} ORDER BY lower(name)`,
+    ...s.params,
   );
 }
 
 /** Saúde das integrações: o que está quebrado ou parado de atualizar. */
-export async function integrationHealth() {
+export async function integrationHealth(scope?: Scope) {
+  const esc = scoped(scope, "cm.client_id");
   const contas = await all<{
     id: string;
     client_id: string;
@@ -364,8 +403,9 @@ export async function integrationHealth() {
             cm.last_error, cm.last_sync_at
        FROM client_marketplaces cm
        JOIN clients cl ON cl.id = cm.client_id
-      WHERE cm.status IN ('conectado', 'erro')
+      WHERE cm.status IN ('conectado', 'erro')${esc.sql}
       ORDER BY cm.last_sync_at ASC NULLS FIRST`,
+    ...esc.params,
   );
 
   const limite = Date.now() - 3 * 864e5;

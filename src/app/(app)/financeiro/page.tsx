@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { Suspense } from "react";
-import { requireRole } from "@/lib/auth";
+import { requirePermission } from "@/lib/auth";
 import {
   agencySeries,
   agencyTotals,
@@ -54,7 +54,7 @@ export default async function FinanceiroPage({
   searchParams: Promise<{ mes?: string; aba?: string; ok?: string; geradas?: string; atualizadas?: string; repetidas?: string }>;
 }) {
   // dinheiro da agência não é para toda a equipe
-  const user = await requireRole("admin", "gestor");
+  const user = await requirePermission("financeiro");
   const isAdmin = user.role === "admin";
 
   const sp = await searchParams;

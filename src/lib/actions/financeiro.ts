@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { all, id, now, one, run } from "@/lib/db";
-import { requireRole, requireUser } from "@/lib/auth";
+import { requirePermission, requireUser } from "@/lib/auth";
 import { str, strOrNull, toNumber } from "@/lib/format";
 
 function refresh() {
@@ -12,7 +12,7 @@ function refresh() {
 
 /** Só admin e gestor tocam no financeiro da agência. */
 async function assertFinance() {
-  return requireRole("admin", "gestor");
+  return requirePermission("financeiro");
 }
 
 /**
@@ -162,7 +162,7 @@ export async function deleteChargeAction(formData: FormData) {
 
 /** Despesas da agência — apenas admin, porque inclui folha e pró-labore. */
 export async function createExpenseAction(formData: FormData) {
-  const user = await requireRole("admin");
+  const user = await requirePermission("financeiro");
   const refMonth = str(formData.get("ref_month"));
   const description = str(formData.get("description"));
   if (!description) throw new Error("Descreva a despesa.");
@@ -191,7 +191,7 @@ export async function createExpenseAction(formData: FormData) {
 }
 
 export async function toggleExpensePaidAction(formData: FormData) {
-  await requireRole("admin");
+  await requirePermission("financeiro");
   const refMonth = str(formData.get("ref_month"));
   const expenseId = str(formData.get("expense_id"));
   const current = await one<{ paid: number }>("SELECT paid FROM agency_expenses WHERE id = ?", expenseId);
@@ -210,7 +210,7 @@ export async function toggleExpensePaidAction(formData: FormData) {
 }
 
 export async function deleteExpenseAction(formData: FormData) {
-  await requireRole("admin");
+  await requirePermission("financeiro");
   const refMonth = str(formData.get("ref_month"));
   await run("DELETE FROM agency_expenses WHERE id = ?", str(formData.get("expense_id")));
   refresh();
@@ -219,7 +219,7 @@ export async function deleteExpenseAction(formData: FormData) {
 
 /** Repete no mês escolhido as despesas marcadas como recorrentes do mês anterior. */
 export async function repeatRecurringAction(formData: FormData) {
-  const user = await requireRole("admin");
+  const user = await requirePermission("financeiro");
   const refMonth = str(formData.get("ref_month"));
   const [y, m] = refMonth.split("-").map(Number);
   const prev = new Date(Date.UTC(y, m - 2, 1));

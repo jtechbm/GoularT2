@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { id, now, one, run } from "@/lib/db";
-import { isManager, requireUser } from "@/lib/auth";
+import { assertCan, requireUser } from "@/lib/auth";
 import { str, strOrNull, toNumber } from "@/lib/format";
 import { TASK_PRIORITIES } from "@/lib/types";
 
@@ -34,7 +34,7 @@ function pointsFor(priority: string, override?: number): number {
 
 export async function createTaskAction(formData: FormData) {
   const user = await requireUser();
-  if (!isManager(user)) throw new Error("Somente gestores criam tarefas para a equipe.");
+  assertCan(user, "tarefas.gerenciar", "Somente gestores e admins criam tarefas para a equipe.");
 
   const title = str(formData.get("title"));
   if (!title) throw new Error("A tarefa precisa de um título.");
@@ -134,7 +134,7 @@ export async function reopenTaskAction(formData: FormData) {
 
 export async function updateTaskAction(formData: FormData) {
   const user = await requireUser();
-  if (!isManager(user)) throw new Error("Somente gestores editam a tarefa.");
+  assertCan(user, "tarefas.gerenciar", "Somente gestores e admins editam a tarefa.");
   const taskId = str(formData.get("task_id"));
   const priority = str(formData.get("priority"));
 
@@ -159,7 +159,7 @@ export async function updateTaskAction(formData: FormData) {
 
 export async function deleteTaskAction(formData: FormData) {
   const user = await requireUser();
-  if (!isManager(user)) throw new Error("Somente gestores excluem tarefas.");
+  assertCan(user, "tarefas.gerenciar", "Somente gestores e admins excluem tarefas.");
   await run("DELETE FROM tasks WHERE id = ?", str(formData.get("task_id")));
   refresh();
   redirect("/tarefas");

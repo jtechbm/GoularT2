@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { id, now, one, run } from "@/lib/db";
-import { isManager, requireUser } from "@/lib/auth";
+import { assertCan, requireUser } from "@/lib/auth";
 import { str, strOrNull } from "@/lib/format";
 
 function slugify(value: string): string {
@@ -72,7 +72,7 @@ export async function sendMessageAction(formData: FormData) {
 
 export async function deleteChannelAction(formData: FormData) {
   const user = await requireUser();
-  if (!isManager(user)) throw new Error("Somente gestores removem canais.");
+  assertCan(user, "chat.gerenciar", "Somente gestores e admins removem canais.");
   await run("DELETE FROM chat_channels WHERE slug = ?", str(formData.get("slug")));
   revalidatePath("/chat");
   redirect("/chat");

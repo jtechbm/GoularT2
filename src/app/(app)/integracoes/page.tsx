@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { Suspense } from "react";
-import { isManager, requireUser } from "@/lib/auth";
+import { requirePermission } from "@/lib/auth";
 import { all } from "@/lib/db";
 import { syncLogs } from "@/lib/queries";
 import { integrationStatus } from "@/lib/integrations";
@@ -23,11 +23,11 @@ export default async function IntegracoesPage({
 }: {
   searchParams: Promise<{ mes?: string; ok?: string; erro?: string; sync?: string; total?: string }>;
 }) {
-  const user = await requireUser();
+  const user = await requirePermission("integracoes.gerenciar");
   const sp = await searchParams;
   const months = lastMonths(12);
   const ref = sp.mes && months.includes(sp.mes) ? sp.mes : currentMonth();
-  const manager = isManager(user);
+  const manager = true; // a página inteira já exige a permissão de integrações
 
   const status = await integrationStatus();
   const logs = await syncLogs(15);

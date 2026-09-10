@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Suspense } from "react";
-import { isManager, requireUser } from "@/lib/auth";
+import { requireUser, visibleClientIds } from "@/lib/auth";
+import { can } from "@/lib/permissions";
 import { clientRows } from "@/lib/queries";
 import { brlShort, currentMonth, dateBR, lastMonths, num, pct } from "@/lib/format";
 import { Avatar, Card, Chip, Delta, Empty, MarketplaceChip, PageHeader, Stat, StatusChip } from "@/components/ui";
@@ -26,7 +27,7 @@ export default async function ClientesPage({
   const status = params.status ?? "";
   const onlyMine = params.resp === "eu";
 
-  const all = await clientRows(ref, "cliente");
+  const all = await clientRows(ref, "cliente", await visibleClientIds(user));
   const rows = all.filter((c) => {
     if (status && c.status !== status) return false;
     if (onlyMine && c.owner_id !== user.id) return false;
@@ -70,7 +71,7 @@ export default async function ClientesPage({
             <Suspense fallback={null}>
               <MonthPicker months={months} value={ref} />
             </Suspense>
-            {isManager(user) && (
+            {can(user, "clientes.gerenciar") && (
               <Link href="/clientes/novo" className="btn btn-primary">
                 + Novo cliente
               </Link>
@@ -197,7 +198,7 @@ export default async function ClientesPage({
                   : "Cadastre o primeiro cliente para começar."
               }
               action={
-                isManager(user) ? (
+                can(user, "clientes.gerenciar") ? (
                   <Link href="/clientes/novo" className="btn btn-primary btn-sm">
                     Cadastrar cliente
                   </Link>

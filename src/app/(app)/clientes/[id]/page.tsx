@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { isManager, listUsers, requireUser } from "@/lib/auth";
+import { canSeeClient, listUsers, requireUser } from "@/lib/auth";
+import { can } from "@/lib/permissions";
 import {
   clientAds,
   clientMarketplaces,
@@ -56,6 +57,8 @@ export default async function ClientePage({
 
   const client = await getClient(id);
   if (!client) notFound();
+  // um cliente fora da carteira da pessoa não existe para ela
+  if (!(await canSeeClient(user, client.id))) notFound();
 
   const months = lastMonths(12);
   const ref = sp.mes && months.includes(sp.mes) ? sp.mes : currentMonth();
@@ -73,7 +76,7 @@ export default async function ClientePage({
   const breakdown = await marketplaceBreakdown(ref, client.id);
   const allUsers = await listUsers();
   const marketplacesDisponiveis = (await integrationStatus()).filter((i) => i.configured).map((i) => i.marketplace);
-  const manager = isManager(user);
+  const manager = can(user, "clientes.gerenciar");
   const margin = totals.revenue ? totals.profit / totals.revenue : 0;
 
   return (

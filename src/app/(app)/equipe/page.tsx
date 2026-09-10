@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { isManager, listUsers, requireUser } from "@/lib/auth";
+import { listUsers, requireUser, visibleClientIds } from "@/lib/auth";
+import { can, permissionsOf, PERMISSION_LABEL, PERMISSION_ORDER } from "@/lib/permissions";
 import { all } from "@/lib/db";
 import { clientRows, leaderboard, tasks } from "@/lib/queries";
 import { brlShort, currentMonth, dateBR } from "@/lib/format";
@@ -17,11 +18,11 @@ export default async function EquipePage({
 }) {
   const user = await requireUser();
   const sp = await searchParams;
-  const manager = isManager(user);
+  const manager = can(user, "equipe.gerenciar");
 
   const users = await listUsers(manager);
   const board = new Map((await leaderboard()).map((b) => [b.id, b] as const));
-  const carteira = await clientRows(currentMonth());
+  const carteira = await clientRows(currentMonth(), undefined, await visibleClientIds(user));
   const openTasks = await tasks({ status: "em_andamento" });
 
   const memberships = await all<{ user_id: string; client_id: string; name: string; role: string }>(
@@ -246,15 +247,44 @@ export default async function EquipePage({
             </form>
           )}
 
-          <Card title="Papéis do sistema">
-            <ul className="space-y-3">
-              {ROLES.map((r) => (
-                <li key={r.value}>
-                  <div className="text-sm font-semibold text-ink">{r.label}</div>
-                  <p className="text-xs text-dim">{r.description}</p>
-                </li>
-              ))}
-            </ul>
+          <Card title="Papéis do sistema" subtitle="O que cada papel pode fazer">
+            <div className="table-wrap">
+              <table className="data">
+                <thead>
+                  <tr>
+                    <th />
+                    {ROLES.map((r) => (
+                      <th key={r.value} className="num">
+                        {r.label}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {PERMISSION_ORDER.map((p) => (
+                    <tr key={p}>
+                      <td className="text-xs text-muted">{PERMISSION_LABEL[p]}</td>
+                      {ROLES.map((r) => {
+                        const tem = permissionsOf(r.value).includes(p);
+                        return (
+                          <td key={r.value} className={`num ${tem ? "text-ok" : "text-dim"}`} title={r.description}>
+                            {tem ? "sim" : "—"}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                  <tr>
+                    <td className="text-xs text-muted">Ver clientes</td>
+                    {ROLES.map((r) => (
+                      <td key={r.value} className="num text-xs text-muted">
+                        {permissionsOf(r.value).includes("carteira.completa") ? "todos" : "só os dele"}
+                      </td>
+                    ))}
+                  </tr>
+                </tbody>
+              </table>
+            </div>
           </Card>
         </div>
       </div>

@@ -3,7 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { id, now, one, run } from "@/lib/db";
-import { isManager, requireUser } from "@/lib/auth";
+import { assertCan, assertClientAccess, requireUser } from "@/lib/auth";
+import { can } from "@/lib/permissions";
 import { str, strOrNull, toNumber } from "@/lib/format";
 
 async function touch(clientId: string) {
@@ -15,7 +16,7 @@ async function touch(clientId: string) {
 
 async function assertManager() {
   const user = await requireUser();
-  if (!isManager(user)) throw new Error("Apenas gestores e admins podem executar esta ação.");
+  assertCan(user, "clientes.gerenciar", "Apenas gestores e admins podem executar esta ação.");
   return user;
 }
 
@@ -186,6 +187,7 @@ export async function saveFinanceAction(formData: FormData) {
   const refMonth = str(formData.get("ref_month"));
   const marketplace = str(formData.get("marketplace"));
   if (!clientId || !refMonth || !marketplace) throw new Error("Cliente, mês e marketplace são obrigatórios.");
+  await assertClientAccess(user, clientId);
 
   const revenue = toNumber(formData.get("revenue"));
   const cogs = toNumber(formData.get("cogs"));
@@ -251,6 +253,7 @@ export async function saveFinanceAction(formData: FormData) {
 export async function addNoteAction(formData: FormData) {
   const user = await requireUser();
   const clientId = str(formData.get("client_id"));
+  await assertClientAccess(user, clientId);
   const body = str(formData.get("body"));
   if (!body) redirect(`/clientes/${clientId}?tab=historico`);
 
@@ -269,8 +272,9 @@ export async function addNoteAction(formData: FormData) {
 }
 
 export async function toggleNotePinAction(formData: FormData) {
-  await requireUser();
+  const user = await requireUser();
   const clientId = str(formData.get("client_id"));
+  await assertClientAccess(user, clientId);
   await run("UPDATE client_notes SET pinned = 1 - pinned WHERE id = ?", str(formData.get("note_id")));
   await touch(clientId);
   redirect(`/clientes/${clientId}?tab=historico`);
@@ -279,9 +283,10 @@ export async function toggleNotePinAction(formData: FormData) {
 export async function deleteNoteAction(formData: FormData) {
   const user = await requireUser();
   const clientId = str(formData.get("client_id"));
+  await assertClientAccess(user, clientId);
   const noteId = str(formData.get("note_id"));
   const note = await one<{ user_id: string | null }>("SELECT user_id FROM client_notes WHERE id = ?", noteId);
-  if (note && (note.user_id === user.id || isManager(user))) {
+  if (note && (note.user_id === user.id || can(user, "clientes.gerenciar"))) {
     await run("DELETE FROM client_notes WHERE id = ?", noteId);
   }
   await touch(clientId);

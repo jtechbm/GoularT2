@@ -30,7 +30,8 @@ const NAV: { href: string; label: string; Icon: typeof IconHome; exact?: boolean
   { href: "/tarefas", label: "Tarefas", Icon: IconCheckSquare },
   { href: "/equipe", label: "Equipe", Icon: IconUsers },
   { href: "/chat", label: "Chat", Icon: IconChat },
-  { href: "/integracoes", label: "Marketplaces", Icon: IconSync },
+  // a tela das conexões é do admin; gestor e membro sincronizam pelo cliente
+  { href: "/integracoes", label: "Marketplaces", Icon: IconSync, roles: ["admin"] },
 ];
 
 const ROLE_LABEL: Record<string, string> = { admin: "Admin", gestor: "Gestor", membro: "Membro" };

@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { isManager, listUsers, requireUser } from "@/lib/auth";
+import { listUsers, requireUser, visibleClientIds } from "@/lib/auth";
+import { can } from "@/lib/permissions";
 import { clientOptions, leaderboard, tasks, type TaskRow } from "@/lib/queries";
 import { dateBR, relativeBR } from "@/lib/format";
 import { Avatar, Card, Chip, Empty, Field, PageHeader, Stat, StatusChip } from "@/components/ui";
@@ -35,8 +36,8 @@ export default async function TarefasPage({
   const aba = ABAS.some((a) => a.key === sp.aba) ? sp.aba! : "disponiveis";
   const clientFilter = sp.cliente;
 
-  const manager = isManager(user);
-  const clients = await clientOptions();
+  const manager = can(user, "tarefas.gerenciar");
+  const clients = await clientOptions(await visibleClientIds(user));
   const team = await listUsers();
 
   const filter = clientFilter ? { clientId: clientFilter } : {};

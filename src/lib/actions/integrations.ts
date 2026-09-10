@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { randomBytes } from "node:crypto";
 import { all, id, now, one, run } from "@/lib/db";
-import { requireRole, requireUser } from "@/lib/auth";
+import { assertCan, assertClientAccess, requirePermission, requireUser } from "@/lib/auth";
 import { str } from "@/lib/format";
 import { adapterFor, syncAccount } from "@/lib/integrations";
 import { currentMonth } from "@/lib/format";
@@ -17,7 +17,7 @@ const DIAS_VALIDADE = 7;
  * callback, já que o lojista não tem sessão no Elleva.
  */
 export async function generateAuthLinkAction(formData: FormData) {
-  const user = await requireRole("admin", "gestor");
+  const user = await requirePermission("integracoes.gerenciar");
   const accountId = str(formData.get("account_id"));
   const back = str(formData.get("redirect_to")) || "/integracoes";
 
@@ -55,7 +55,7 @@ export async function generateAuthLinkAction(formData: FormData) {
  * saber que existe um cadastro de "canal" por trás.
  */
 export async function requestAccessAction(formData: FormData) {
-  const user = await requireRole("admin", "gestor");
+  const user = await requirePermission("integracoes.gerenciar");
   const clientId = str(formData.get("client_id"));
   const marketplace = str(formData.get("marketplace"));
 
@@ -101,7 +101,7 @@ export async function requestAccessAction(formData: FormData) {
 
 /** Invalida o link sem mexer na conexão já feita. */
 export async function revokeAuthLinkAction(formData: FormData) {
-  await requireRole("admin", "gestor");
+  await requirePermission("integracoes.gerenciar");
   const accountId = str(formData.get("account_id"));
   const back = str(formData.get("redirect_to")) || "/integracoes";
   await run(
@@ -119,6 +119,16 @@ export async function syncAccountAction(formData: FormData) {
   const refMonth = str(formData.get("ref_month")) || currentMonth();
   const back = str(formData.get("redirect_to")) || "/integracoes";
 
+  // sem isto qualquer pessoa logada puxava os números de qualquer conta,
+  // bastando conhecer o id
+  const conta = await one<{ client_id: string }>(
+    "SELECT client_id FROM client_marketplaces WHERE id = ?",
+    accountId,
+  );
+  if (!conta) throw new Error("Conta não encontrada.");
+  assertCan(user, "integracoes.sincronizar", "Seu papel não permite sincronizar contas.");
+  await assertClientAccess(user, conta.client_id);
+
   const outcome = await syncAccount(accountId, refMonth, user.id);
 
   revalidatePath("/integracoes");
@@ -128,7 +138,7 @@ export async function syncAccountAction(formData: FormData) {
 
 /** Sincroniza todas as contas conectadas de um mês. */
 export async function syncAllAction(formData: FormData) {
-  const user = await requireUser();
+  const user = await requirePermission("integracoes.gerenciar");
   const refMonth = str(formData.get("ref_month")) || currentMonth();
   const accounts = await all<{ id: string }>(
     "SELECT id FROM client_marketplaces WHERE status IN ('conectado','erro')",
@@ -147,7 +157,7 @@ export async function syncAllAction(formData: FormData) {
 
 /** Desconecta a conta, apagando os tokens guardados. */
 export async function disconnectAccountAction(formData: FormData) {
-  await requireRole("admin", "gestor");
+  await requirePermission("integracoes.gerenciar");
   const accountId = str(formData.get("account_id"));
   await run(
     `UPDATE client_marketplaces
