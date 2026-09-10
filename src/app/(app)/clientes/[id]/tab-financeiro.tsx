@@ -60,10 +60,16 @@ export function TabFinanceiro({
                 title={<MarketplaceChip value={mk} />}
                 subtitle={
                   snap
-                    ? `${snap.source === "api" ? "Sincronizado da API" : "Lançado manualmente"} · ${dateTimeBR(snap.updated_at)}`
+                    ? `${snap.source === "api" ? "Direto da loja" : "Lançado à mão"} · atualizado ${dateTimeBR(snap.updated_at)}`
                     : "Sem lançamento neste mês"
                 }
-                actions={snap && <Chip tone={snap.source === "api" ? "ok" : "neutral"}>{snap.source}</Chip>}
+                actions={
+                  snap && (
+                    <Chip tone={snap.source === "api" ? "ok" : "neutral"}>
+                      {snap.source === "api" ? "automático" : "manual"}
+                    </Chip>
+                  )
+                }
                 bodyClassName="p-5 pb-0"
               >
                 <div className="grid gap-3 sm:grid-cols-2">

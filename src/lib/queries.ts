@@ -547,3 +547,71 @@ export async function expensesByCategory(refMonth: string) {
     refMonth,
   );
 }
+
+// ---------------------------------------------------------------- procedencia dos numeros
+
+export interface ProcedenciaInfo {
+  origem: "api" | "manual" | "misto" | "vazio";
+  /** ultima vez que o DADO mudou, nunca a data de edicao do cadastro */
+  atualizadoEm: string | null;
+  /** contas de loja conectadas no recorte */
+  contas: number;
+  /** dessas contas, quantas ja trouxeram numero no mes */
+  comDados: number;
+}
+
+function origemDe(api: number, manual: number): ProcedenciaInfo["origem"] {
+  if (api && manual) return "misto";
+  if (api) return "api";
+  if (manual) return "manual";
+  return "vazio";
+}
+
+/**
+ * De onde vieram os numeros do mes e quando chegaram.
+ *
+ * O rodape do cliente mostrava clients.updated_at, que muda quando alguem
+ * corrige um telefone. Quem lia achava que o faturamento era daquele dia.
+ * Aqui a data vem de finance_snapshots.updated_at e de
+ * client_marketplaces.last_sync_at, que sao os campos que realmente mudam
+ * quando o numero muda.
+ */
+export async function procedenciaDoMes(
+  refMonth: string,
+  opcoes: { clientId?: string; scope?: Scope } = {},
+): Promise<ProcedenciaInfo> {
+  const esc = scoped(opcoes.scope, "client_id");
+  const cli = opcoes.clientId ? " AND client_id = ?" : "";
+  const pCli = opcoes.clientId ? [opcoes.clientId] : [];
+
+  const snap = await one<{ api: number; manual: number; ultimo: string | null }>(
+    `SELECT COUNT(*) FILTER (WHERE source = 'api')    AS api,
+            COUNT(*) FILTER (WHERE source <> 'api')   AS manual,
+            MAX(updated_at)                           AS ultimo
+       FROM finance_snapshots
+      WHERE ref_month = ?${cli}${esc.sql}`,
+    refMonth,
+    ...pCli,
+    ...esc.params,
+  );
+
+  const contas = await one<{ total: number; ultimo: string | null }>(
+    `SELECT COUNT(*) AS total, MAX(last_sync_at) AS ultimo
+       FROM client_marketplaces
+      WHERE status = 'conectado'${cli}${esc.sql}`,
+    ...pCli,
+    ...esc.params,
+  );
+
+  const api = snap?.api ?? 0;
+  const manual = snap?.manual ?? 0;
+  // a mais recente entre a gravacao do numero e a ultima sincronizacao
+  const datas = [snap?.ultimo, contas?.ultimo].filter(Boolean) as string[];
+
+  return {
+    origem: origemDe(api, manual),
+    atualizadoEm: datas.length ? datas.sort().at(-1)! : null,
+    contas: contas?.total ?? 0,
+    comDados: api + manual,
+  };
+}

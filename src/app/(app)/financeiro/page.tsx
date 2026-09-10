@@ -10,9 +10,11 @@ import {
   expensesForMonth,
   ownStoreTotals,
   clientRows,
+  procedenciaDoMes,
 } from "@/lib/queries";
 import { brl, brlShort, currentMonth, dateBR, lastMonths, monthLabel, pct } from "@/lib/format";
 import { Card, Chip, Empty, Field, PageHeader, Stat } from "@/components/ui";
+import { Procedencia } from "@/components/procedencia";
 import { SubmitButton } from "@/components/submit";
 import { MonthPicker } from "@/components/month-picker";
 import { ChartLegend, Donut } from "@/components/charts";
@@ -70,6 +72,7 @@ export default async function FinanceiroPage({
   const series = isAdmin ? await agencySeries(6) : [];
   const propria = await ownStoreTotals(ref);
   const lojasProprias = propria.stores > 0 ? await clientRows(ref, "propria") : [];
+  const procedencia = await procedenciaDoMes(ref);
 
   // o dinheiro do Kadu vem de duas fontes: o que ele cobra dos clientes
   // e o que a loja dele mesmo dá de lucro
@@ -83,7 +86,19 @@ export default async function FinanceiroPage({
     <>
       <PageHeader
         title="Financeiro da agência"
-        subtitle={`O que a operação fatura, recebe${isAdmin ? " e gasta" : ""} — ${monthLabel(ref)}`}
+        subtitle={
+          <span className="flex flex-wrap items-center gap-2">
+            <span>
+              O que a operação fatura, recebe{isAdmin ? " e gasta" : ""} — {monthLabel(ref)}
+            </span>
+            <Procedencia
+              origem={procedencia.origem}
+              atualizadoEm={procedencia.atualizadoEm}
+              contas={procedencia.contas}
+              comDados={procedencia.comDados}
+            />
+          </span>
+        }
         actions={
           <>
             <Suspense fallback={null}>
@@ -328,7 +343,13 @@ export default async function FinanceiroPage({
                   <li key={c.id}>
                     <Link href={`/clientes/${c.id}?tab=dados`} className="chip bg-surface-3 text-muted hover:text-brand">
                       {c.name}
-                      {c.monthly_fee > 0 || c.commission_pct > 0 ? "" : " · sem valor no contrato"}
+                      {c.monthly_fee > 0 ? (
+                        <span className="text-warn"> · {brlShort(c.monthly_fee)} estimado</span>
+                      ) : c.commission_pct > 0 ? (
+                        <span className="text-warn"> · {pct(c.commission_pct / 100)} estimado</span>
+                      ) : (
+                        " · sem valor no contrato"
+                      )}
                     </Link>
                   </li>
                 ))}

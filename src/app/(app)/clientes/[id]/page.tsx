@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { canSeeClient, listUsers, requireUser } from "@/lib/auth";
+import { Procedencia } from "@/components/procedencia";
 import { can } from "@/lib/permissions";
 import {
   clientAds,
@@ -11,6 +12,7 @@ import {
   marketplaceBreakdown,
   monthlySeries,
   getClient,
+  procedenciaDoMes,
   tasks,
   totalsForClient,
 } from "@/lib/queries";
@@ -74,6 +76,7 @@ export default async function ClientePage({
   const ads = await clientAds(client.id);
   const clientTasks = await tasks({ clientId: client.id });
   const breakdown = await marketplaceBreakdown(ref, client.id);
+  const procedencia = await procedenciaDoMes(ref, { clientId: client.id });
   const allUsers = await listUsers();
   const marketplacesDisponiveis = (await integrationStatus()).filter((i) => i.configured).map((i) => i.marketplace);
   const manager = can(user, "clientes.gerenciar");
@@ -199,10 +202,16 @@ export default async function ClientePage({
         {tab === "dados" && <TabDados client={client} users={allUsers} manager={manager} />}
       </div>
 
-      <p className="mt-6 text-center text-[0.7rem] text-dim">
-        Atualizado em {dateBR(client.updated_at)} · faturamento acumulado de {brlShort(
-          snapshots.reduce((s, r) => s + r.revenue, 0),
-        )} nos últimos 12 meses
+      <p className="mt-6 flex flex-wrap items-center justify-center gap-2 text-center text-[0.7rem] text-dim">
+        <Procedencia
+          origem={procedencia.origem}
+          atualizadoEm={procedencia.atualizadoEm}
+          contas={procedencia.contas}
+          comDados={procedencia.comDados}
+        />
+        <span>
+          · faturamento acumulado de {brlShort(snapshots.reduce((s, r) => s + r.revenue, 0))} nos últimos 12 meses
+        </span>
       </p>
     </>
   );

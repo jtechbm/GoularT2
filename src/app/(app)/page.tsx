@@ -11,6 +11,7 @@ import {
   totalsForMonth,
   ownStoreTotals,
   integrationHealth,
+  procedenciaDoMes,
 } from "@/lib/queries";
 import { addMonths, brl, brlShort, currentMonth, dateBR, lastMonths, num, pct } from "@/lib/format";
 import {
@@ -29,6 +30,7 @@ import { RevenueProfitChart, ChartLegend, Donut } from "@/components/charts";
 import { IconBarChart, IconDollar, IconPlus, IconReceipt, IconTrendUp, IconUsers } from "@/components/icons";
 import { MonthPicker } from "@/components/month-picker";
 import { SaudeIntegracoes } from "@/components/saude-integracoes";
+import { Procedencia } from "@/components/procedencia";
 import { marketplaceLabel } from "@/lib/types";
 
 function growth(current: number, previous: number): number {
@@ -73,6 +75,7 @@ export default async function DashboardPage({
   const myTasks = await tasks({ status: "em_andamento", assignee: user.id });
   const board = await leaderboard();
   const saude = await integrationHealth(escopo);
+  const procedencia = await procedenciaDoMes(ref, { scope: escopo });
   const top = rows.slice(0, 8);
 
   const totalRevenue = byMarketplace.reduce((s, m) => s + m.revenue, 0);
@@ -81,7 +84,17 @@ export default async function DashboardPage({
     <>
       <PageHeader
         title={`Olá, ${user.name.split(" ")[0]} 👋`}
-        subtitle="Aqui está o resumo da sua operação."
+        subtitle={
+          <span className="flex flex-wrap items-center gap-2">
+            <span>Aqui está o resumo da sua operação.</span>
+            <Procedencia
+              origem={procedencia.origem}
+              atualizadoEm={procedencia.atualizadoEm}
+              contas={procedencia.contas}
+              comDados={procedencia.comDados}
+            />
+          </span>
+        }
         actions={
           <Suspense fallback={null}>
             <MonthPicker months={months} value={ref} />

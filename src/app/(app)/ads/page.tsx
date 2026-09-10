@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { Suspense } from "react";
 import { requireUser, visibleClientIds } from "@/lib/auth";
-import { adsRows, clientOptions, marketplaceBreakdown } from "@/lib/queries";
+import { adsRows, clientOptions, marketplaceBreakdown, procedenciaDoMes } from "@/lib/queries";
+import { Procedencia } from "@/components/procedencia";
 import { brl, brlShort, currentMonth, dateBR, lastMonths, monthLabel, num, origemLabel, pct } from "@/lib/format";
 import { Card, Empty, Field, MARKETPLACE_COLOR, MarketplaceChip, PageHeader, Stat } from "@/components/ui";
 import { SaveBar, SubmitButton } from "@/components/submit";
@@ -24,6 +25,7 @@ export default async function AdsPage({
   const rows = await adsRows({ refMonth: ref, clientId: sp.cliente, marketplace: sp.canal, scope: escopo });
   const clients = await clientOptions(escopo);
   const breakdown = await marketplaceBreakdown(ref, undefined, escopo);
+  const procedencia = await procedenciaDoMes(ref, { scope: escopo });
 
   // separar o que veio da loja do que a equipe digitou: o texto da tela
   // dizia "lançamentos" para tudo, mesmo quando ninguém lançou nada
@@ -57,7 +59,17 @@ export default async function AdsPage({
     <>
       <PageHeader
         title="Ads"
-        subtitle={`Investimento por cliente, marketplace e período · ${monthLabel(ref)}`}
+        subtitle={
+          <span className="flex flex-wrap items-center gap-2">
+            <span>Investimento por cliente e loja · {monthLabel(ref)}</span>
+            <Procedencia
+              origem={procedencia.origem}
+              atualizadoEm={procedencia.atualizadoEm}
+              contas={procedencia.contas}
+              comDados={procedencia.comDados}
+            />
+          </span>
+        }
         actions={
           <Suspense fallback={null}>
             <MonthPicker months={months} value={ref} />
