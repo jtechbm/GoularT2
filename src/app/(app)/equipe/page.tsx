@@ -2,7 +2,8 @@ import Link from "next/link";
 import { listUsers, requireUser, visibleClientIds } from "@/lib/auth";
 import { can, permissionsOf, PERMISSION_LABEL, PERMISSION_ORDER } from "@/lib/permissions";
 import { all } from "@/lib/db";
-import { clientRows, leaderboard, tasks } from "@/lib/queries";
+import { clientRows, leaderboard, rankingMensal, tasks } from "@/lib/queries";
+import { Ranking } from "@/components/ranking";
 import { brlShort, currentMonth, dateBR } from "@/lib/format";
 import { Avatar, Card, Chip, Field, PageHeader, Stat } from "@/components/ui";
 import { SaveBar, SubmitButton } from "@/components/submit";
@@ -22,6 +23,7 @@ export default async function EquipePage({
 
   const users = await listUsers(manager);
   const board = new Map((await leaderboard()).map((b) => [b.id, b] as const));
+  const ranking = await rankingMensal(currentMonth());
   const carteira = await clientRows(currentMonth(), undefined, await visibleClientIds(user));
   const openTasks = await tasks({ statuses: ["assumida", "em_andamento", "em_revisao"] });
 
@@ -56,6 +58,10 @@ export default async function EquipePage({
           hint="clientes a distribuir"
           tone={carteira.some((c) => !c.owner_id) ? "bad" : "ok"}
         />
+      </div>
+
+      <div className="mt-3">
+        <Ranking linhas={ranking} refMonth={currentMonth()} />
       </div>
 
       <div className="mt-3 grid gap-3 lg:grid-cols-3">

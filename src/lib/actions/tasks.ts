@@ -7,6 +7,7 @@ import { assertCan, assertClientAccess, requireUser } from "@/lib/auth";
 import { can } from "@/lib/permissions";
 import { str, strOrNull, toNumber } from "@/lib/format";
 import { TASK_PRIORITIES } from "@/lib/types";
+import { calcularPontos } from "@/lib/pontos";
 
 function refresh() {
   revalidatePath("/tarefas");
@@ -192,8 +193,18 @@ export async function approveTaskAction(formData: FormData) {
   assertCan(user, "tarefas.gerenciar", "Somente gestores e admins aprovam tarefas.");
   const taskId = str(formData.get("task_id"));
 
-  const task = await one<{ points: number; assignee_id: string | null; status: string }>(
-    "SELECT points, assignee_id, status FROM tasks WHERE id = ?",
+  const task = await one<{
+    points: number;
+    assignee_id: string | null;
+    status: string;
+    priority: string;
+    due_date: string | null;
+    submitted_at: string | null;
+    rejections: number;
+    self_created: number;
+  }>(
+    `SELECT points, assignee_id, status, priority, due_date, submitted_at, rejections, self_created
+       FROM tasks WHERE id = ?`,
     taskId,
   );
   if (!task) redirect("/tarefas");
@@ -201,13 +212,35 @@ export async function approveTaskAction(formData: FormData) {
     throw new Error("Você não pode aprovar a própria tarefa. Peça a outro gestor.");
   }
 
+  // já pontuada antes? Reabrir e aprovar de novo não pode pagar duas vezes
+  const jaPontuou = await one<{ n: number }>(
+    "SELECT COUNT(*) AS n FROM task_events WHERE task_id = ? AND type = 'aprovada' AND points > 0",
+    taskId,
+  );
+
+  const nota = calcularPontos({
+    priority: task.priority,
+    pointsOverride: task.points,
+    due_date: task.due_date,
+    submitted_at: task.submitted_at,
+    rejections: task.rejections,
+    self_created: task.self_created,
+  });
+  const pontos = (jaPontuou?.n ?? 0) > 0 ? 0 : nota.total;
+
   await run(
     `UPDATE tasks SET status='concluida', completed_at=?, reviewed_at=?, reviewed_by=?, review_note=?,
             updated_at=? WHERE id=?`,
     now(), now(), user.id, strOrNull(formData.get("nota")), now(), taskId,
   );
   // os pontos só existem a partir daqui
-  await logEvent(taskId, task.assignee_id ?? user.id, "aprovada", task.points);
+  await logEvent(
+    taskId,
+    task.assignee_id ?? user.id,
+    "aprovada",
+    pontos,
+    pontos ? nota.motivos.map((m) => `${m.texto}: ${m.valor}`).join(" · ") : "reaprovação, sem novos pontos",
+  );
   refresh();
   redirect("/tarefas?aba=concluidas&ok=1");
 }

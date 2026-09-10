@@ -24,6 +24,7 @@ import {
   toggleEvidenceRequiredAction,
 } from "@/lib/actions/task-detalhe";
 import { TASK_COLUMNS } from "@/lib/types";
+import { calcularPontos } from "@/lib/pontos";
 
 export default async function TarefaPage({ params }: { params: Promise<{ id: string }> }) {
   const user = await requireUser();
@@ -42,6 +43,17 @@ export default async function TarefaPage({ params }: { params: Promise<{ id: str
   const podeEnviar = meu && task.status === "em_andamento" && !obrigatoriosPendentes.length && !faltaEvidencia;
   // quem executou não valida o próprio trabalho
   const podeRevisar = manager && task.status === "em_revisao" && task.assignee_id !== user.id;
+
+  // a previsão de pontos aparece no botão: quem aprova precisa saber o que
+  // está liberando, e quem executou precisa entender de onde veio a nota
+  const nota = calcularPontos({
+    priority: task.priority,
+    pointsOverride: task.points,
+    due_date: task.due_date,
+    submitted_at: task.submitted_at,
+    rejections: task.rejections,
+    self_created: task.self_created,
+  });
 
   return (
     <>
@@ -89,6 +101,12 @@ export default async function TarefaPage({ params }: { params: Promise<{ id: str
           tone={faltaEvidencia ? "bad" : "neutral"}
         />
         <Stat
+          label="Pontuação prevista"
+          value={String(nota.total)}
+          hint={`base ${nota.base}${nota.prazo ? ` · prazo +${nota.prazo}` : ""}${nota.qualidade ? ` · qualidade +${nota.qualidade}` : ""}${nota.retrabalho ? ` · retrabalho ${nota.retrabalho}` : ""}`}
+          tone="accent"
+        />
+        <Stat
           label="Voltas na revisão"
           value={String(task.rejections)}
           hint={task.rejections ? "retrabalho" : "nenhuma"}
@@ -126,8 +144,15 @@ export default async function TarefaPage({ params }: { params: Promise<{ id: str
                       <input name="nota" className="input" placeholder="ficou bom, seguir assim" />
                     </Field>
                     <SubmitButton variant="primary" size="sm" pendingLabel="Aprovando…">
-                      Aprovar e liberar {task.points} pontos
+                      Aprovar e liberar {nota.total} pontos
                     </SubmitButton>
+                    <ul className="space-y-0.5 text-[0.7rem] text-dim">
+                      {nota.motivos.map((m) => (
+                        <li key={m.texto}>
+                          {m.texto}: {m.valor > 0 ? `+${m.valor}` : m.valor}
+                        </li>
+                      ))}
+                    </ul>
                   </form>
 
                   <form action={rejectTaskAction} className="space-y-2 border-t border-line pt-3">

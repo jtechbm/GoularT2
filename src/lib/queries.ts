@@ -1038,3 +1038,52 @@ export async function checklistResumo(taskIds: string[]) {
     rows.map((r) => [r.task_id, { total: r.total, feitos: r.feitos, obrigatoriosPendentes: r.pendentes }]),
   );
 }
+
+
+/**
+ * Ranking do mês: pontos, entregas e pontualidade.
+ *
+ * Conta só eventos de aprovação com pontos maiores que zero. Reaprovação
+ * de tarefa reaberta grava evento com zero, então não infla o ranking.
+ */
+export async function rankingMensal(refMonth = currentMonth()) {
+  const inicio = `${refMonth}-01`;
+  const fim = `${addMonths(refMonth, 1)}-01`;
+
+  const linhas = await all<{
+    id: string;
+    name: string;
+    color: string;
+    points: number;
+    concluidas: number;
+    no_prazo: number;
+    com_prazo: number;
+    retrabalho: number;
+  }>(
+    `SELECT u.id, u.name, u.color,
+            COALESCE(SUM(e.points), 0)                                  AS points,
+            COUNT(e.id)                                                 AS concluidas,
+            COUNT(*) FILTER (WHERE t.due_date IS NOT NULL
+                               AND t.submitted_at IS NOT NULL
+                               AND t.submitted_at <= t.due_date || 'T23:59:59') AS no_prazo,
+            COUNT(*) FILTER (WHERE t.due_date IS NOT NULL AND e.id IS NOT NULL) AS com_prazo,
+            COALESCE(SUM(t.rejections), 0)                              AS retrabalho
+       FROM users u
+       LEFT JOIN task_events e
+              ON e.user_id = u.id AND e.type IN ('aprovada', 'concluida')
+             AND e.points > 0 AND e.created_at >= ? AND e.created_at < ?
+       LEFT JOIN tasks t ON t.id = e.task_id
+      WHERE u.active = 1
+      GROUP BY u.id, u.name, u.color
+      ORDER BY points DESC, concluidas DESC, lower(u.name)`,
+    inicio,
+    fim,
+  );
+
+  return linhas.map((l) => ({
+    ...l,
+    // sem tarefa com prazo no mês, pontualidade não existe; null é mais
+    // honesto do que 0%, que pareceria mau desempenho
+    pontualidade: l.com_prazo ? l.no_prazo / l.com_prazo : null,
+  }));
+}
