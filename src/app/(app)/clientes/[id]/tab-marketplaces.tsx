@@ -1,4 +1,4 @@
-import { Card, Chip, Empty, Field, MarketplaceChip, StatusChip } from "@/components/ui";
+import { Card, Chip, Empty, Field, MarketplaceChip } from "@/components/ui";
 import { SaveBar, SubmitButton } from "@/components/submit";
 import {
   addMarketplaceAction,
@@ -12,7 +12,8 @@ import {
   syncAccountAction,
 } from "@/lib/actions/integrations";
 import { AuthLink } from "@/components/auth-link";
-import { dateTimeBR, monthLabel } from "@/lib/format";
+import { SaudeConta } from "@/components/saude-conta";
+import { monthLabel } from "@/lib/format";
 import { MARKETPLACES, marketplaceLabel, type Client, type ClientMarketplace } from "@/lib/types";
 
 export function TabMarketplaces({
@@ -34,10 +35,18 @@ export function TabMarketplaces({
             <Card
               key={a.id}
               title={<MarketplaceChip value={a.marketplace} />}
-              subtitle={a.last_sync_at ? `Última sincronização: ${dateTimeBR(a.last_sync_at)}` : "Nunca sincronizada"}
-              actions={<StatusChip value={a.status} />}
+              subtitle={null}
               bodyClassName="p-5 pb-0"
             >
+              <div className="mb-4">
+                <SaudeConta
+                  conta={a}
+                  refMonth={refMonth}
+                  redirectTo={`/clientes/${client.id}?tab=marketplaces`}
+                  manager={manager}
+                />
+              </div>
+
               <form action={updateMarketplaceAction}>
                 <input type="hidden" name="client_id" value={client.id} />
                 <input type="hidden" name="marketplace_id" value={a.id} />
@@ -57,12 +66,6 @@ export function TabMarketplaces({
                     </select>
                   </Field>
                 </div>
-
-                {a.last_error && (
-                  <p className="mt-3 rounded-lg border border-bad/30 bg-bad-soft px-3 py-2 text-xs text-bad">
-                    {a.last_error}
-                  </p>
-                )}
 
                 <SaveBar label="Salvar conta" hint="Dados da conta usados pela integração." />
               </form>

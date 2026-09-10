@@ -2,9 +2,10 @@ import Link from "next/link";
 import { Suspense } from "react";
 import { requirePermission } from "@/lib/auth";
 import { all } from "@/lib/db";
-import { syncLogs } from "@/lib/queries";
+import { sincronizacoes } from "@/lib/queries";
 import { integrationStatus } from "@/lib/integrations";
 import { currentMonth, dateTimeBR, lastMonths, monthLabel, relativeBR } from "@/lib/format";
+import { diagnosticar, proximaSincronizacao } from "@/lib/integracao-status";
 import { Card, Chip, Empty, MarketplaceChip, PageHeader, Stat, StatusChip } from "@/components/ui";
 import { SubmitButton } from "@/components/submit";
 import { MonthPicker } from "@/components/month-picker";
@@ -30,7 +31,7 @@ export default async function IntegracoesPage({
   const manager = true; // a página inteira já exige a permissão de integrações
 
   const status = await integrationStatus();
-  const logs = await syncLogs(15);
+  const rodadas = await sincronizacoes(20);
 
   const accounts = await all<{
     id: string;
@@ -38,6 +39,7 @@ export default async function IntegracoesPage({
     nickname: string | null;
     external_id: string | null;
     status: string;
+    last_success_at: string | null;
     last_sync_at: string | null;
     last_error: string | null;
     client_id: string;
@@ -88,7 +90,12 @@ export default async function IntegracoesPage({
         <Stat label="Contas cadastradas" value={String(accounts.length)} tone="brand" />
         <Stat label="Conectadas" value={String(connected)} tone="ok" />
         <Stat label="Com erro" value={String(withError)} tone={withError ? "bad" : "neutral"} />
-        <Stat label="Mês de referência" value={monthLabel(ref)} tone="accent" />
+        <Stat
+          label="Próxima rodada"
+          value={relativeBR(proximaSincronizacao().toISOString())}
+          hint="todo dia às 3h da manhã"
+          tone="info"
+        />
       </div>
 
       <div className="mt-3 grid gap-3 lg:grid-cols-3">
@@ -156,9 +163,24 @@ export default async function IntegracoesPage({
                     <td className="font-mono text-[0.7rem] text-dim">{a.external_id ?? "—"}</td>
                     <td>
                       <StatusChip value={a.status} />
-                      {a.last_error && <div className="mt-1 max-w-56 truncate text-[0.65rem] text-bad">{a.last_error}</div>}
+                      {a.last_error && (
+                        <div className="mt-1 max-w-56 text-[0.65rem] text-bad">
+                          {diagnosticar(a.last_error)?.titulo}
+                        </div>
+                      )}
                     </td>
-                    <td className="text-xs text-dim">{a.last_sync_at ? relativeBR(a.last_sync_at) : "nunca"}</td>
+                    <td className="text-xs text-dim">
+                      {a.last_success_at ? (
+                        <span title={dateTimeBR(a.last_success_at)}>{relativeBR(a.last_success_at)}</span>
+                      ) : (
+                        <span className="text-warn">nunca</span>
+                      )}
+                      {a.last_sync_at && a.last_success_at !== a.last_sync_at && (
+                        <span className="block text-[0.65rem] text-dim">
+                          tentativa {relativeBR(a.last_sync_at)}
+                        </span>
+                      )}
+                    </td>
                     <td>
                       <div className="flex justify-end gap-1.5">
                         <form action={syncAccountAction}>
@@ -208,44 +230,68 @@ export default async function IntegracoesPage({
         )}
       </Card>
 
-      <Card className="mt-3" title="Log de sincronizações" bodyClassName="p-0">
-        {logs.length ? (
+      <Card
+        className="mt-3"
+        title="Rodadas de sincronização"
+        subtitle="Início, duração e o que cada uma gravou"
+        bodyClassName="p-0"
+      >
+        {rodadas.length ? (
           <div className="table-wrap">
             <table className="data">
               <thead>
                 <tr>
-                  <th>Quando</th>
+                  <th>Início</th>
+                  <th>Duração</th>
                   <th>Cliente</th>
                   <th>Canal</th>
-                  <th>Mês</th>
+                  <th>Origem</th>
                   <th>Status</th>
+                  <th className="num">Dias</th>
                   <th>Detalhe</th>
                 </tr>
               </thead>
               <tbody>
-                {logs.map((l) => (
-                  <tr key={l.id}>
-                    <td className="text-xs text-dim">{dateTimeBR(l.created_at)}</td>
-                    <td className="text-xs text-muted">{l.client_name ?? "—"}</td>
-                    <td>
-                      <MarketplaceChip value={l.marketplace} />
-                    </td>
-                    <td className="text-xs text-dim">{l.ref_month ? monthLabel(l.ref_month) : "—"}</td>
-                    <td>
-                      <Chip tone={l.status === "ok" ? "ok" : "bad"}>{l.status}</Chip>
-                    </td>
-                    <td className="max-w-md truncate text-xs text-muted">{l.message}</td>
-                  </tr>
-                ))}
+                {rodadas.map((r) => {
+                  const duracao =
+                    r.finished_at && r.started_at
+                      ? Math.round((new Date(r.finished_at).getTime() - new Date(r.started_at).getTime()) / 1000)
+                      : null;
+                  return (
+                    <tr key={r.id}>
+                      <td className="text-xs text-dim">{dateTimeBR(r.started_at)}</td>
+                      <td className="text-xs text-dim">{duracao === null ? "—" : `${duracao}s`}</td>
+                      <td className="text-xs text-muted">{r.client_name ?? "—"}</td>
+                      <td>{r.marketplace ? <MarketplaceChip value={r.marketplace} /> : "—"}</td>
+                      <td className="text-xs text-dim">
+                        {r.trigger === "cron"
+                          ? "automática"
+                          : r.trigger === "cli"
+                            ? "linha de comando"
+                            : r.started_by_name ?? "manual"}
+                      </td>
+                      <td>
+                        <Chip tone={r.status === "ok" ? "ok" : r.status === "rodando" ? "warn" : "bad"}>
+                          {r.status === "ok" ? "ok" : r.status === "rodando" ? "rodando" : "erro"}
+                        </Chip>
+                      </td>
+                      <td className="num text-xs text-muted">{r.days_written || "—"}</td>
+                      <td className="max-w-64 truncate text-xs text-muted" title={r.error ?? r.message ?? ""}>
+                        {r.error ? diagnosticar(r.error)?.titulo : r.message ?? "—"}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
         ) : (
           <div className="p-5">
-            <Empty title="Nenhuma sincronização executada" />
+            <Empty title="Nenhuma rodada ainda" hint="A primeira sincronização aparece aqui." />
           </div>
         )}
       </Card>
+
     </>
   );
 }

@@ -57,6 +57,10 @@ export interface ClientMarketplace {
   status: "pendente" | "conectado" | "erro" | "desativado";
   credentials: string | null;
   last_sync_at: string | null;
+  /** última vez que a sincronização terminou SEM erro */
+  last_success_at: string | null;
+  /** até que dia o histórico diário já foi preenchido */
+  daily_synced_until: string | null;
   last_error: string | null;
   created_at: string;
   /** link de autorização enviado ao lojista */

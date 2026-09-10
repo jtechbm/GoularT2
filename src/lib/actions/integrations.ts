@@ -155,10 +155,21 @@ export async function syncAllAction(formData: FormData) {
   redirect(`/integracoes?sync=lote&ok=${ok}&total=${accounts.length}`);
 }
 
-/** Desconecta a conta, apagando os tokens guardados. */
+/**
+ * Desconecta a conta, apagando os tokens guardados.
+ *
+ * Fica registrado no histórico do cliente. Desconectar interrompe a
+ * atualização dos números, e sem registro ninguém sabe se o dado parou
+ * porque a loja caiu ou porque alguém desconectou de propósito.
+ */
 export async function disconnectAccountAction(formData: FormData) {
-  await requirePermission("integracoes.gerenciar");
+  const user = await requirePermission("integracoes.gerenciar");
   const accountId = str(formData.get("account_id"));
+
+  const conta = await one<{ client_id: string; marketplace: string }>(
+    "SELECT client_id, marketplace FROM client_marketplaces WHERE id = ?",
+    accountId,
+  );
   await run(
     `UPDATE client_marketplaces
         SET credentials = NULL, status = 'pendente', last_error = NULL,
@@ -166,6 +177,18 @@ export async function disconnectAccountAction(formData: FormData) {
       WHERE id = ?`,
     accountId,
   );
+
+  if (conta) {
+    await run(
+      "INSERT INTO client_notes (id, client_id, user_id, kind, body, pinned, created_at) VALUES (?,?,?,?,?,0,?)",
+      id(),
+      conta.client_id,
+      user.id,
+      "mudanca",
+      `Conta de ${conta.marketplace === "shopee" ? "Shopee" : "Mercado Livre"} desconectada. Os números param de atualizar até uma nova autorização.`,
+      now(),
+    );
+  }
   revalidatePath("/integracoes");
   redirect("/integracoes?ok=1");
 }
