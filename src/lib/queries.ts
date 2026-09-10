@@ -2,6 +2,7 @@ import "server-only";
 import { all, one } from "./db";
 import { addMonths, currentMonth, lastMonths } from "./format";
 import { avaliarOnboarding } from "./onboarding";
+import { calcularScore, type Score } from "./score";
 import type {
   AdsEntry,
   AgencyCharge,
@@ -755,6 +756,89 @@ export async function avaliarOnboardingEmLote(
         goal: metas.find((m) => m.client_id === client.id),
         notes: notas.filter((n) => n.client_id === client.id),
         temCustos: comCusto.has(client.id),
+      }),
+    );
+  }
+
+  return saida;
+}
+
+// ---------------------------------------------------------------- score de saude
+
+/**
+ * Score de todos os clientes de uma lista, em poucas consultas.
+ *
+ * Reaproveita o que clientRows já trouxe (faturamento, lucro, mês anterior,
+ * responsável) e busca só o que falta: metas, Ads, tarefas atrasadas e
+ * saúde das contas.
+ */
+export async function scoresEmLote(rows: ClientRow[], refMonth = currentMonth()): Promise<Map<string, Score>> {
+  const saida = new Map<string, Score>();
+  if (!rows.length) return saida;
+
+  const ids = rows.map((r) => r.id);
+  const marcas = ids.map(() => "?").join(",");
+  const paradoDesde = new Date(Date.now() - 3 * 864e5).toISOString();
+  const hoje = new Date().toISOString().slice(0, 10);
+
+  const [metas, onboardings, ads, atrasadas, contas] = await Promise.all([
+    goalsForMonth(refMonth, ids),
+    avaliarOnboardingEmLote(rows, refMonth),
+    all<{ client_id: string; invested: number; revenue: number }>(
+      `SELECT client_id, COALESCE(SUM(invested),0) AS invested, COALESCE(SUM(revenue),0) AS revenue
+         FROM ads_entries
+        WHERE substr(period_start,1,7) <= ? AND substr(period_end,1,7) >= ? AND client_id IN (${marcas})
+        GROUP BY client_id`,
+      refMonth,
+      refMonth,
+      ...ids,
+    ),
+    all<{ client_id: string; n: number }>(
+      `SELECT client_id, COUNT(*) AS n FROM tasks
+        WHERE status <> 'concluida' AND due_date IS NOT NULL AND due_date < ?
+          AND client_id IN (${marcas})
+        GROUP BY client_id`,
+      hoje,
+      ...ids,
+    ),
+    all<{ client_id: string; conectadas: number; problema: number }>(
+      `SELECT client_id,
+              COUNT(*) FILTER (WHERE status = 'conectado') AS conectadas,
+              COUNT(*) FILTER (WHERE status = 'erro'
+                            OR (status = 'conectado' AND (last_sync_at IS NULL OR last_sync_at < ?))) AS problema
+         FROM client_marketplaces
+        WHERE status IN ('conectado','erro') AND client_id IN (${marcas})
+        GROUP BY client_id`,
+      paradoDesde,
+      ...ids,
+    ),
+  ]);
+
+  for (const row of rows) {
+    const a = ads.find((x) => x.client_id === row.id);
+    const c = contas.find((x) => x.client_id === row.id);
+    const onboarding = onboardings.get(row.id)!;
+
+    saida.set(
+      row.id,
+      calcularScore({
+        revenue: row.revenue,
+        prevRevenue: row.prev_revenue,
+        profit: row.profit,
+        goal: metas.find((m) => m.client_id === row.id),
+        realizado: {
+          revenue: row.revenue,
+          orders: row.orders,
+          profit: row.profit,
+          ads: a?.invested ?? 0,
+          adsRevenue: a?.revenue ?? 0,
+        },
+        onboarding,
+        status: row.status,
+        temResponsavel: Boolean(row.owner_id),
+        contasComProblema: c?.problema ?? 0,
+        contasConectadas: c?.conectadas ?? 0,
+        tarefasAtrasadas: atrasadas.find((x) => x.client_id === row.id)?.n ?? 0,
       }),
     );
   }

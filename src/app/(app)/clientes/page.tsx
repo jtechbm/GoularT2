@@ -2,7 +2,8 @@ import Link from "next/link";
 import { Suspense } from "react";
 import { requireUser, visibleClientIds } from "@/lib/auth";
 import { can } from "@/lib/permissions";
-import { avaliarOnboardingEmLote, clientRows } from "@/lib/queries";
+import { avaliarOnboardingEmLote, clientRows, scoresEmLote } from "@/lib/queries";
+import { ScoreChip } from "@/components/score-saude";
 import { brlShort, currentMonth, dateBR, lastMonths, num, pct } from "@/lib/format";
 import { Avatar, Card, Chip, Delta, Empty, MarketplaceChip, PageHeader, Stat, StatusChip } from "@/components/ui";
 import { MonthPicker } from "@/components/month-picker";
@@ -30,6 +31,7 @@ export default async function ClientesPage({
   const all = await clientRows(ref, "cliente", await visibleClientIds(user));
   // só quem ainda está em onboarding precisa da barra de progresso
   const onboardings = await avaliarOnboardingEmLote(all.filter((c) => c.status === "onboarding"), ref);
+  const scores = await scoresEmLote(all, ref);
   const rows = all.filter((c) => {
     if (status && c.status !== status) return false;
     if (onlyMine && c.owner_id !== user.id) return false;
@@ -140,6 +142,7 @@ export default async function ClientesPage({
                   <th className="num">Ads</th>
                   <th className="num">vs. ant.</th>
                   <th className="num">Tarefas</th>
+                  <th>Saúde</th>
                   <th>Última nota</th>
                 </tr>
               </thead>
@@ -189,6 +192,7 @@ export default async function ClientesPage({
                     <td className="num">
                       {c.open_tasks > 0 ? <Chip tone="accent">{c.open_tasks}</Chip> : <span className="text-dim">—</span>}
                     </td>
+                    <td>{scores.has(c.id) && <ScoreChip score={scores.get(c.id)!} mostrarMotivo />}</td>
                     <td className="text-xs text-dim">{c.last_note_at ? dateBR(c.last_note_at) : "—"}</td>
                   </tr>
                 ))}

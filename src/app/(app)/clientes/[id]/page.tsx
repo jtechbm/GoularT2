@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { canSeeClient, listUsers, requireUser } from "@/lib/auth";
 import { Procedencia } from "@/components/procedencia";
+import { calcularScore } from "@/lib/score";
 import { can } from "@/lib/permissions";
 import {
   clientAds,
@@ -88,6 +89,32 @@ export default async function ClientePage({
   const metasHistorico = await goalHistory(client.id, 12);
   const adsMes = await adsTotals(client.id, ref);
   const onboarding = await avaliarOnboardingDoCliente(client.id, ref);
+  const realizado = {
+    revenue: totals.revenue,
+    orders: totals.orders,
+    profit: totals.profit,
+    ads: adsMes.invested,
+    adsRevenue: adsMes.revenue,
+  };
+  const hoje = new Date().toISOString().slice(0, 10);
+  const score = calcularScore({
+    revenue: totals.revenue,
+    prevRevenue: prev.revenue,
+    profit: totals.profit,
+    goal: metaGeral,
+    realizado,
+    onboarding,
+    status: client.status,
+    temResponsavel: Boolean(client.owner_id),
+    contasComProblema: accounts.filter(
+      (a) =>
+        a.status === "erro" ||
+        (a.status === "conectado" &&
+          (!a.last_sync_at || new Date(a.last_sync_at).getTime() < Date.now() - 3 * 864e5)),
+    ).length,
+    contasConectadas: accounts.filter((a) => a.status === "conectado").length,
+    tarefasAtrasadas: clientTasks.filter((t) => t.status !== "concluida" && t.due_date && t.due_date < hoje).length,
+  });
   const allUsers = await listUsers();
   const marketplacesDisponiveis = (await integrationStatus()).filter((i) => i.configured).map((i) => i.marketplace);
   const manager = can(user, "clientes.gerenciar");
@@ -183,6 +210,7 @@ export default async function ClientePage({
             marketplacesDisponiveis={marketplacesDisponiveis}
             refMonth={ref}
             onboarding={onboarding}
+            score={score}
             tasks={clientTasks}
             breakdown={breakdown}
             chart={
@@ -215,13 +243,7 @@ export default async function ClientePage({
             goal={metaGeral}
             porLoja={metas.filter((m) => m.marketplace !== null)}
             accounts={accounts}
-            realizado={{
-              revenue: totals.revenue,
-              orders: totals.orders,
-              profit: totals.profit,
-              ads: adsMes.invested,
-              adsRevenue: adsMes.revenue,
-            }}
+            realizado={realizado}
             refMonth={ref}
             historico={metasHistorico}
             manager={manager}

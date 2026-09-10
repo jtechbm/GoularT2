@@ -5,6 +5,8 @@ import { SplitBar } from "@/components/charts";
 import { ConectarLojas } from "@/components/conectar-lojas";
 import { OnboardingCard } from "@/components/onboarding-card";
 import type { OnboardingResultado } from "@/lib/onboarding";
+import { ScoreSaude } from "@/components/score-saude";
+import type { Score } from "@/lib/score";
 import { brlShort, dateBR, num, relativeBR } from "@/lib/format";
 import { marketplaceLabel, type Client, type ClientMarketplace, type ClientNote, type User } from "@/lib/types";
 import type { TaskRow, Totals } from "@/lib/queries";
@@ -22,6 +24,7 @@ export function TabVisao({
   marketplacesDisponiveis,
   refMonth,
   onboarding,
+  score,
 }: {
   client: Client;
   team: (User & { team_role: string })[];
@@ -35,6 +38,7 @@ export function TabVisao({
   marketplacesDisponiveis: string[];
   refMonth: string;
   onboarding: OnboardingResultado;
+  score: Score;
 }) {
   const openTasks = tasks.filter((t) => t.status !== "concluida");
 
@@ -123,6 +127,8 @@ export function TabVisao({
       </div>
 
       <div className="space-y-3">
+        <ScoreSaude score={score} />
+
         <Card title="Time responsável">
           {team.length ? (
             <ul className="space-y-2.5">
