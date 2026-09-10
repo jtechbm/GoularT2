@@ -11,7 +11,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const user = await requireUser();
   const pending =
     (await one<{ n: number }>(
-      "SELECT COUNT(*) n FROM tasks WHERE status = 'disponivel' OR (status = 'em_andamento' AND assignee_id = ?)",
+      `SELECT COUNT(*) n FROM tasks
+        WHERE status = 'disponivel'
+           OR (status IN ('assumida','em_andamento','em_revisao') AND assignee_id = ?)`,
       user.id,
     ))?.n ?? 0;
 

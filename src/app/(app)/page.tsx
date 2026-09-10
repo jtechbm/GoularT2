@@ -74,7 +74,7 @@ export default async function DashboardPage({
     .reduce((s, r) => s + r.monthly_fee, 0);
 
   const openTasks = await tasks({ status: "disponivel" });
-  const myTasks = await tasks({ status: "em_andamento", assignee: user.id });
+  const myTasks = await tasks({ statuses: ["assumida", "em_andamento", "em_revisao"], assignee: user.id });
   const board = await leaderboard();
   const saude = await integrationHealth(escopo);
   const procedencia = await procedenciaDoMes(ref, { scope: escopo });

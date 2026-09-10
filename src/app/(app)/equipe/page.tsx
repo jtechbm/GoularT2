@@ -23,7 +23,7 @@ export default async function EquipePage({
   const users = await listUsers(manager);
   const board = new Map((await leaderboard()).map((b) => [b.id, b] as const));
   const carteira = await clientRows(currentMonth(), undefined, await visibleClientIds(user));
-  const openTasks = await tasks({ status: "em_andamento" });
+  const openTasks = await tasks({ statuses: ["assumida", "em_andamento", "em_revisao"] });
 
   const memberships = await all<{ user_id: string; client_id: string; name: string; role: string }>(
     `SELECT ct.user_id, ct.client_id, c.name, ct.role

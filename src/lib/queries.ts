@@ -268,13 +268,24 @@ const TASK_SELECT = `
     LEFT JOIN users cr  ON cr.id = t.created_by`;
 
 export async function tasks(
-  filter: { status?: string; assignee?: string; clientId?: string; priority?: string } = {},
+  filter: {
+    status?: string;
+    /** várias etapas de uma vez; útil depois que o fluxo ganhou colunas */
+    statuses?: string[];
+    assignee?: string;
+    clientId?: string;
+    priority?: string;
+  } = {},
 ): Promise<TaskRow[]> {
   const where: string[] = [];
   const params: unknown[] = [];
   if (filter.status) {
     where.push("t.status = ?");
     params.push(filter.status);
+  }
+  if (filter.statuses?.length) {
+    where.push(`t.status IN (${filter.statuses.map(() => "?").join(",")})`);
+    params.push(...filter.statuses);
   }
   if (filter.priority) {
     where.push("t.priority = ?");
@@ -309,7 +320,9 @@ export async function leaderboard(sinceIso?: string) {
             COUNT(e.id) AS done
        FROM users u
        LEFT JOIN task_events e
-              ON e.user_id = u.id AND e.type = 'concluida' AND e.created_at >= ?
+              -- 'concluida' é o nome antigo, de quando concluir e pontuar
+              -- eram a mesma ação. Fica aqui para o histórico não zerar.
+              ON e.user_id = u.id AND e.type IN ('aprovada', 'concluida') AND e.created_at >= ?
       WHERE u.active = 1
       GROUP BY u.id, u.name, u.color
       ORDER BY points DESC, done DESC, lower(u.name)`,
