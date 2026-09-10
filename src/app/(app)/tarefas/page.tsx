@@ -212,9 +212,16 @@ export default async function TarefasPage({
         )}
       </div>
 
-      {manager && (
-        <form action={createTaskAction} className="mt-3">
-          <Card title="Nova tarefa" subtitle="Nasce disponível, sem dono" bodyClassName="p-5 pb-0">
+      <form action={createTaskAction} className="mt-3">
+        <Card
+          title={manager ? "Nova tarefa" : "Registrar uma demanda"}
+          subtitle={
+            manager
+              ? "Nasce disponível, sem dono"
+              : "Fica na sua mão. Os pontos só entram depois que um gestor aprovar."
+          }
+          bodyClassName="p-5 pb-0"
+        >
             <div className="grid gap-3 sm:grid-cols-2">
               <Field label="Título *">
                 <input name="title" required className="input" placeholder="o que precisa ser feito" />
@@ -246,15 +253,35 @@ export default async function TarefasPage({
                   <textarea name="description" rows={2} className="textarea" />
                 </Field>
               </div>
-              <label className="flex items-center gap-2 text-xs text-muted sm:col-span-2">
-                <input type="checkbox" name="requires_evidence" value="1" />
-                Exigir evidência antes de mandar para revisão
-              </label>
+              {manager && (
+                <label className="flex items-center gap-2 text-xs text-muted sm:col-span-2">
+                  <input type="checkbox" name="requires_evidence" value="1" />
+                  Exigir evidência antes de mandar para revisão
+                </label>
+              )}
+              {manager && (
+                <Field label="Atribuir a" hint="Deixe em branco para publicar no mural.">
+                  <select name="assignee_id" className="select" defaultValue="">
+                    <option value="">Ninguém, vai para o mural</option>
+                    {team.map((u) => (
+                      <option key={u.id} value={u.id}>
+                        {u.name}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+              )}
             </div>
-            <SaveBar label="Publicar tarefa" hint="Qualquer pessoa da equipe pode pegar." />
-          </Card>
-        </form>
-      )}
+            <SaveBar
+              label={manager ? "Publicar tarefa" : "Registrar para mim"}
+              hint={
+                manager
+                  ? "Qualquer pessoa da equipe pode pegar."
+                  : "Você não pode atribuir tarefa para outra pessoa."
+              }
+            />
+        </Card>
+      </form>
     </>
   );
 }

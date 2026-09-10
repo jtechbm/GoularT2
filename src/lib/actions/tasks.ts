@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { id, now, one, run } from "@/lib/db";
-import { assertCan, requireUser } from "@/lib/auth";
+import { assertCan, assertClientAccess, requireUser } from "@/lib/auth";
 import { can } from "@/lib/permissions";
 import { str, strOrNull, toNumber } from "@/lib/format";
 import { TASK_PRIORITIES } from "@/lib/types";
@@ -33,25 +33,47 @@ function pointsFor(priority: string, override?: number): number {
   return TASK_PRIORITIES.find((p) => p.value === priority)?.points ?? 10;
 }
 
+/**
+ * Cria tarefa. Duas portas diferentes na mesma ação.
+ *
+ * Gestor e admin publicam para a equipe e podem atribuir a quem quiserem.
+ * O membro só registra demanda que ele mesmo encontrou, e ela já nasce na
+ * mão dele: sem isso, um membro poderia empurrar trabalho para os colegas,
+ * que é exatamente o que a permissão de distribuir tarefas protege.
+ *
+ * A tarefa própria não pontua sozinha. Ela segue o mesmo caminho de
+ * revisão das outras, e os pontos só saem quando um gestor aprova. Sem
+ * isso, qualquer um inventaria tarefas para subir no ranking.
+ */
 export async function createTaskAction(formData: FormData) {
   const user = await requireUser();
-  assertCan(user, "tarefas.gerenciar", "Somente gestores e admins criam tarefas para a equipe.");
+  const distribui = can(user, "tarefas.gerenciar");
 
   const title = str(formData.get("title"));
   if (!title) throw new Error("A tarefa precisa de um título.");
 
   const taskId = id();
   const priority = str(formData.get("priority")) || "media";
-  const assignee = strOrNull(formData.get("assignee_id"));
+  const pedido = strOrNull(formData.get("assignee_id"));
+
+  if (!distribui && pedido && pedido !== user.id) {
+    throw new Error("Você só pode registrar tarefas para si mesmo.");
+  }
+  // quem não distribui sempre fica com a própria tarefa
+  const assignee = distribui ? pedido : user.id;
+  const propria = assignee === user.id && !distribui;
+
+  const clientId = strOrNull(formData.get("client_id"));
+  if (clientId) await assertClientAccess(user, clientId);
 
   await run(
     `INSERT INTO tasks (id, title, description, client_id, priority, status, due_date, points, created_by,
-                        assignee_id, claimed_at, requires_evidence, created_at, updated_at)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+                        assignee_id, claimed_at, requires_evidence, self_created, created_at, updated_at)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     taskId,
     title,
     strOrNull(formData.get("description")),
-    strOrNull(formData.get("client_id")),
+    clientId,
     priority,
     assignee ? "assumida" : "disponivel",
     strOrNull(formData.get("due_date")),
@@ -60,15 +82,22 @@ export async function createTaskAction(formData: FormData) {
     assignee,
     assignee ? now() : null,
     formData.get("requires_evidence") ? 1 : 0,
+    propria ? 1 : 0,
     now(),
     now(),
   );
 
-  await logEvent(taskId, user.id, "criada");
-  if (assignee) await logEvent(taskId, assignee, "assumida", 0, "atribuída na criação");
+  await logEvent(
+    taskId,
+    user.id,
+    "criada",
+    0,
+    propria ? "registrada pela própria pessoa" : undefined,
+  );
+  if (assignee && !propria) await logEvent(taskId, assignee, "assumida", 0, "atribuída na criação");
 
   refresh();
-  redirect("/tarefas?ok=1");
+  redirect(propria ? `/tarefas/${taskId}` : "/tarefas?ok=1");
 }
 
 /** Um funcionário pega a task do mural — só funciona se ainda estiver disponível. */

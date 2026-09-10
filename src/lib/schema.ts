@@ -262,6 +262,9 @@ ALTER TABLE tasks ADD COLUMN IF NOT EXISTS review_note      text;
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS requires_evidence integer NOT NULL DEFAULT 0;
 -- quantas vezes voltou da revisao, util para achar retrabalho
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS rejections       integer NOT NULL DEFAULT 0;
+-- tarefa que a propria pessoa registrou para si. Nao muda o fluxo, mas o
+-- revisor precisa saber: ninguem definiu escopo nem prazo alem de quem fez.
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS self_created integer NOT NULL DEFAULT 0;
 
 CREATE TABLE IF NOT EXISTS task_checklist (
   id         text PRIMARY KEY,

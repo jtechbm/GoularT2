@@ -59,6 +59,7 @@ export default async function TarefaPage({ params }: { params: Promise<{ id: str
             </Chip>
             <Chip tone="neutral">{task.priority}</Chip>
             <Chip tone="neutral">{task.points} pts</Chip>
+            {task.self_created === 1 && <Chip tone="info">registrada pelo executor</Chip>}
             {task.client_name && (
               <Link href={`/clientes/${task.client_id}`} className="text-xs text-muted hover:text-brand">
                 {task.client_name}
@@ -111,6 +112,12 @@ export default async function TarefaPage({ params }: { params: Promise<{ id: str
               }
               actions={<Chip tone="warn">esperando decisão</Chip>}
             >
+              {task.self_created === 1 && (
+                <p className="mb-3 rounded-lg bg-surface-2 px-3 py-2 text-xs text-muted">
+                  Esta tarefa foi registrada pela própria pessoa que a executou. Confira se o escopo e a pontuação
+                  fazem sentido antes de aprovar.
+                </p>
+              )}
               {podeRevisar ? (
                 <div className="space-y-3">
                   <form action={approveTaskAction} className="space-y-2">

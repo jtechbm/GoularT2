@@ -142,6 +142,8 @@ export interface Task {
   requires_evidence: number;
   /** quantas vezes voltou da revisão */
   rejections: number;
+  /** a própria pessoa registrou a tarefa para si */
+  self_created: number;
 }
 
 export interface TaskChecklistItem {
