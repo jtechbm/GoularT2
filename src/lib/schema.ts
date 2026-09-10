@@ -232,6 +232,23 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_goals_geral ON client_goals(client_id, ref
 CREATE UNIQUE INDEX IF NOT EXISTS idx_goals_loja  ON client_goals(client_id, ref_month, marketplace)
   WHERE marketplace IS NOT NULL;
 
+-- alertas sao recalculados a cada carregamento; esta tabela guarda so o que
+-- a equipe FEZ com eles: marcou como resolvido, quem marcou e quando.
+-- Guardar o alerta em si daria uma tabela cheia de linha morta e o risco de
+-- mostrar problema que ja nao existe.
+CREATE TABLE IF NOT EXISTS alert_resolutions (
+  id          text PRIMARY KEY,
+  alert_key   text NOT NULL UNIQUE,
+  client_id   text REFERENCES clients(id) ON DELETE CASCADE,
+  kind        text NOT NULL,
+  ref_month   text,
+  note        text,
+  resolved_by text REFERENCES users(id) ON DELETE SET NULL,
+  resolved_at text NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_alertas_cliente ON alert_resolutions(client_id);
+
 CREATE INDEX IF NOT EXISTS idx_charges_month  ON agency_charges(ref_month, status);
 CREATE INDEX IF NOT EXISTS idx_expenses_month ON agency_expenses(ref_month);
 
@@ -269,6 +286,7 @@ CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
 
 /** Tabelas na ordem segura para limpeza (filhas antes das pais). */
 export const TABLES = [
+  "alert_resolutions",
   "client_goals",
   "agency_charges",
   "agency_expenses",

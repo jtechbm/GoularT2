@@ -3,6 +3,7 @@ import { all, one } from "./db";
 import { addMonths, currentMonth, lastMonths } from "./format";
 import { avaliarOnboarding } from "./onboarding";
 import { calcularScore, type Score } from "./score";
+import { alertasDoCliente, ordenarAlertas, type Alerta } from "./alertas";
 import type {
   AdsEntry,
   AgencyCharge,
@@ -844,4 +845,113 @@ export async function scoresEmLote(rows: ClientRow[], refMonth = currentMonth())
   }
 
   return saida;
+}
+
+// ---------------------------------------------------------------- alertas
+
+export interface AlertaComResolucao extends Alerta {
+  resolvido: boolean;
+  resolvidoPor: string | null;
+  resolvidoEm: string | null;
+  resolvidoNota: string | null;
+}
+
+/**
+ * Recalcula todos os alertas do recorte e cola neles o que já foi resolvido.
+ *
+ * Nada de alerta gravado: se o problema sumiu, ele não aparece. O que fica
+ * no banco é só a marcação de "já cuidei disso", ligada por uma chave
+ * estável que inclui o mês.
+ */
+export async function alertasDaCarteira(
+  refMonth = currentMonth(),
+  scope?: Scope,
+): Promise<AlertaComResolucao[]> {
+  const rows = await clientRows(refMonth, "cliente", scope);
+  if (!rows.length) return [];
+
+  const ids = rows.map((r) => r.id);
+  const marcas = ids.map(() => "?").join(",");
+  const paradoDesde = new Date(Date.now() - 3 * 864e5).toISOString();
+  const hoje = new Date().toISOString().slice(0, 10);
+
+  const [metas, onboardings, ads, contas, tarefas, cobrancas, resolucoes] = await Promise.all([
+    goalsForMonth(refMonth, ids),
+    avaliarOnboardingEmLote(rows, refMonth),
+    all<{ client_id: string; invested: number; revenue: number }>(
+      `SELECT client_id, COALESCE(SUM(invested),0) AS invested, COALESCE(SUM(revenue),0) AS revenue
+         FROM ads_entries
+        WHERE substr(period_start,1,7) <= ? AND substr(period_end,1,7) >= ? AND client_id IN (${marcas})
+        GROUP BY client_id`,
+      refMonth, refMonth, ...ids,
+    ),
+    all<{ client_id: string; marketplace: string; last_sync_at: string | null }>(
+      `SELECT client_id, marketplace, last_sync_at FROM client_marketplaces
+        WHERE client_id IN (${marcas})
+          AND (status = 'erro' OR (status = 'conectado' AND (last_sync_at IS NULL OR last_sync_at < ?)))`,
+      ...ids, paradoDesde,
+    ),
+    all<{ id: string; client_id: string; title: string; due_date: string | null }>(
+      `SELECT id, client_id, title, due_date FROM tasks
+        WHERE status <> 'concluida' AND due_date IS NOT NULL AND due_date < ?
+          AND priority IN ('alta','urgente') AND client_id IN (${marcas})`,
+      hoje, ...ids,
+    ),
+    all<{ id: string; client_id: string; total: number; due_date: string | null }>(
+      `SELECT id, client_id, total, due_date FROM agency_charges
+        WHERE status = 'pendente' AND due_date IS NOT NULL AND due_date < ?
+          AND client_id IN (${marcas})`,
+      hoje, ...ids,
+    ),
+    all<{ alert_key: string; resolved_at: string; note: string | null; nome: string | null }>(
+      `SELECT a.alert_key, a.resolved_at, a.note, u.name AS nome
+         FROM alert_resolutions a LEFT JOIN users u ON u.id = a.resolved_by`,
+    ),
+  ]);
+
+  const porChave = new Map(resolucoes.map((r) => [r.alert_key, r]));
+
+  const brutos = rows.flatMap((row) => {
+    const a = ads.find((x) => x.client_id === row.id);
+    return alertasDoCliente(
+      {
+        id: row.id,
+        name: row.name,
+        status: row.status,
+        owner_id: row.owner_id,
+        monthly_fee: row.monthly_fee,
+        commission_pct: row.commission_pct,
+        revenue: row.revenue,
+        prev_revenue: row.prev_revenue,
+        profit: row.profit,
+        orders: row.orders,
+        goal: metas.find((m) => m.client_id === row.id),
+        realizado: {
+          revenue: row.revenue,
+          orders: row.orders,
+          profit: row.profit,
+          ads: a?.invested ?? 0,
+          adsRevenue: a?.revenue ?? 0,
+        },
+        onboarding: onboardings.get(row.id)!,
+        contasParadas: contas
+          .filter((x) => x.client_id === row.id)
+          .map((x) => ({ marketplace: x.marketplace, desde: x.last_sync_at })),
+        tarefasCriticasAtrasadas: tarefas.filter((x) => x.client_id === row.id),
+        cobrancasVencidas: cobrancas.filter((x) => x.client_id === row.id),
+      },
+      refMonth,
+    );
+  });
+
+  return ordenarAlertas(brutos).map((a) => {
+    const r = porChave.get(a.key);
+    return {
+      ...a,
+      resolvido: Boolean(r),
+      resolvidoPor: r?.nome ?? null,
+      resolvidoEm: r?.resolved_at ?? null,
+      resolvidoNota: r?.note ?? null,
+    };
+  });
 }

@@ -12,6 +12,7 @@ import {
   IconChevronDown,
   IconCheckSquare,
   IconDollar,
+  IconAlert,
   IconHome,
   IconMegaphone,
   IconMenu,
@@ -25,6 +26,7 @@ import type { User } from "@/lib/types";
 const NAV: { href: string; label: string; Icon: typeof IconHome; exact?: boolean; roles?: string[] }[] = [
   { href: "/", label: "Dashboard", Icon: IconHome, exact: true },
   { href: "/clientes", label: "Clientes", Icon: IconUser },
+  { href: "/alertas", label: "Atenção", Icon: IconAlert },
   { href: "/ads", label: "Ads", Icon: IconMegaphone },
   { href: "/financeiro", label: "Financeiro", Icon: IconDollar, roles: ["admin", "gestor"] },
   { href: "/tarefas", label: "Tarefas", Icon: IconCheckSquare },
