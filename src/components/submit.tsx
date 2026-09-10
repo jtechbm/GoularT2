@@ -13,6 +13,7 @@ export function SubmitButton({
   title,
   name,
   value,
+  disabled,
 }: {
   children: ReactNode;
   pendingLabel?: string;
@@ -23,6 +24,8 @@ export function SubmitButton({
   title?: string;
   name?: string;
   value?: string;
+  /** trava o botao por regra de negocio, alem da trava de envio em curso */
+  disabled?: boolean;
 }) {
   const { pending } = useFormStatus();
   return (
@@ -31,7 +34,7 @@ export function SubmitButton({
       name={name}
       value={value}
       title={title}
-      disabled={pending}
+      disabled={pending || disabled}
       onClick={(e) => {
         if (confirm && !window.confirm(confirm)) e.preventDefault();
       }}

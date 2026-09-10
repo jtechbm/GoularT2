@@ -3,6 +3,8 @@ import type { ReactNode } from "react";
 import { Avatar, Card, Chip, Empty, MARKETPLACE_COLOR, MarketplaceChip, StatusChip } from "@/components/ui";
 import { SplitBar } from "@/components/charts";
 import { ConectarLojas } from "@/components/conectar-lojas";
+import { OnboardingCard } from "@/components/onboarding-card";
+import type { OnboardingResultado } from "@/lib/onboarding";
 import { brlShort, dateBR, num, relativeBR } from "@/lib/format";
 import { marketplaceLabel, type Client, type ClientMarketplace, type ClientNote, type User } from "@/lib/types";
 import type { TaskRow, Totals } from "@/lib/queries";
@@ -19,6 +21,7 @@ export function TabVisao({
   destaqueAcesso,
   marketplacesDisponiveis,
   refMonth,
+  onboarding,
 }: {
   client: Client;
   team: (User & { team_role: string })[];
@@ -31,12 +34,22 @@ export function TabVisao({
   destaqueAcesso?: string;
   marketplacesDisponiveis: string[];
   refMonth: string;
+  onboarding: OnboardingResultado;
 }) {
   const openTasks = tasks.filter((t) => t.status !== "concluida");
 
   return (
     <div className="grid gap-3 lg:grid-cols-3">
       <div className="space-y-3 lg:col-span-2">
+        {/* enquanto o onboarding não fecha, ele é a informação mais útil da tela */}
+        {(client.status === "onboarding" || !onboarding.completo) && (
+          <OnboardingCard
+            clientId={client.id}
+            resultado={onboarding}
+            manager={manager}
+            emOnboarding={client.status === "onboarding"}
+          />
+        )}
         <ConectarLojas
           client={client}
           accounts={accounts}

@@ -1,6 +1,7 @@
 import "server-only";
 import { all, one } from "./db";
 import { addMonths, currentMonth, lastMonths } from "./format";
+import { avaliarOnboarding } from "./onboarding";
 import type {
   AdsEntry,
   AgencyCharge,
@@ -660,4 +661,103 @@ export async function goalsForMonth(refMonth: string, scope?: Scope) {
     refMonth,
     ...s.params,
   );
+}
+
+// ---------------------------------------------------------------- onboarding
+
+/**
+ * Junta tudo que o checklist de onboarding precisa e devolve o resultado.
+ *
+ * Fica aqui, e não no componente, porque a ação de ativar o cliente precisa
+ * refazer a mesma conta no servidor. Duas implementações divergiriam na
+ * primeira mudança de regra.
+ */
+export async function avaliarOnboardingDoCliente(clientId: string, refMonth = currentMonth()) {
+  const client = await getClient(clientId);
+  if (!client) throw new Error("Cliente não encontrado.");
+
+  const [accounts, team, metas, notas, custos] = await Promise.all([
+    clientMarketplaces(clientId),
+    all<{ user_id: string }>("SELECT user_id FROM client_team WHERE client_id = ?", clientId),
+    all<ClientGoal>(
+      "SELECT * FROM client_goals WHERE client_id = ? AND ref_month = ? AND marketplace IS NULL",
+      clientId,
+      refMonth,
+    ),
+    all<{ kind: string; body: string }>(
+      "SELECT kind, body FROM client_notes WHERE client_id = ?",
+      clientId,
+    ),
+    one<{ n: number }>(
+      "SELECT COUNT(*) AS n FROM finance_snapshots WHERE client_id = ? AND cogs > 0",
+      clientId,
+    ),
+  ]);
+
+  return avaliarOnboarding({
+    client,
+    accounts,
+    team,
+    goal: metas[0],
+    notes: notas,
+    temCustos: (custos?.n ?? 0) > 0,
+  });
+}
+
+/**
+ * Onboarding de vários clientes de uma vez.
+ *
+ * Chamar avaliarOnboardingDoCliente num laço daria cinco consultas por
+ * cliente. Aqui são cinco no total: carrega as tabelas inteiras do recorte
+ * e agrupa na memória. Para uma agência com dezenas de clientes isso é
+ * mais rápido do que a ida e volta repetida ao banco.
+ */
+export async function avaliarOnboardingEmLote(
+  clients: Client[],
+  refMonth = currentMonth(),
+): Promise<Map<string, ReturnType<typeof avaliarOnboarding>>> {
+  const saida = new Map<string, ReturnType<typeof avaliarOnboarding>>();
+  if (!clients.length) return saida;
+
+  const ids = clients.map((c) => c.id);
+  const marcas = ids.map(() => "?").join(",");
+
+  const [contas, times, metas, notas, custos] = await Promise.all([
+    all<ClientMarketplace>(`SELECT * FROM client_marketplaces WHERE client_id IN (${marcas})`, ...ids),
+    all<{ client_id: string; user_id: string }>(
+      `SELECT client_id, user_id FROM client_team WHERE client_id IN (${marcas})`,
+      ...ids,
+    ),
+    all<ClientGoal>(
+      `SELECT * FROM client_goals WHERE ref_month = ? AND marketplace IS NULL AND client_id IN (${marcas})`,
+      refMonth,
+      ...ids,
+    ),
+    all<{ client_id: string; kind: string; body: string }>(
+      `SELECT client_id, kind, body FROM client_notes WHERE client_id IN (${marcas})`,
+      ...ids,
+    ),
+    all<{ client_id: string }>(
+      `SELECT DISTINCT client_id FROM finance_snapshots WHERE cogs > 0 AND client_id IN (${marcas})`,
+      ...ids,
+    ),
+  ]);
+
+  const comCusto = new Set(custos.map((c) => c.client_id));
+
+  for (const client of clients) {
+    saida.set(
+      client.id,
+      avaliarOnboarding({
+        client,
+        accounts: contas.filter((a) => a.client_id === client.id),
+        team: times.filter((t) => t.client_id === client.id),
+        goal: metas.find((m) => m.client_id === client.id),
+        notes: notas.filter((n) => n.client_id === client.id),
+        temCustos: comCusto.has(client.id),
+      }),
+    );
+  }
+
+  return saida;
 }

@@ -2,7 +2,7 @@ import Link from "next/link";
 import { Suspense } from "react";
 import { requireUser, visibleClientIds } from "@/lib/auth";
 import { can } from "@/lib/permissions";
-import { clientRows } from "@/lib/queries";
+import { avaliarOnboardingEmLote, clientRows } from "@/lib/queries";
 import { brlShort, currentMonth, dateBR, lastMonths, num, pct } from "@/lib/format";
 import { Avatar, Card, Chip, Delta, Empty, MarketplaceChip, PageHeader, Stat, StatusChip } from "@/components/ui";
 import { MonthPicker } from "@/components/month-picker";
@@ -28,6 +28,8 @@ export default async function ClientesPage({
   const onlyMine = params.resp === "eu";
 
   const all = await clientRows(ref, "cliente", await visibleClientIds(user));
+  // só quem ainda está em onboarding precisa da barra de progresso
+  const onboardings = await avaliarOnboardingEmLote(all.filter((c) => c.status === "onboarding"), ref);
   const rows = all.filter((c) => {
     if (status && c.status !== status) return false;
     if (onlyMine && c.owner_id !== user.id) return false;
@@ -150,6 +152,11 @@ export default async function ClientesPage({
                         <span className="mt-1 flex items-center gap-1.5">
                           <StatusChip value={c.status} />
                           {c.segment && <span className="text-[0.7rem] text-dim">{c.segment}</span>}
+                          {onboardings.has(c.id) && (
+                            <span className="text-[0.7rem] text-warn">
+                              onboarding {pct(onboardings.get(c.id)!.progresso)}
+                            </span>
+                          )}
                         </span>
                       </Link>
                     </td>

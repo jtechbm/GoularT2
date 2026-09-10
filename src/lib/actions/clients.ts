@@ -6,6 +6,8 @@ import { id, now, one, run } from "@/lib/db";
 import { assertCan, assertClientAccess, requireUser } from "@/lib/auth";
 import { can } from "@/lib/permissions";
 import { str, strOrNull, toNumber } from "@/lib/format";
+import { avaliarOnboardingDoCliente } from "@/lib/queries";
+import type { OnboardingItem } from "@/lib/onboarding";
 
 async function touch(clientId: string) {
   await run("UPDATE clients SET updated_at = ? WHERE id = ?", now(), clientId);
@@ -291,4 +293,39 @@ export async function deleteNoteAction(formData: FormData) {
   }
   await touch(clientId);
   redirect(`/clientes/${clientId}?tab=historico`);
+}
+
+/**
+ * Vira o cliente para Ativo, mas só quando o onboarding obrigatório acabou.
+ *
+ * A checagem é refeita aqui de propósito: o botão já vem desabilitado na
+ * tela, e desabilitar botão não é segurança. Sem isto, um POST direto
+ * ativaria um cliente sem conta conectada nem meta.
+ */
+export async function concluirOnboardingAction(formData: FormData) {
+  const user = await requireUser();
+  const clientId = str(formData.get("client_id"));
+  await assertClientAccess(user, clientId);
+  assertCan(user, "clientes.gerenciar", "Somente gestores e admins ativam clientes.");
+
+  const resultado = await avaliarOnboardingDoCliente(clientId);
+  if (!resultado.completo) {
+    throw new Error(
+      `Ainda falta: ${resultado.pendentesObrigatorios.map((i: OnboardingItem) => i.label).join(", ")}.`,
+    );
+  }
+
+  await run("UPDATE clients SET status = 'ativo', updated_at = ? WHERE id = ?", now(), clientId);
+  await run(
+    "INSERT INTO client_notes (id, client_id, user_id, kind, body, pinned, created_at) VALUES (?,?,?,?,?,0,?)",
+    id(),
+    clientId,
+    user.id,
+    "mudanca",
+    "Onboarding concluído: cliente ativado.",
+    now(),
+  );
+
+  await touch(clientId);
+  redirect(`/clientes/${clientId}?ok=1`);
 }

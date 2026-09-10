@@ -12,6 +12,7 @@ import {
   marketplaceBreakdown,
   monthlySeries,
   adsTotals,
+  avaliarOnboardingDoCliente,
   clientGoals,
   getClient,
   goalHistory,
@@ -86,6 +87,7 @@ export default async function ClientePage({
   const metaGeral = metas.find((m) => m.marketplace === null);
   const metasHistorico = await goalHistory(client.id, 12);
   const adsMes = await adsTotals(client.id, ref);
+  const onboarding = await avaliarOnboardingDoCliente(client.id, ref);
   const allUsers = await listUsers();
   const marketplacesDisponiveis = (await integrationStatus()).filter((i) => i.configured).map((i) => i.marketplace);
   const manager = can(user, "clientes.gerenciar");
@@ -180,6 +182,7 @@ export default async function ClientePage({
             destaqueAcesso={sp.acesso}
             marketplacesDisponiveis={marketplacesDisponiveis}
             refMonth={ref}
+            onboarding={onboarding}
             tasks={clientTasks}
             breakdown={breakdown}
             chart={
