@@ -12,6 +12,10 @@ import {
   ownStoreTotals,
   integrationHealth,
   procedenciaDoMes,
+  adsTotalsCarteira,
+  scoresEmLote,
+  alertasDaCarteira,
+  adsRows,
 } from "@/lib/queries";
 import { addMonths, brl, brlShort, currentMonth, dateBR, lastMonths, num, pct } from "@/lib/format";
 import {
@@ -31,6 +35,8 @@ import { IconBarChart, IconDollar, IconPlus, IconReceipt, IconTrendUp, IconUsers
 import { MonthPicker } from "@/components/month-picker";
 import { SaudeIntegracoes } from "@/components/saude-integracoes";
 import { Procedencia } from "@/components/procedencia";
+import { ScoreChip } from "@/components/score-saude";
+import { NIVEL_TOM, NIVEL_LABEL } from "@/lib/alertas";
 import { marketplaceLabel } from "@/lib/types";
 
 function growth(current: number, previous: number): number {
@@ -67,15 +73,30 @@ export default async function DashboardPage({
     .filter((r) => r.status !== "encerrado" && r.status !== "pausado")
     .reduce((s, r) => s + r.monthly_fee, 0);
 
-  const attention = rows
-    .filter((r) => r.status === "atencao" || (r.prev_revenue > 0 && growth(r.revenue, r.prev_revenue) < -0.15))
-    .slice(0, 5);
-
   const openTasks = await tasks({ status: "disponivel" });
   const myTasks = await tasks({ status: "em_andamento", assignee: user.id });
   const board = await leaderboard();
   const saude = await integrationHealth(escopo);
   const procedencia = await procedenciaDoMes(ref, { scope: escopo });
+  const adsCarteira = await adsTotalsCarteira(ref, escopo);
+  // receita atribuída de Ads por cliente, para o ROAS da tabela
+  const adsPorCliente = new Map(
+    (await adsRows({ refMonth: ref, scope: escopo })).reduce((acc, e) => {
+      acc.set(e.client_id, (acc.get(e.client_id) ?? 0) + e.revenue);
+      return acc;
+    }, new Map<string, number>()),
+  );
+  const scores = await scoresEmLote(rows, ref);
+  const alertas = await alertasDaCarteira(ref, escopo);
+  const alertasAbertos = alertas.filter((a) => !a.resolvido);
+
+  const roasCarteira = adsCarteira.invested ? adsCarteira.revenue / adsCarteira.invested : 0;
+  const emOnboarding = rows.filter((r) => r.status === "onboarding").length;
+  const semResponsavel = rows.filter((r) => !r.owner_id).length;
+  const precisamAtencao = rows.filter((r) => {
+    const sc = scores.get(r.id);
+    return sc && sc.classe !== "saudavel";
+  });
   const top = rows.slice(0, 8);
 
   const totalRevenue = byMarketplace.reduce((s, m) => s + m.revenue, 0);
@@ -102,9 +123,11 @@ export default async function DashboardPage({
         }
       />
 
+      {/* quatro números. Antes eram oito, e oito números lado a lado não
+          formam uma decisão: formam um painel de avião */}
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <Stat
-          label="Faturamento"
+          label="Faturamento da carteira"
           value={brl(totals.revenue)}
           delta={growth(totals.revenue, prev.revenue)}
           hint="vs. mês anterior"
@@ -114,57 +137,173 @@ export default async function DashboardPage({
         <Stat
           label="Lucro"
           value={brl(totals.profit)}
-          delta={growth(totals.profit, prev.profit)}
+          delta={margin - prevMargin}
           hint={`margem ${pct(margin)}`}
-          tone="accent"
+          tone={margin >= 0.15 ? "ok" : margin > 0 ? "warn" : "bad"}
           icon={<IconDollar size={20} />}
         />
         <Stat
-          label="Investimento em Ads"
+          label="Ads"
           value={brl(totals.ads)}
-          hint={totals.revenue ? `${pct(totals.ads / totals.revenue)} do faturamento` : "sem faturamento"}
-          tone="warn"
+          hint={roasCarteira ? `ROAS ${roasCarteira.toFixed(2)}x` : "sem receita atribuída"}
+          tone={roasCarteira >= 3 ? "ok" : roasCarteira > 0 ? "warn" : "neutral"}
           href="/ads"
           icon={<IconTrendUp size={20} />}
         />
         <Stat
-          label="Impostos"
-          value={brl(totals.tax)}
-          hint={totals.revenue ? `${pct(totals.tax / totals.revenue)} do faturamento` : "—"}
-          tone="info"
-          icon={<IconReceipt size={20} />}
+          label="Clientes em atenção"
+          value={num(precisamAtencao.length)}
+          hint={alertasAbertos.length ? `${alertasAbertos.length} alertas em aberto` : "nada pendente"}
+          tone={precisamAtencao.length ? "bad" : "ok"}
+          href="/alertas"
+          icon={<IconUsers size={20} />}
         />
       </div>
 
+      {/* a carteira em uma linha: quantos, em que estágio, e o que falta */}
       <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <Stat label="Ativos" value={num(active)} hint={`${rows.length} na carteira`} tone="ok" href="/clientes" />
         <Stat
-          label="Clientes ativos"
-          value={num(active)}
-          hint={`${rows.length} na carteira`}
-          tone="ok"
-          href="/clientes"
-          icon={<IconUsers size={20} />}
+          label="Em onboarding"
+          value={num(emOnboarding)}
+          hint={emOnboarding ? "ainda entrando" : "nenhum"}
+          tone={emOnboarding ? "warn" : "neutral"}
+          href="/clientes?status=onboarding"
         />
-        <Stat label="Pedidos no mês" value={num(totals.orders)} hint="somando os marketplaces" tone="neutral" />
-        {propria && propria.stores > 0 ? (
+        <Stat
+          label="Precisam de atenção"
+          value={num(precisamAtencao.length)}
+          hint="score abaixo de 70"
+          tone={precisamAtencao.length ? "bad" : "ok"}
+        />
+        <Stat
+          label="Sem responsável"
+          value={num(semResponsavel)}
+          hint={semResponsavel ? "ninguém responde por eles" : "todos atribuídos"}
+          tone={semResponsavel ? "bad" : "ok"}
+        />
+      </div>
+
+      {/* resultado da agência fica separado do resultado das lojas: são
+          bolsos diferentes e somar os dois dá um número que não existe */}
+      {propria && propria.stores > 0 && (
+        <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <Stat
-            label="Loja própria"
+            label="Lojas do Kadu"
             value={brl(propria.revenue)}
-            hint={`lucro ${brlShort(propria.profit)} · fora da carteira`}
+            hint={`${propria.stores} ${propria.stores === 1 ? "loja" : "lojas"} · fora da carteira`}
             tone="accent"
             icon={<IconBarChart size={20} />}
           />
+          <Stat label="Lucro das lojas" value={brl(propria.profit)} tone="accent" />
+          <Stat label="Fee recorrente" value={brl(mrr)} hint="contratos ativos da agência" tone="brand" />
+          <Stat label="Pedidos no mês" value={num(totals.orders)} hint="carteira" tone="neutral" />
+        </div>
+      )}
+
+      {alertasAbertos.length > 0 && (
+        <Card
+          className="mt-3"
+          title="Atenção necessária"
+          subtitle={`${alertasAbertos.length} ${alertasAbertos.length === 1 ? "item" : "itens"} esperando decisão`}
+          actions={
+            <Link href="/alertas" className="link-more">
+              Ver todos
+            </Link>
+          }
+        >
+          <ul className="space-y-2">
+            {alertasAbertos.slice(0, 5).map((a) => (
+              <li key={a.key}>
+                <Link
+                  href={a.href}
+                  className="flex flex-wrap items-center gap-2 rounded-[10px] border border-line px-3 py-2.5 transition-colors hover:border-line-strong"
+                >
+                  <Chip tone={NIVEL_TOM[a.nivel]}>{NIVEL_LABEL[a.nivel]}</Chip>
+                  <span className="text-sm text-ink">{a.titulo}</span>
+                  {a.clientName && <span className="text-xs text-dim">{a.clientName}</span>}
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </Card>
+      )}
+
+      <Card
+        className="mt-3"
+        title="Carteira"
+        subtitle="Quem precisa de você hoje, em ordem de faturamento"
+        bodyClassName="p-0"
+        actions={
+          <Link href="/clientes" className="link-more">
+            Ver tudo
+          </Link>
+        }
+      >
+        {rows.length ? (
+          <div className="table-wrap">
+            <table className="data">
+              <thead>
+                <tr>
+                  <th>Cliente</th>
+                  <th>Responsável</th>
+                  <th className="num">Faturamento</th>
+                  <th className="num">vs. ant.</th>
+                  <th className="num">ROAS</th>
+                  <th>Saúde</th>
+                  <th>Principal pendência</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.slice(0, 10).map((c) => {
+                  const sc = scores.get(c.id);
+                  const doCliente = alertasAbertos.filter((a) => a.clientId === c.id);
+                  const roasCliente = c.ads ? (adsPorCliente.get(c.id) ?? 0) / c.ads : 0;
+                  return (
+                    <tr key={c.id}>
+                      <td>
+                        <Link href={`/clientes/${c.id}`} className="font-medium text-ink hover:text-brand">
+                          {c.name}
+                        </Link>
+                        <StatusChip value={c.status} />
+                      </td>
+                      <td>
+                        {c.owner_name ? (
+                          <span className="flex items-center gap-1.5">
+                            <Avatar name={c.owner_name} color={c.owner_color} size={22} />
+                            <span className="text-xs text-muted">{c.owner_name.split(" ")[0]}</span>
+                          </span>
+                        ) : (
+                          <Chip tone="bad">definir</Chip>
+                        )}
+                      </td>
+                      <td className="num font-semibold text-ink">{brlShort(c.revenue)}</td>
+                      <td className="num">
+                        <Delta value={growth(c.revenue, c.prev_revenue)} />
+                      </td>
+                      <td className="num text-muted">{roasCliente ? `${roasCliente.toFixed(2)}x` : "—"}</td>
+                      <td>{sc && <ScoreChip score={sc} />}</td>
+                      <td className="text-xs text-muted">
+                        {doCliente.length ? (
+                          <Link href={doCliente[0].href} className="hover:text-brand">
+                            {doCliente[0].titulo}
+                          </Link>
+                        ) : (
+                          <span className="text-dim">—</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         ) : (
-          <Stat label="Fee recorrente" value={brl(mrr)} hint="contratos ativos" tone="brand" />
+          <div className="p-5">
+            <Empty title="Carteira vazia" hint="Cadastre o primeiro cliente para começar." />
+          </div>
         )}
-        <Stat
-          label="Margem da carteira"
-          value={pct(margin)}
-          delta={margin - prevMargin}
-          hint="lucro ÷ faturamento"
-          tone={margin >= 0.15 ? "ok" : margin > 0 ? "warn" : "bad"}
-        />
-      </div>
+      </Card>
 
       <div className="mt-3 grid gap-3 lg:grid-cols-3">
         <Card
@@ -239,85 +378,6 @@ export default async function DashboardPage({
       </div>
 
       <div className="mt-3 grid gap-3 lg:grid-cols-3">
-        <Card
-          className="lg:col-span-2"
-          title="Carteira de clientes"
-          subtitle="Ordenada por atenção e faturamento"
-          actions={
-            <Link href="/clientes" className="btn btn-ghost btn-sm">
-              Ver todos
-            </Link>
-          }
-          bodyClassName="p-0"
-        >
-          {top.length ? (
-            <div className="table-wrap">
-              <table className="data">
-                <thead>
-                  <tr>
-                    <th>Cliente</th>
-                    <th>Responsável</th>
-                    <th>Canais</th>
-                    <th className="num">Faturamento</th>
-                    <th className="num">Lucro</th>
-                    <th className="num">vs. mês ant.</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {top.map((c) => (
-                    <tr key={c.id}>
-                      <td>
-                        <Link href={`/clientes/${c.id}`} className="flex items-center gap-2.5">
-                          <span className="min-w-0">
-                            <span className="block truncate font-semibold text-ink hover:text-brand">{c.name}</span>
-                            <span className="mt-0.5 block">
-                              <StatusChip value={c.status} />
-                            </span>
-                          </span>
-                        </Link>
-                      </td>
-                      <td>
-                        {c.owner_name ? (
-                          <span className="flex items-center gap-2">
-                            <Avatar name={c.owner_name} color={c.owner_color} size={24} />
-                            <span className="text-xs text-muted">{c.owner_name.split(" ")[0]}</span>
-                          </span>
-                        ) : (
-                          <Chip tone="warn">sem responsável</Chip>
-                        )}
-                      </td>
-                      <td>
-                        <span className="flex flex-wrap gap-1">
-                          {c.marketplaces
-                            ? c.marketplaces.split(",").map((m) => <MarketplaceChip key={m} value={m} />)
-                            : <span className="text-xs text-dim">—</span>}
-                        </span>
-                      </td>
-                      <td className="num font-semibold text-ink">{brlShort(c.revenue)}</td>
-                      <td className="num">{brlShort(c.profit)}</td>
-                      <td className="num">
-                        <Delta value={growth(c.revenue, c.prev_revenue)} />
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <div className="p-5">
-              <Empty
-                title="Nenhum cliente cadastrado"
-                hint="Cadastre o primeiro cliente para começar a montar a carteira."
-                action={
-                  <Link href="/clientes/novo" className="btn btn-primary btn-sm">
-                    Cadastrar cliente
-                  </Link>
-                }
-              />
-            </div>
-          )}
-        </Card>
-
         <div className="space-y-3">
           <SaudeIntegracoes
             conectadas={saude.conectadas}
@@ -325,29 +385,6 @@ export default async function DashboardPage({
             paradas={saude.paradas}
             ultimoCron={saude.ultimoCron}
           />
-
-          <Card title="Precisa de atenção" subtitle="Queda relevante ou status crítico">
-            {attention.length ? (
-              <ul className="space-y-2">
-                {attention.map((c) => (
-                  <li key={c.id}>
-                    <Link
-                      href={`/clientes/${c.id}`}
-                      className="flex items-center justify-between gap-3 rounded-lg border border-line bg-surface-2 px-3 py-2 transition-colors hover:border-line-strong"
-                    >
-                      <span className="min-w-0">
-                        <span className="block truncate text-sm font-medium text-ink">{c.name}</span>
-                        <span className="text-[0.7rem] text-dim">{brlShort(c.revenue)} no mês</span>
-                      </span>
-                      <Delta value={growth(c.revenue, c.prev_revenue)} />
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="text-sm text-dim">Nenhum alerta no período. 👌</p>
-            )}
-          </Card>
 
           <Card
             title="Tarefas da equipe"

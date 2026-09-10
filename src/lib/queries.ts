@@ -955,3 +955,17 @@ export async function alertasDaCarteira(
     };
   });
 }
+
+/** Investido e receita atribuída de Ads na carteira inteira, para o ROAS. */
+export async function adsTotalsCarteira(refMonth: string, scope?: Scope) {
+  const s = scoped(scope, "client_id");
+  const row = await one<{ invested: number; revenue: number }>(
+    `SELECT COALESCE(SUM(invested),0) AS invested, COALESCE(SUM(revenue),0) AS revenue
+       FROM ads_entries
+      WHERE substr(period_start,1,7) <= ? AND substr(period_end,1,7) >= ?${s.sql}`,
+    refMonth,
+    refMonth,
+    ...s.params,
+  );
+  return row ?? { invested: 0, revenue: 0 };
+}
