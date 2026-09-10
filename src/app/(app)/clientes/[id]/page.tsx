@@ -11,7 +11,10 @@ import {
   clientTeam,
   marketplaceBreakdown,
   monthlySeries,
+  adsTotals,
+  clientGoals,
   getClient,
+  goalHistory,
   procedenciaDoMes,
   tasks,
   totalsForClient,
@@ -24,6 +27,7 @@ import { TabVisao } from "./tab-visao";
 import { TabFinanceiro } from "./tab-financeiro";
 import { TabMarketplaces } from "./tab-marketplaces";
 import { TabAds } from "./tab-ads";
+import { TabMetas } from "./tab-metas";
 import { TabHistorico } from "./tab-historico";
 import { TabEquipe } from "./tab-equipe";
 import { TabDados } from "./tab-dados";
@@ -36,6 +40,7 @@ const TABS = [
   { key: "financeiro", label: "Resultados" },
   { key: "marketplaces", label: "Lojas" },
   { key: "ads", label: "Ads" },
+  { key: "metas", label: "Metas" },
   { key: "historico", label: "Histórico" },
   { key: "equipe", label: "Equipe" },
   { key: "dados", label: "Dados cadastrais" },
@@ -77,6 +82,10 @@ export default async function ClientePage({
   const clientTasks = await tasks({ clientId: client.id });
   const breakdown = await marketplaceBreakdown(ref, client.id);
   const procedencia = await procedenciaDoMes(ref, { clientId: client.id });
+  const metas = await clientGoals(client.id, ref);
+  const metaGeral = metas.find((m) => m.marketplace === null);
+  const metasHistorico = await goalHistory(client.id, 12);
+  const adsMes = await adsTotals(client.id, ref);
   const allUsers = await listUsers();
   const marketplacesDisponiveis = (await integrationStatus()).filter((i) => i.configured).map((i) => i.marketplace);
   const manager = can(user, "clientes.gerenciar");
@@ -197,6 +206,24 @@ export default async function ClientePage({
         )}
         {tab === "marketplaces" && <TabMarketplaces client={client} accounts={accounts} refMonth={ref} manager={manager} />}
         {tab === "ads" && <TabAds client={client} entries={ads} accounts={accounts} />}
+        {tab === "metas" && (
+          <TabMetas
+            client={client}
+            goal={metaGeral}
+            porLoja={metas.filter((m) => m.marketplace !== null)}
+            accounts={accounts}
+            realizado={{
+              revenue: totals.revenue,
+              orders: totals.orders,
+              profit: totals.profit,
+              ads: adsMes.invested,
+              adsRevenue: adsMes.revenue,
+            }}
+            refMonth={ref}
+            historico={metasHistorico}
+            manager={manager}
+          />
+        )}
         {tab === "historico" && <TabHistorico client={client} notes={notes} currentUserId={user.id} manager={manager} />}
         {tab === "equipe" && <TabEquipe client={client} team={team} users={allUsers} manager={manager} />}
         {tab === "dados" && <TabDados client={client} users={allUsers} manager={manager} />}

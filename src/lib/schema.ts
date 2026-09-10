@@ -206,6 +206,32 @@ CREATE TABLE IF NOT EXISTS agency_expenses (
   updated_at  text NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS client_goals (
+  id             text PRIMARY KEY,
+  client_id      text NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+  ref_month      text NOT NULL,
+  -- NULL em qualquer campo significa "sem meta", e nao zero: zero e uma
+  -- meta legitima e nao pode ser confundido com ausencia
+  marketplace    text,
+  revenue        double precision,
+  orders         integer,
+  avg_ticket     double precision,
+  min_margin     double precision,
+  ads_budget     double precision,
+  min_roas       double precision,
+  max_acos       double precision,
+  notes          text,
+  created_by     text REFERENCES users(id) ON DELETE SET NULL,
+  created_at     text NOT NULL,
+  updated_at     text NOT NULL
+);
+
+-- uma meta geral por mes, mais uma por loja quando o time quiser detalhar
+CREATE UNIQUE INDEX IF NOT EXISTS idx_goals_geral ON client_goals(client_id, ref_month)
+  WHERE marketplace IS NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_goals_loja  ON client_goals(client_id, ref_month, marketplace)
+  WHERE marketplace IS NOT NULL;
+
 CREATE INDEX IF NOT EXISTS idx_charges_month  ON agency_charges(ref_month, status);
 CREATE INDEX IF NOT EXISTS idx_expenses_month ON agency_expenses(ref_month);
 
@@ -243,6 +269,7 @@ CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
 
 /** Tabelas na ordem segura para limpeza (filhas antes das pais). */
 export const TABLES = [
+  "client_goals",
   "agency_charges",
   "agency_expenses",
   "task_events",

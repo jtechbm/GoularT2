@@ -7,6 +7,7 @@ import type {
   AgencyExpense,
   Client,
   ClientMarketplace,
+  ClientGoal,
   ClientNote,
   FinanceSnapshot,
   Task,
@@ -614,4 +615,49 @@ export async function procedenciaDoMes(
     contas: contas?.total ?? 0,
     comDados: api + manual,
   };
+}
+
+// ---------------------------------------------------------------- metas
+
+/** Meta geral do cliente no mês (marketplace IS NULL) e as metas por loja. */
+export async function clientGoals(clientId: string, refMonth: string) {
+  return all<ClientGoal>(
+    "SELECT * FROM client_goals WHERE client_id = ? AND ref_month = ? ORDER BY marketplace NULLS FIRST",
+    clientId,
+    refMonth,
+  );
+}
+
+/** Histórico das metas gerais, para ver se elas sobem ou ficam paradas. */
+export async function goalHistory(clientId: string, months = 12) {
+  return all<ClientGoal>(
+    `SELECT * FROM client_goals
+      WHERE client_id = ? AND marketplace IS NULL
+      ORDER BY ref_month DESC LIMIT ?`,
+    clientId,
+    months,
+  );
+}
+
+/** Investido e receita atribuída de Ads no mês, base do ROAS e do ACOS. */
+export async function adsTotals(clientId: string, refMonth: string) {
+  const row = await one<{ invested: number; revenue: number }>(
+    `SELECT COALESCE(SUM(invested),0) AS invested, COALESCE(SUM(revenue),0) AS revenue
+       FROM ads_entries
+      WHERE client_id = ? AND substr(period_start,1,7) <= ? AND substr(period_end,1,7) >= ?`,
+    clientId,
+    refMonth,
+    refMonth,
+  );
+  return row ?? { invested: 0, revenue: 0 };
+}
+
+/** Metas gerais de vários clientes de uma vez, para as listas. */
+export async function goalsForMonth(refMonth: string, scope?: Scope) {
+  const s = scoped(scope, "client_id");
+  return all<ClientGoal>(
+    `SELECT * FROM client_goals WHERE ref_month = ? AND marketplace IS NULL${s.sql}`,
+    refMonth,
+    ...s.params,
+  );
 }

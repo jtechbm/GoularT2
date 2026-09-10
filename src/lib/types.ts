@@ -215,3 +215,49 @@ export const CHARGE_STATUS: { value: ChargeStatus; label: string }[] = [
 export function expenseCategoryLabel(value: string): string {
   return EXPENSE_CATEGORIES.find((c) => c.value === value)?.label ?? value;
 }
+
+// ---------------------------------------------------------------- metas por cliente
+
+/**
+ * Meta de um cliente num mês. Todo campo é opcional de propósito:
+ * null significa "sem meta definida", e não zero. Zero é uma meta válida
+ * (por exemplo, orçamento de Ads zerado) e não pode virar sinônimo de vazio.
+ */
+export interface ClientGoal {
+  id: string;
+  client_id: string;
+  ref_month: string;
+  /** null = meta geral do cliente; preenchido = meta daquela loja */
+  marketplace: Marketplace | null;
+  revenue: number | null;
+  orders: number | null;
+  avg_ticket: number | null;
+  min_margin: number | null;
+  ads_budget: number | null;
+  min_roas: number | null;
+  max_acos: number | null;
+  notes: string | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export type GoalKey = "revenue" | "orders" | "avg_ticket" | "min_margin" | "ads_budget" | "min_roas" | "max_acos";
+
+/** Como cada meta se comporta: para cima é melhor, ou para baixo é melhor. */
+export const GOAL_FIELDS: {
+  key: GoalKey;
+  label: string;
+  /** "maior" = bater a meta é passar dela; "menor" = bater é ficar abaixo */
+  direction: "maior" | "menor";
+  format: "brl" | "int" | "pct" | "mult";
+  hint?: string;
+}[] = [
+  { key: "revenue", label: "Faturamento no mês", direction: "maior", format: "brl" },
+  { key: "orders", label: "Pedidos", direction: "maior", format: "int" },
+  { key: "avg_ticket", label: "Ticket médio", direction: "maior", format: "brl" },
+  { key: "min_margin", label: "Margem mínima", direction: "maior", format: "pct", hint: "lucro dividido pelo faturamento" },
+  { key: "ads_budget", label: "Orçamento de Ads", direction: "menor", format: "brl", hint: "teto de investimento no mês" },
+  { key: "min_roas", label: "ROAS mínimo", direction: "maior", format: "mult", hint: "receita de Ads dividida pelo investido" },
+  { key: "max_acos", label: "ACOS máximo", direction: "menor", format: "pct", hint: "investido dividido pela receita de Ads" },
+];
