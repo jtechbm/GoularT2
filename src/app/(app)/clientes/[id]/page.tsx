@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { canSeeClient, listUsers, requireUser } from "@/lib/auth";
 import { Procedencia } from "@/components/procedencia";
+import { SerieDiaria } from "@/components/serie-diaria";
 import { calcularScore } from "@/lib/score";
 import { can } from "@/lib/permissions";
 import {
@@ -17,7 +18,9 @@ import {
   clientGoals,
   getClient,
   goalHistory,
+  periodoDe,
   procedenciaDoMes,
+  serieDiaria,
   tasks,
   totalsForClient,
 } from "@/lib/queries";
@@ -58,7 +61,17 @@ export default async function ClientePage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ tab?: string; mes?: string; ok?: string; sync?: string; acesso?: string; erro?: string }>;
+  searchParams: Promise<{
+    tab?: string;
+    mes?: string;
+    ok?: string;
+    sync?: string;
+    acesso?: string;
+    erro?: string;
+    periodo?: string;
+    de?: string;
+    ate?: string;
+  }>;
 }) {
   const user = await requireUser();
   const { id } = await params;
@@ -89,6 +102,11 @@ export default async function ClientePage({
   const metasHistorico = await goalHistory(client.id, 12);
   const adsMes = await adsTotals(client.id, ref);
   const onboarding = await avaliarOnboardingDoCliente(client.id, ref);
+
+  // histórico diário: atalho padrão é o mês de referência
+  const atalho = sp.periodo ?? "mes";
+  const periodo = periodoDe(atalho, ref, sp.de, sp.ate);
+  const dias = await serieDiaria(periodo.inicio, periodo.fim, { clientId: client.id });
   const realizado = {
     revenue: totals.revenue,
     orders: totals.orders,
@@ -231,6 +249,17 @@ export default async function ClientePage({
               ) : null
             }
           />
+        )}
+        {tab === "financeiro" && (
+          <div className="mb-3">
+            <SerieDiaria
+              dias={dias}
+              label={periodo.label}
+              atalhoAtivo={atalho}
+              hrefBase={(a) => `/clientes/${client.id}?tab=financeiro&mes=${ref}&periodo=${a}`}
+              metaAds={metaGeral?.ads_budget ?? null}
+            />
+          </div>
         )}
         {tab === "financeiro" && (
           <TabFinanceiro client={client} snapshots={snapshots} accounts={accounts} refMonth={ref} months={months} />

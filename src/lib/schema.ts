@@ -302,6 +302,63 @@ CREATE INDEX IF NOT EXISTS idx_check_task   ON task_checklist(task_id, position)
 CREATE INDEX IF NOT EXISTS idx_evid_task    ON task_evidence(task_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_coment_task  ON task_comments(task_id, created_at);
 
+-- Fechamento por DIA, ao lado do fechamento por mes.
+--
+-- O snapshot mensal continua sendo a verdade do mes, porque e o numero que
+-- a equipe corrige a mao quando precisa. Esta tabela e o historico: um dia
+-- que ja passou nao muda mais, entao da para comparar semana com semana e
+-- ver a curva dentro do mes. A chave unica por cliente, loja e dia e o que
+-- impede a sincronizacao incremental de duplicar linha.
+CREATE TABLE IF NOT EXISTS finance_daily (
+  id          text PRIMARY KEY,
+  client_id   text NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+  marketplace text NOT NULL,
+  day         text NOT NULL,
+  revenue     double precision NOT NULL DEFAULT 0,
+  orders      integer NOT NULL DEFAULT 0,
+  units       integer NOT NULL DEFAULT 0,
+  fees        double precision NOT NULL DEFAULT 0,
+  shipping    double precision NOT NULL DEFAULT 0,
+  tax         double precision NOT NULL DEFAULT 0,
+  ads         double precision NOT NULL DEFAULT 0,
+  ads_revenue double precision NOT NULL DEFAULT 0,
+  clicks      integer NOT NULL DEFAULT 0,
+  prints      integer NOT NULL DEFAULT 0,
+  source      text NOT NULL DEFAULT 'api',
+  updated_at  text NOT NULL,
+  UNIQUE (client_id, marketplace, day)
+);
+
+CREATE INDEX IF NOT EXISTS idx_daily_cliente ON finance_daily(client_id, day);
+CREATE INDEX IF NOT EXISTS idx_daily_dia     ON finance_daily(day);
+
+-- Uma linha por execucao de sincronizacao: quando comecou, quando acabou,
+-- o que deu. sync_logs guarda o resultado por conta; isto guarda a rodada
+-- inteira, que e o que a tela de integracoes precisa para dizer "a ultima
+-- sincronizacao bem-sucedida foi tal hora".
+CREATE TABLE IF NOT EXISTS sync_runs (
+  id                    text PRIMARY KEY,
+  client_marketplace_id text REFERENCES client_marketplaces(id) ON DELETE CASCADE,
+  marketplace           text,
+  -- 'manual', 'cron' ou 'cli'
+  trigger               text NOT NULL DEFAULT 'manual',
+  started_at            text NOT NULL,
+  finished_at           text,
+  status                text NOT NULL DEFAULT 'rodando',
+  days_written          integer NOT NULL DEFAULT 0,
+  message               text,
+  error                 text,
+  started_by            text REFERENCES users(id) ON DELETE SET NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_runs_conta ON sync_runs(client_marketplace_id, started_at DESC);
+CREATE INDEX IF NOT EXISTS idx_runs_data  ON sync_runs(started_at DESC);
+
+-- ate onde o historico diario ja foi preenchido, para a proxima rodada
+-- comecar de onde parou em vez de varrer tudo de novo
+ALTER TABLE client_marketplaces ADD COLUMN IF NOT EXISTS daily_synced_until text;
+ALTER TABLE client_marketplaces ADD COLUMN IF NOT EXISTS last_success_at    text;
+
 CREATE INDEX IF NOT EXISTS idx_charges_month  ON agency_charges(ref_month, status);
 CREATE INDEX IF NOT EXISTS idx_expenses_month ON agency_expenses(ref_month);
 
@@ -339,6 +396,8 @@ CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
 
 /** Tabelas na ordem segura para limpeza (filhas antes das pais). */
 export const TABLES = [
+  "sync_runs",
+  "finance_daily",
   "task_comments",
   "task_evidence",
   "task_checklist",

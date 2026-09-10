@@ -6,6 +6,7 @@ import {
   IntegrationError,
   monthRange,
   type AdsCampaign,
+  type DailyResult,
   type MarketplaceAdapter,
   type MonthlyResult,
   type StoredCredentials,
@@ -116,6 +117,70 @@ async function saveAdsCampaigns(
   }
 }
 
+/**
+ * Grava o fechamento de cada dia.
+ *
+ * Escreve dia a dia com UPSERT na chave (cliente, loja, dia). Isso resolve
+ * duas coisas de uma vez: rodar de novo o mesmo período não duplica linha,
+ * e um dia que ainda está acontecendo pode ser corrigido na rodada
+ * seguinte, quando os pedidos do fim do dia entrarem.
+ *
+ * Dias que a API não devolveu não são apagados. Uma falha parcial da loja
+ * nunca pode zerar histórico já apurado.
+ */
+async function saveDailyHistory(
+  clientId: string,
+  marketplace: string,
+  dias: DailyResult[],
+): Promise<number> {
+  let gravados = 0;
+  for (const d of dias) {
+    await run(
+      `INSERT INTO finance_daily (id, client_id, marketplace, day, revenue, orders, units, fees, shipping, tax,
+                                  ads, ads_revenue, clicks, prints, source, updated_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,'api',?)
+       ON CONFLICT (client_id, marketplace, day) DO UPDATE SET
+         revenue = EXCLUDED.revenue, orders = EXCLUDED.orders, units = EXCLUDED.units,
+         fees = EXCLUDED.fees, shipping = EXCLUDED.shipping, tax = EXCLUDED.tax,
+         ads = EXCLUDED.ads, ads_revenue = EXCLUDED.ads_revenue, clicks = EXCLUDED.clicks,
+         prints = EXCLUDED.prints, updated_at = EXCLUDED.updated_at`,
+      id(), clientId, marketplace, d.day, d.revenue, d.orders, d.units, d.fees, d.shipping,
+      d.tax, d.ads, d.ads_revenue, d.clicks, d.prints, now(),
+    );
+    gravados += 1;
+  }
+  return gravados;
+}
+
+/** Abre uma rodada de sincronização e devolve o id, para fechar depois. */
+async function abrirRodada(
+  accountId: string | null,
+  marketplace: string | null,
+  trigger: string,
+  userId: string | null,
+): Promise<string> {
+  const runId = id();
+  await run(
+    `INSERT INTO sync_runs (id, client_marketplace_id, marketplace, trigger, started_at, status, started_by)
+     VALUES (?,?,?,?,?,'rodando',?)`,
+    runId, accountId, marketplace, trigger, now(), userId,
+  );
+  return runId;
+}
+
+async function fecharRodada(
+  runId: string,
+  status: "ok" | "erro",
+  message: string,
+  diasGravados: number,
+  erro?: string,
+) {
+  await run(
+    "UPDATE sync_runs SET finished_at=?, status=?, message=?, days_written=?, error=? WHERE id=?",
+    now(), status, message, diasGravados, erro ?? null, runId,
+  );
+}
+
 export interface SyncOutcome {
   ok: boolean;
   status: "ok" | "erro";
@@ -135,6 +200,8 @@ export async function syncAccount(
   refMonth: string,
   /** null quando vem do agendamento, não de alguém clicando */
   userId: string | null,
+  /** de onde partiu: 'manual', 'cron' ou 'cli' */
+  trigger: "manual" | "cron" | "cli" = "manual",
 ): Promise<SyncOutcome> {
   const row = await one<{
     id: string;
@@ -146,10 +213,13 @@ export async function syncAccount(
   if (!row) return { ok: false, status: "erro", message: "Conta não encontrada." };
 
   const adapter = adapterFor(row.marketplace);
+  const runId = await abrirRodada(row.id, row.marketplace, trigger, userId);
+
   if (!adapter.isConfigured()) {
     const msg = `Faltam variáveis de ambiente: ${adapter.requiredEnv.filter((v) => !process.env[v]).join(", ")}`;
     await log(row.id, row.marketplace, refMonth, "erro", msg);
     await run("UPDATE client_marketplaces SET last_error = ? WHERE id = ?", msg, row.id);
+    await fecharRodada(runId, "erro", msg, 0, msg);
     return { ok: false, status: "erro", message: msg };
   }
 
@@ -198,19 +268,33 @@ export async function syncAccount(
       await saveAdsCampaigns(row.client_id, row.marketplace, refMonth, result.adsCampaigns, userId);
     }
 
+    // histórico diário: só grava o que a API abriu por dia
+    const diasGravados = result.days?.length
+      ? await saveDailyHistory(row.client_id, row.marketplace, result.days)
+      : 0;
+
+    const ultimoDia = result.days?.length ? result.days[result.days.length - 1].day : null;
+
     await run(
-      "UPDATE client_marketplaces SET last_sync_at = ?, last_error = NULL, status = 'conectado' WHERE id = ?",
+      `UPDATE client_marketplaces
+          SET last_sync_at = ?, last_success_at = ?, last_error = NULL, status = 'conectado',
+              daily_synced_until = COALESCE(?, daily_synced_until)
+        WHERE id = ?`,
       now(),
+      now(),
+      ultimoDia,
       row.id,
     );
 
-    const msg = `${result.orders} pedidos · faturamento ${result.revenue.toFixed(2)}${ads ? ` · ads ${ads.toFixed(2)}` : ""}`;
+    const msg = `${result.orders} pedidos · faturamento ${result.revenue.toFixed(2)}${ads ? ` · ads ${ads.toFixed(2)}` : ""}${diasGravados ? ` · ${diasGravados} dias` : ""}`;
     await log(row.id, row.marketplace, refMonth, "ok", msg);
+    await fecharRodada(runId, "ok", msg, diasGravados);
     return { ok: true, status: "ok", message: msg, result };
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error);
     await run("UPDATE client_marketplaces SET last_error = ?, status = 'erro' WHERE id = ?", msg, row.id);
     await log(row.id, row.marketplace, refMonth, "erro", msg);
+    await fecharRodada(runId, "erro", msg, 0, msg);
     return { ok: false, status: "erro", message: msg };
   }
 }

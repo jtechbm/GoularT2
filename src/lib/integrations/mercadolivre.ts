@@ -2,8 +2,10 @@ import {
   emptyMonth,
   IntegrationError,
   monthRange,
+  emptyDay,
   type AdapterContext,
   type AdsCampaign,
+  type DailyResult,
   type MarketplaceAdapter,
   type MonthlyResult,
   mapLimit,
@@ -144,6 +146,91 @@ async function buscarAds(token: string, refMonth: string): Promise<AdsCampaign[]
   return algumRespondeu ? campanhas : null;
 }
 
+/**
+ * Ads dia a dia.
+ *
+ * A API de Product Ads não abre métricas por dia: aggregation=DAILY e
+ * metrics_by_date são ignorados silenciosamente, e as rotas /metrics
+ * respondem 404. Sondei sete variações antes de aceitar isso.
+ *
+ * A saída foi pedir um dia de cada vez, com date_from igual a date_to.
+ * São mais chamadas, mas o número é real. A alternativa seria dividir o
+ * total do mês pelos dias, o que inventaria um investimento constante que
+ * nunca existiu e estragaria justamente a análise que o dia a dia serve
+ * para fazer.
+ *
+ * Respeita o prazo da sincronização e devolve o que conseguiu. Ads é
+ * complemento: nunca pode derrubar a apuração do faturamento.
+ */
+async function buscarAdsDiario(
+  token: string,
+  refMonth: string,
+  prazo: number,
+): Promise<{ day: string; ads: number; ads_revenue: number; clicks: number; prints: number }[] | null> {
+  const autorizacao = { authorization: `Bearer ${token}`, accept: "application/json" };
+  const { start, end } = monthRange(refMonth);
+
+  try {
+    const resAnunciante = await fetch(`${API}/advertising/advertisers?product_id=PADS`, {
+      headers: { ...autorizacao, "Api-Version": "1" },
+    });
+    if (!resAnunciante.ok) return null;
+
+    const anunciantes =
+      ((await resAnunciante.json()) as { advertisers?: { advertiser_id: number; site_id: string }[] }).advertisers ??
+      [];
+    if (!anunciantes.length) return null;
+
+    // só até hoje: dia futuro não tem métrica e só gastaria chamada
+    const ultimo = Math.min(end.getTime() - 864e5, Date.now());
+    const dias: string[] = [];
+    for (let t = start.getTime(); t <= ultimo; t += 864e5) {
+      dias.push(new Date(t).toISOString().slice(0, 10));
+    }
+    if (!dias.length) return null;
+
+    const { results } = await mapLimit(dias, 4, prazo, async (dia) => {
+      let ads = 0;
+      let receita = 0;
+      let clicks = 0;
+      let prints = 0;
+
+      for (const a of anunciantes) {
+        const qs = new URLSearchParams({
+          limit: "100",
+          offset: "0",
+          date_from: dia,
+          date_to: dia,
+          metrics: "cost,clicks,prints,total_amount",
+        });
+        const res = await fetch(
+          `${API}/advertising/${a.site_id}/advertisers/${a.advertiser_id}/product_ads/campaigns/search?${qs}`,
+          { headers: { ...autorizacao, "api-version": "2" } },
+        );
+        if (!res.ok) continue;
+
+        const corpo = (await res.json()) as {
+          results?: {
+            metrics?: { cost?: number; clicks?: number; prints?: number; total_amount?: number };
+          }[];
+        };
+        for (const c of corpo.results ?? []) {
+          ads += c.metrics?.cost ?? 0;
+          receita += c.metrics?.total_amount ?? 0;
+          clicks += c.metrics?.clicks ?? 0;
+          prints += c.metrics?.prints ?? 0;
+        }
+      }
+
+      return { day: dia, ads, ads_revenue: receita, clicks, prints };
+    });
+
+    return results.length ? results : null;
+  } catch {
+    return null;
+  }
+}
+
 export const mercadoLivre: MarketplaceAdapter = {
   marketplace: "mercado_livre",
   label: "Mercado Livre",
@@ -212,7 +299,20 @@ export const mercadoLivre: MarketplaceAdapter = {
     const out = emptyMonth(refMonth);
     const limit = 50;
     const prazo = syncDeadline();
-    const envios = new Set<number>();
+    // o id do envio guarda o dia do pedido: o custo do frete chega numa
+    // segunda chamada e precisa cair no dia certo, não no dia da consulta
+    const envios = new Map<number, string>();
+    const porDia = new Map<string, DailyResult>();
+
+    const dia = (iso: string | undefined) => (iso ?? "").slice(0, 10);
+    const noDia = (d: string) => {
+      let alvo = porDia.get(d);
+      if (!alvo) {
+        alvo = emptyDay(d);
+        porDia.set(d, alvo);
+      }
+      return alvo;
+    };
 
     const buscarPagina = async (offset: number) => {
       const qs = new URLSearchParams({
@@ -233,18 +333,29 @@ export const mercadoLivre: MarketplaceAdapter = {
 
     const somar = (orders: MLOrder[]) => {
       for (const order of orders) {
+        const d = dia(order.date_closed);
+        const alvo = d ? noDia(d) : null;
+
         out.orders += 1;
+        if (alvo) alvo.orders += 1;
         out.revenue += order.total_amount ?? 0;
+        if (alvo) alvo.revenue += order.total_amount ?? 0;
+
         for (const item of order.order_items ?? []) {
           out.units += item.quantity ?? 0;
           out.fees += item.sale_fee ?? 0;
+          if (alvo) {
+            alvo.units += item.quantity ?? 0;
+            alvo.fees += item.sale_fee ?? 0;
+          }
         }
         for (const payment of order.payments ?? []) {
           // shipping_cost aqui é o frete que o COMPRADOR pagou — não é custo do
           // vendedor. O custo dele vem de /shipments/{id}/costs, mais abaixo.
           out.tax += payment.taxes_amount ?? 0;
+          if (alvo) alvo.tax += payment.taxes_amount ?? 0;
         }
-        if (order.shipping?.id) envios.add(order.shipping.id);
+        if (order.shipping?.id) envios.set(order.shipping.id, d);
       }
     };
 
@@ -272,13 +383,17 @@ export const mercadoLivre: MarketplaceAdapter = {
     // frete fica zerado para lançamento manual — melhor do que perder tudo.
     if (envios.size) {
       try {
-        const { results } = await mapLimit([...envios], 8, prazo, async (envioId) => {
+        const { results } = await mapLimit([...envios.entries()], 8, prazo, async ([envioId, d]) => {
           const res = await fetch(`${API}/shipments/${envioId}/costs`, { headers: { authorization: `Bearer ${token}`, accept: "application/json" } });
           if (!res.ok) return null;
-          return (await res.json()) as { senders?: { cost?: number }[] };
+          const corpo = (await res.json()) as { senders?: { cost?: number }[] };
+          return { dia: d, corpo };
         });
-        for (const custo of results) {
-          for (const remetente of custo?.senders ?? []) out.shipping += remetente.cost ?? 0;
+        for (const item of results) {
+          for (const remetente of item?.corpo?.senders ?? []) {
+            out.shipping += remetente.cost ?? 0;
+            if (item?.dia) noDia(item.dia).shipping += remetente.cost ?? 0;
+          }
         }
       } catch {
         out.shipping = 0;
@@ -292,9 +407,21 @@ export const mercadoLivre: MarketplaceAdapter = {
         out.adsCampaigns = campanhas;
         out.ads = campanhas.reduce((s, c) => s + c.invested, 0);
       }
+      // a busca de campanhas devolve o mês inteiro somado; o detalhe por
+      // dia vem de outra rota e só existe se a conta anunciar
+      const diario = await buscarAdsDiario(token, refMonth, prazo);
+      for (const linha of diario ?? []) {
+        const alvo = noDia(linha.day);
+        alvo.ads += linha.ads;
+        alvo.ads_revenue += linha.ads_revenue;
+        alvo.clicks += linha.clicks;
+        alvo.prints += linha.prints;
+      }
     } catch {
       /* Ads é complemento: nunca derruba a apuração do faturamento */
     }
+
+    out.days = [...porDia.values()].sort((a, b) => a.day.localeCompare(b.day));
 
     // custo de produto não vem da API — fica com o time e entra pela tela do cliente
     out.profit = out.revenue - out.fees - out.shipping - out.tax - out.ads - out.cogs;

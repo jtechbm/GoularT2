@@ -52,7 +52,7 @@ export async function GET(req: NextRequest) {
         semTempo = true;
         break;
       }
-      const saida = await syncAccount(conta.id, mes, null);
+      const saida = await syncAccount(conta.id, mes, null, "cron");
       resultados.push({ conta: `${conta.nome} · ${conta.marketplace}`, mes, ok: saida.ok, detalhe: saida.message });
     }
     if (semTempo) break;

@@ -60,7 +60,7 @@ for (const conta of contas) {
     continue;
   }
 
-  const saida = await syncAccount(conta.id, refMonth, null);
+  const saida = await syncAccount(conta.id, refMonth, null, "cli");
   console.log(`  ${saida.ok ? "ok" : "FALHOU"}: ${saida.message}\n`);
 }
 

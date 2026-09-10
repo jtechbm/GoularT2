@@ -13,6 +13,43 @@ export interface AdsCampaign {
   orders: number;
 }
 
+/**
+ * Um dia da operação.
+ *
+ * O fechamento mensal continua sendo a verdade do mês, porque é o número
+ * que a equipe corrige à mão. Isto aqui é o histórico: dia que passou não
+ * muda mais, e é o que permite comparar semana com semana.
+ */
+export interface DailyResult {
+  day: string;
+  revenue: number;
+  orders: number;
+  units: number;
+  fees: number;
+  shipping: number;
+  tax: number;
+  ads: number;
+  ads_revenue: number;
+  clicks: number;
+  prints: number;
+}
+
+export function emptyDay(day: string): DailyResult {
+  return {
+    day,
+    revenue: 0,
+    orders: 0,
+    units: 0,
+    fees: 0,
+    shipping: 0,
+    tax: 0,
+    ads: 0,
+    ads_revenue: 0,
+    clicks: 0,
+    prints: 0,
+  };
+}
+
 /** Números fechados que o Elleva consome de cada loja. */
 export interface MonthlyResult {
   ref_month: string;
@@ -30,6 +67,11 @@ export interface MonthlyResult {
    * undefined = a API não respondeu; não apague o que já está gravado.
    */
   adsCampaigns?: AdsCampaign[];
+  /**
+   * Fechamento dia a dia. undefined = o adaptador não sabe abrir por dia,
+   * e o histórico diário simplesmente não é gravado para essa loja.
+   */
+  days?: DailyResult[];
 }
 
 export interface StoredCredentials {
@@ -74,9 +116,23 @@ export class IntegrationError extends Error {
   }
 }
 
+/**
+ * O mês no fuso de Brasília, não em UTC.
+ *
+ * Os marketplaces devolvem a data do pedido no horário local do vendedor, e
+ * é essa data que aparece no painel dele. Com a janela em UTC, um pedido
+ * fechado às 22h do dia 31 entrava no mês seguinte pela apuração mensal e
+ * ficava no mês anterior no histórico diário. A soma dos dias não batia com
+ * o fechamento, e a diferença era exatamente esse pedido.
+ */
+const FUSO_BR_MS = 3 * 3600e3;
+
 export function monthRange(refMonth: string): { start: Date; end: Date } {
   const [y, m] = refMonth.split("-").map(Number);
-  return { start: new Date(Date.UTC(y, m - 1, 1)), end: new Date(Date.UTC(y, m, 1)) };
+  return {
+    start: new Date(Date.UTC(y, m - 1, 1) + FUSO_BR_MS),
+    end: new Date(Date.UTC(y, m, 1) + FUSO_BR_MS),
+  };
 }
 
 export function emptyMonth(refMonth: string): MonthlyResult {

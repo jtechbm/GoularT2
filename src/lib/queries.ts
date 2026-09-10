@@ -1,6 +1,6 @@
 import "server-only";
 import { all, one } from "./db";
-import { addMonths, currentMonth, lastMonths } from "./format";
+import { addMonths, currentMonth, lastMonths, monthLabel } from "./format";
 import { avaliarOnboarding } from "./onboarding";
 import { calcularScore, type Score } from "./score";
 import { alertasDoCliente, ordenarAlertas, type Alerta } from "./alertas";
@@ -1086,4 +1086,161 @@ export async function rankingMensal(refMonth = currentMonth()) {
     // honesto do que 0%, que pareceria mau desempenho
     pontualidade: l.com_prazo ? l.no_prazo / l.com_prazo : null,
   }));
+}
+
+
+// ---------------------------------------------------------------- historico diario
+
+export interface DiaFinanceiro {
+  day: string;
+  revenue: number;
+  orders: number;
+  units: number;
+  fees: number;
+  shipping: number;
+  tax: number;
+  ads: number;
+  ads_revenue: number;
+  clicks: number;
+  prints: number;
+}
+
+/** Traduz o atalho da tela em um intervalo de datas fechado. */
+export function periodoDe(
+  atalho: string,
+  refMonth = currentMonth(),
+  de?: string,
+  ate?: string,
+): { inicio: string; fim: string; label: string } {
+  const hoje = new Date();
+  const iso = (d: Date) => d.toISOString().slice(0, 10);
+
+  if (atalho === "personalizado" && de && ate) {
+    return { inicio: de, fim: ate, label: "período escolhido" };
+  }
+  if (atalho === "7d") {
+    return { inicio: iso(new Date(hoje.getTime() - 6 * 864e5)), fim: iso(hoje), label: "últimos 7 dias" };
+  }
+  if (atalho === "30d") {
+    return { inicio: iso(new Date(hoje.getTime() - 29 * 864e5)), fim: iso(hoje), label: "últimos 30 dias" };
+  }
+  // padrão: o mês de referência inteiro
+  const [y, m] = refMonth.split("-").map(Number);
+  const fimMes = new Date(Date.UTC(y, m, 0));
+  return { inicio: `${refMonth}-01`, fim: iso(fimMes), label: monthLabel(refMonth) };
+}
+
+/**
+ * Série diária do período, já somando as lojas.
+ *
+ * Devolve um ponto por dia do intervalo, inclusive os dias sem venda. Um
+ * gráfico que pula os dias zerados mente sobre a constância da operação.
+ */
+export async function serieDiaria(
+  inicio: string,
+  fim: string,
+  opcoes: { clientId?: string; marketplace?: string; scope?: Scope } = {},
+): Promise<DiaFinanceiro[]> {
+  const cond: string[] = ["day >= ?", "day <= ?"];
+  const params: unknown[] = [inicio, fim];
+  if (opcoes.clientId) {
+    cond.push("client_id = ?");
+    params.push(opcoes.clientId);
+  }
+  if (opcoes.marketplace) {
+    cond.push("marketplace = ?");
+    params.push(opcoes.marketplace);
+  }
+  const esc = scoped(opcoes.scope, "client_id");
+
+  const linhas = await all<DiaFinanceiro>(
+    `SELECT day,
+            COALESCE(SUM(revenue),0)     AS revenue,
+            COALESCE(SUM(orders),0)      AS orders,
+            COALESCE(SUM(units),0)       AS units,
+            COALESCE(SUM(fees),0)        AS fees,
+            COALESCE(SUM(shipping),0)    AS shipping,
+            COALESCE(SUM(tax),0)         AS tax,
+            COALESCE(SUM(ads),0)         AS ads,
+            COALESCE(SUM(ads_revenue),0) AS ads_revenue,
+            COALESCE(SUM(clicks),0)      AS clicks,
+            COALESCE(SUM(prints),0)      AS prints
+       FROM finance_daily
+      WHERE ${cond.join(" AND ")}${esc.sql}
+      GROUP BY day ORDER BY day`,
+    ...params,
+    ...esc.params,
+  );
+
+  const mapa = new Map(linhas.map((l) => [l.day, l]));
+  const saida: DiaFinanceiro[] = [];
+  for (let d = new Date(`${inicio}T00:00:00Z`); d <= new Date(`${fim}T00:00:00Z`); d = new Date(d.getTime() + 864e5)) {
+    const dia = d.toISOString().slice(0, 10);
+    saida.push(
+      mapa.get(dia) ?? {
+        day: dia,
+        revenue: 0,
+        orders: 0,
+        units: 0,
+        fees: 0,
+        shipping: 0,
+        tax: 0,
+        ads: 0,
+        ads_revenue: 0,
+        clicks: 0,
+        prints: 0,
+      },
+    );
+  }
+  return saida;
+}
+
+/** Soma do período, para os cartões acima do gráfico. */
+export function somarPeriodo(dias: DiaFinanceiro[]) {
+  return dias.reduce(
+    (a, d) => ({
+      revenue: a.revenue + d.revenue,
+      orders: a.orders + d.orders,
+      units: a.units + d.units,
+      fees: a.fees + d.fees,
+      shipping: a.shipping + d.shipping,
+      tax: a.tax + d.tax,
+      ads: a.ads + d.ads,
+      ads_revenue: a.ads_revenue + d.ads_revenue,
+      clicks: a.clicks + d.clicks,
+      prints: a.prints + d.prints,
+    }),
+    {
+      revenue: 0, orders: 0, units: 0, fees: 0, shipping: 0,
+      tax: 0, ads: 0, ads_revenue: 0, clicks: 0, prints: 0,
+    },
+  );
+}
+
+/** Últimas rodadas de sincronização, com quem disparou. */
+export async function sincronizacoes(limit = 20, accountId?: string) {
+  const cond = accountId ? "WHERE r.client_marketplace_id = ?" : "";
+  return all<{
+    id: string;
+    marketplace: string | null;
+    trigger: string;
+    started_at: string;
+    finished_at: string | null;
+    status: string;
+    days_written: number;
+    message: string | null;
+    error: string | null;
+    client_name: string | null;
+    started_by_name: string | null;
+  }>(
+    `SELECT r.*, c.name AS client_name, u.name AS started_by_name
+       FROM sync_runs r
+       LEFT JOIN client_marketplaces cm ON cm.id = r.client_marketplace_id
+       LEFT JOIN clients c ON c.id = cm.client_id
+       LEFT JOIN users u ON u.id = r.started_by
+       ${cond}
+      ORDER BY r.started_at DESC LIMIT ?`,
+    ...(accountId ? [accountId] : []),
+    limit,
+  );
 }
