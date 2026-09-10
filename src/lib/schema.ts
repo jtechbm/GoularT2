@@ -1,4 +1,4 @@
-/** Esquema do GoularT no Postgres (Supabase). Aplicado por `npm run migrar`. */
+/** Esquema do Elleva no Postgres (Supabase). Aplicado por `npm run migrar`. */
 export const SCHEMA = `
 CREATE TABLE IF NOT EXISTS users (
   id            text PRIMARY KEY,

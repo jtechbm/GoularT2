@@ -13,7 +13,7 @@ export interface AdsCampaign {
   orders: number;
 }
 
-/** Números fechados que o GoularT consome de cada marketplace. */
+/** Números fechados que o Elleva consome de cada loja. */
 export interface MonthlyResult {
   ref_month: string;
   revenue: number;

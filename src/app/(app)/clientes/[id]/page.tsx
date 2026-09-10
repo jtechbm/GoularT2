@@ -111,7 +111,7 @@ export default async function ClientePage({
       )}
       {sp.erro === "env" && (
         <div className="flash mb-4 rounded-[10px] bg-warn-soft px-4 py-2.5 text-sm font-medium text-warn">
-          Essa integração ainda não está configurada no sistema. Fale com quem cuida da configuração.
+          A conexão com essa loja ainda não foi liberada. Avise o administrador do Elleva.
         </div>
       )}
       {sp.sync && (

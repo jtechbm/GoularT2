@@ -201,7 +201,7 @@ export const mercadoLivre: MarketplaceAdapter = {
 
   /**
    * Percorre /orders/search no período e consolida os valores finais.
-   * Só o agregado interessa ao GoularT — pedido a pedido não é persistido.
+   * Só o agregado interessa ao Elleva — pedido a pedido não é persistido.
    */
   async fetchMonth(ctx: AdapterContext, refMonth: string): Promise<MonthlyResult> {
     const token = await refreshIfNeeded(ctx);

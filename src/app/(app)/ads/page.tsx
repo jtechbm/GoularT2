@@ -2,7 +2,7 @@ import Link from "next/link";
 import { Suspense } from "react";
 import { requireUser, visibleClientIds } from "@/lib/auth";
 import { adsRows, clientOptions, marketplaceBreakdown } from "@/lib/queries";
-import { brl, brlShort, currentMonth, dateBR, lastMonths, monthLabel, num, pct } from "@/lib/format";
+import { brl, brlShort, currentMonth, dateBR, lastMonths, monthLabel, num, origemLabel, pct } from "@/lib/format";
 import { Card, Empty, Field, MARKETPLACE_COLOR, MarketplaceChip, PageHeader, Stat } from "@/components/ui";
 import { SaveBar, SubmitButton } from "@/components/submit";
 import { MonthPicker } from "@/components/month-picker";
@@ -24,6 +24,11 @@ export default async function AdsPage({
   const rows = await adsRows({ refMonth: ref, clientId: sp.cliente, marketplace: sp.canal, scope: escopo });
   const clients = await clientOptions(escopo);
   const breakdown = await marketplaceBreakdown(ref, undefined, escopo);
+
+  // separar o que veio da loja do que a equipe digitou: o texto da tela
+  // dizia "lançamentos" para tudo, mesmo quando ninguém lançou nada
+  const automaticos = rows.filter((r) => r.source === "api").length;
+  const manuais = rows.length - automaticos;
 
   const totals = rows.reduce(
     (a, e) => ({
@@ -61,7 +66,12 @@ export default async function AdsPage({
       />
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <Stat label="Investido no mês" value={brl(totals.invested)} hint={`${rows.length} lançamentos`} tone="warn" />
+        <Stat
+          label="Investido no mês"
+          value={brl(totals.invested)}
+          hint={origemLabel(automaticos, manuais)}
+          tone="warn"
+        />
         <Stat label="Receita atribuída" value={brl(totals.revenue)} tone="brand" />
         <Stat
           label="ROAS médio"
@@ -79,7 +89,7 @@ export default async function AdsPage({
 
       <div className="mt-3 grid gap-3 lg:grid-cols-3">
         <div className="space-y-3 lg:col-span-2">
-          <Card bodyClassName="p-0" title="Lançamentos do período">
+          <Card bodyClassName="p-0" title="Campanhas do período">
             <form className="flex flex-wrap items-end gap-3 border-b border-line p-4" action="/ads" method="get">
               <input type="hidden" name="mes" value={ref} />
               <div className="min-w-44 flex-1">
@@ -211,14 +221,18 @@ export default async function AdsPage({
                 })}
               </div>
             ) : (
-              <p className="text-sm text-dim">Sem lançamentos no período.</p>
+              <p className="text-sm text-dim">Nada no período.</p>
             )}
           </Card>
         </div>
 
         <div className="space-y-3">
           <form action={createAdsAction}>
-            <Card title="Registrar investimento" bodyClassName="p-5 pb-0">
+            <Card
+              title="Lançar à mão"
+              subtitle="Para canal sem conexão ou para completar o que a loja não devolve"
+              bodyClassName="p-5 pb-0"
+            >
               <input type="hidden" name="redirect_to" value={`/ads?mes=${ref}`} />
               <div className="space-y-3">
                 <Field label="Cliente *">

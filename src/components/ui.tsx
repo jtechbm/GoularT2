@@ -1,6 +1,9 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { brl, initials, pct } from "@/lib/format";
+// o nome de cada loja vive num lugar só, senão "Mercado Livre" vira
+// "Mercado livre" em metade das telas
+import { marketplaceLabel } from "@/lib/types";
 
 export function PageHeader({
   title,
@@ -108,8 +111,6 @@ const STATUS_LABEL: Record<string, string> = {
   alta: "Alta",
   media: "Média",
   baixa: "Baixa",
-  mercado_livre: "Mercado Livre",
-  shopee: "Shopee",
 };
 
 export function StatusChip({ value }: { value: string }) {
@@ -129,7 +130,7 @@ export function MarketplaceChip({ value }: { value: string }) {
         className="h-2 w-2 shrink-0 rounded-full"
         style={{ background: MARKETPLACE_COLOR[value] ?? "var(--text-dim)" }}
       />
-      {STATUS_LABEL[value] ?? value}
+      {marketplaceLabel(value)}
     </span>
   );
 }

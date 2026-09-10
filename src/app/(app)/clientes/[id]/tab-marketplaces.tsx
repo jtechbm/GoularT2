@@ -190,16 +190,12 @@ export function TabMarketplaces({
               <Chip tone="brand">1</Chip> Cadastre a conta do cliente aqui (apelido e, se souber, o ID externo).
             </li>
             <li>
-              <Chip tone="brand">2</Chip> Configure as chaves do app em <code className="font-mono">.env</code> —
-              partner key da Shopee e client id/secret do Mercado Livre.
+              <Chip tone="brand">2</Chip> Gere o <strong>link de autorização</strong> e mande para o lojista. Ele
+              aprova no painel da própria loja — não entra aqui e não vê nada do sistema.
             </li>
             <li>
-              <Chip tone="brand">3</Chip> Gere o <strong>link de autorização</strong> e mande para o lojista. Ele
-              aprova no painel do próprio marketplace — não entra aqui e não vê nada do sistema.
-            </li>
-            <li>
-              <Chip tone="brand">4</Chip> Sincronize o mês. Só os valores finais entram no GoularT — nada de pedido a
-              pedido.
+              <Chip tone="brand">3</Chip> Pronto. A partir daí o Elleva busca os valores do mês sozinho, todo dia.
+              Só o resultado fechado entra aqui, nada de pedido a pedido.
             </li>
           </ol>
         </Card>

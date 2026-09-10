@@ -74,7 +74,7 @@ export default async function IntegracoesPage({
       {sp.erro && (
         <div className="flash mb-4 rounded-lg border border-bad/30 bg-bad-soft px-4 py-2.5 text-sm text-bad">
           {sp.erro === "env"
-            ? "Faltam as chaves do marketplace no arquivo .env."
+            ? "Esta loja ainda não está disponível para conexão."
             : `Falha na integração: ${decodeURIComponent(sp.erro)}`}
         </div>
       )}
@@ -97,23 +97,19 @@ export default async function IntegracoesPage({
             key={s.marketplace}
             title={<MarketplaceChip value={s.marketplace} />}
             subtitle={`${s.connected} de ${s.accounts} contas conectadas`}
-            actions={<Chip tone={s.configured ? "ok" : "warn"}>{s.configured ? "app configurado" : "sem chaves"}</Chip>}
+            actions={<Chip tone={s.configured ? "ok" : "warn"}>{s.configured ? "pronta para conectar" : "indisponível"}</Chip>}
           >
             {s.configured ? (
               <p className="text-xs leading-relaxed text-muted">
-                Chaves carregadas. Conecte cada conta de cliente pelo botão <strong>Conectar</strong> abaixo — o
-                consentimento OAuth guarda o token cifrado no banco.
+                Peça acesso a cada lojista pelo botão <strong>Conectar</strong> abaixo. Ele aprova no painel da
+                própria loja e o acesso fica guardado cifrado.
               </p>
             ) : (
               <div className="space-y-2">
-                <p className="text-xs text-muted">Defina no arquivo <code className="font-mono">.env</code>:</p>
-                <ul className="space-y-1">
-                  {s.missingEnv.map((v) => (
-                    <li key={v} className="rounded bg-surface-2 px-2 py-1 font-mono text-[0.7rem] text-warn">
-                      {v}
-                    </li>
-                  ))}
-                </ul>
+                <p className="text-xs leading-relaxed text-muted">
+                  A conexão com esta loja ainda não foi liberada. Enquanto isso, os valores dela podem ser
+                  lançados à mão na aba Resultados de cada cliente.
+                </p>
               </div>
             )}
           </Card>

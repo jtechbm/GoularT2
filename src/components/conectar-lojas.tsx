@@ -23,7 +23,7 @@ export function ConectarLojas({
   manager: boolean;
   /** marketplace cujo link acabou de ser gerado */
   destaque?: string;
-  /** marketplaces com chaves configuradas no ambiente */
+  /** lojas cujo app já está liberado para conectar */
   disponiveis: string[];
   refMonth: string;
 }) {
@@ -55,7 +55,7 @@ export function ConectarLojas({
                   <div className="text-sm font-medium text-ink">{m.label}</div>
                   <div className="text-xs text-muted">
                     {!disponivel
-                      ? "Integração ainda não configurada no sistema"
+                      ? "Conexão ainda não liberada"
                       : conectado
                       ? conta?.last_sync_at
                         ? `Conectada · atualizada ${relativeBR(conta.last_sync_at)}`

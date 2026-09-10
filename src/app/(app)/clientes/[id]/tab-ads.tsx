@@ -1,7 +1,7 @@
 import { Card, Chip, Empty, Field, MarketplaceChip, Stat } from "@/components/ui";
 import { SaveBar, SubmitButton } from "@/components/submit";
 import { createAdsAction, deleteAdsAction } from "@/lib/actions/ads";
-import { brl, currentMonth, dateBR, num, pct } from "@/lib/format";
+import { brl, currentMonth, dateBR, num, origemLabel, pct } from "@/lib/format";
 import { MARKETPLACES, type AdsEntry, type Client, type ClientMarketplace } from "@/lib/types";
 
 export function TabAds({
@@ -27,6 +27,9 @@ export function TabAds({
     { invested: 0, revenue: 0, clicks: 0, orders: 0 },
   );
   const roas = totals.invested ? totals.revenue / totals.invested : 0;
+  // a tela chamava tudo de "lançamento" mesmo quando ninguém digitou nada
+  const automaticos = entries.filter((e) => e.source === "api").length;
+  const manuais = entries.length - automaticos;
   const back = `/clientes/${client.id}?tab=ads`;
   const today = new Date().toISOString().slice(0, 10);
   const firstOfMonth = `${currentMonth()}-01`;
@@ -34,7 +37,12 @@ export function TabAds({
   return (
     <div className="space-y-3">
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <Stat label="Investido (histórico)" value={brl(totals.invested)} tone="warn" />
+        <Stat
+          label="Investido (histórico)"
+          value={brl(totals.invested)}
+          hint={origemLabel(automaticos, manuais)}
+          tone="warn"
+        />
         <Stat label="Receita atribuída" value={brl(totals.revenue)} tone="brand" />
         <Stat
           label="ROAS"
@@ -49,7 +57,11 @@ export function TabAds({
         <form action={createAdsAction} className="lg:col-span-1">
           <input type="hidden" name="client_id" value={client.id} />
           <input type="hidden" name="redirect_to" value={back} />
-          <Card title="Novo investimento" subtitle="Por marketplace e período" bodyClassName="p-5 pb-0">
+          <Card
+            title="Lançar à mão"
+            subtitle="Para loja sem conexão ou para completar o que ela não devolve"
+            bodyClassName="p-5 pb-0"
+          >
             <div className="space-y-3">
               <Field label="Marketplace">
                 <select name="marketplace" className="select">
@@ -93,7 +105,7 @@ export function TabAds({
           </Card>
         </form>
 
-        <Card className="lg:col-span-2" title="Lançamentos de Ads" bodyClassName="p-0">
+        <Card className="lg:col-span-2" title="Campanhas de Ads" bodyClassName="p-0">
           {entries.length ? (
             <div className="table-wrap">
               <table className="data">
@@ -158,8 +170,8 @@ export function TabAds({
           ) : (
             <div className="p-5">
               <Empty
-                title="Nenhum investimento registrado"
-                hint="Lance o investimento por marketplace e período para acompanhar ROAS e ACOS deste cliente."
+                title="Nenhuma campanha no período"
+                hint="Com a loja conectada, as campanhas entram sozinhas todo dia. Enquanto isso, dá para lançar à mão."
               />
             </div>
           )}

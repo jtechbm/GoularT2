@@ -44,7 +44,7 @@ function open(): pg.Pool {
     max: Number(process.env.DATABASE_POOL_MAX ?? 8),
     idleTimeoutMillis: 30_000,
     connectionTimeoutMillis: 15_000,
-    application_name: "goulart",
+    application_name: "elleva",
   });
   // um erro em conexão ociosa não pode derrubar o processo
   pool.on("error", (err) => console.error("[db] erro em conexão ociosa:", err.message));

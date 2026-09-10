@@ -107,3 +107,17 @@ export function strOrNull(value: FormDataEntryValue | null): string | null {
   const s = str(value);
   return s === "" ? null : s;
 }
+
+/**
+ * Como descrever a origem de um conjunto de números de Ads.
+ *
+ * A tela dizia "N lançamentos" mesmo quando tudo tinha vindo da API e
+ * ninguém havia lançado nada. Dizer de onde veio evita que a equipe
+ * desconfie do número.
+ */
+export function origemLabel(automaticos: number, manuais: number): string {
+  if (!automaticos && !manuais) return "nada no período";
+  if (!manuais) return automaticos === 1 ? "1 campanha, direto da loja" : `${automaticos} campanhas, direto da loja`;
+  if (!automaticos) return manuais === 1 ? "1 lançamento à mão" : `${manuais} lançamentos à mão`;
+  return `${automaticos} da loja · ${manuais} à mão`;
+}

@@ -93,7 +93,7 @@ export function SaudeIntegracoes({
               <span className="mt-0.5 block text-xs text-warn">
                 {ultimoCron
                   ? `A última rodada foi ${relativeBR(ultimoCron.created_at)}. Deveria rodar todo dia.`
-                  : "Nunca rodou. Confira se a variável CRON_SECRET está configurada."}
+                  : "Nunca rodou. Avise o administrador do Elleva."}
               </span>
             </li>
           )}
