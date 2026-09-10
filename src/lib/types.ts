@@ -1,7 +1,15 @@
 export type Role = "admin" | "gestor" | "membro";
 export type ClientStatus = "onboarding" | "ativo" | "atencao" | "pausado" | "encerrado";
 export type Marketplace = "mercado_livre" | "shopee";
-export type TaskStatus = "disponivel" | "em_andamento" | "concluida";
+/**
+ * Etapas do quadro.
+ *
+ * "concluida" passa a significar APROVADA. Uma tarefa que o funcionário
+ * terminou vai para "em_revisao" e só o gestor a move para concluída.
+ * Antes, concluída queria dizer duas coisas — "acabei" e "está certo" — e
+ * os pontos eram liberados sem ninguém olhar.
+ */
+export type TaskStatus = "disponivel" | "assumida" | "em_andamento" | "em_revisao" | "concluida";
 export type TaskPriority = "baixa" | "media" | "alta" | "urgente";
 
 export interface User {
@@ -124,6 +132,59 @@ export interface Task {
   completed_at: string | null;
   created_at: string;
   updated_at: string;
+  /** quando o trabalho começou de fato, não quando a tarefa foi pega */
+  started_at: string | null;
+  submitted_at: string | null;
+  reviewed_at: string | null;
+  reviewed_by: string | null;
+  review_note: string | null;
+  /** o gestor exige link ou anexo antes de mandar para revisão */
+  requires_evidence: number;
+  /** quantas vezes voltou da revisão */
+  rejections: number;
+}
+
+export interface TaskChecklistItem {
+  id: string;
+  task_id: string;
+  label: string;
+  required: number;
+  done: number;
+  done_by: string | null;
+  done_at: string | null;
+  position: number;
+  created_at: string;
+}
+
+export interface TaskEvidence {
+  id: string;
+  task_id: string;
+  kind: "link" | "nota";
+  url: string | null;
+  body: string | null;
+  user_id: string | null;
+  created_at: string;
+}
+
+export interface TaskComment {
+  id: string;
+  task_id: string;
+  user_id: string | null;
+  body: string;
+  created_at: string;
+}
+
+/** Colunas do quadro, na ordem em que o trabalho anda. */
+export const TASK_COLUMNS: { value: TaskStatus; label: string; hint: string }[] = [
+  { value: "disponivel", label: "Disponíveis", hint: "sem dono, qualquer um pega" },
+  { value: "assumida", label: "Assumidas", hint: "tem dono, ainda não começou" },
+  { value: "em_andamento", label: "Em andamento", hint: "trabalho em curso" },
+  { value: "em_revisao", label: "Em revisão", hint: "esperando o gestor aprovar" },
+  { value: "concluida", label: "Concluídas", hint: "aprovadas, pontos liberados" },
+];
+
+export function taskColumnLabel(value: string): string {
+  return TASK_COLUMNS.find((c) => c.value === value)?.label ?? value;
 }
 
 export const MARKETPLACES: { value: Marketplace; label: string; short: string; prep: string }[] = [

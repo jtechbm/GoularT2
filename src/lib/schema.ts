@@ -249,6 +249,56 @@ CREATE TABLE IF NOT EXISTS alert_resolutions (
 
 CREATE INDEX IF NOT EXISTS idx_alertas_cliente ON alert_resolutions(client_id);
 
+-- Quadro de tarefas: as etapas antigas (disponivel, em_andamento,
+-- concluida) continuam validas, e entram 'assumida' e 'em_revisao'.
+-- 'concluida' passa a significar APROVADA, e so a revisao coloca a tarefa
+-- la. Sem isso, "concluida" queria dizer duas coisas diferentes.
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS started_at       text;
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS submitted_at     text;
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS reviewed_at      text;
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS reviewed_by      text REFERENCES users(id) ON DELETE SET NULL;
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS review_note      text;
+-- exige evidencia antes de mandar para revisao
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS requires_evidence integer NOT NULL DEFAULT 0;
+-- quantas vezes voltou da revisao, util para achar retrabalho
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS rejections       integer NOT NULL DEFAULT 0;
+
+CREATE TABLE IF NOT EXISTS task_checklist (
+  id         text PRIMARY KEY,
+  task_id    text NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+  label      text NOT NULL,
+  required   integer NOT NULL DEFAULT 0,
+  done       integer NOT NULL DEFAULT 0,
+  done_by    text REFERENCES users(id) ON DELETE SET NULL,
+  done_at    text,
+  position   integer NOT NULL DEFAULT 0,
+  created_at text NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS task_evidence (
+  id         text PRIMARY KEY,
+  task_id    text NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+  -- 'link' guarda url; 'nota' guarda texto. Arquivo entra como link para
+  -- onde ele estiver, porque este sistema nao hospeda arquivo.
+  kind       text NOT NULL DEFAULT 'link',
+  url        text,
+  body       text,
+  user_id    text REFERENCES users(id) ON DELETE SET NULL,
+  created_at text NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS task_comments (
+  id         text PRIMARY KEY,
+  task_id    text NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+  user_id    text REFERENCES users(id) ON DELETE SET NULL,
+  body       text NOT NULL,
+  created_at text NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_check_task   ON task_checklist(task_id, position);
+CREATE INDEX IF NOT EXISTS idx_evid_task    ON task_evidence(task_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_coment_task  ON task_comments(task_id, created_at);
+
 CREATE INDEX IF NOT EXISTS idx_charges_month  ON agency_charges(ref_month, status);
 CREATE INDEX IF NOT EXISTS idx_expenses_month ON agency_expenses(ref_month);
 
@@ -286,6 +336,9 @@ CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
 
 /** Tabelas na ordem segura para limpeza (filhas antes das pais). */
 export const TABLES = [
+  "task_comments",
+  "task_evidence",
+  "task_checklist",
   "alert_resolutions",
   "client_goals",
   "agency_charges",

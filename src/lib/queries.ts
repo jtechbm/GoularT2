@@ -12,6 +12,9 @@ import type {
   ClientMarketplace,
   ClientGoal,
   ClientNote,
+  TaskChecklistItem,
+  TaskComment,
+  TaskEvidence,
   FinanceSnapshot,
   Task,
   User,
@@ -265,13 +268,17 @@ const TASK_SELECT = `
     LEFT JOIN users cr  ON cr.id = t.created_by`;
 
 export async function tasks(
-  filter: { status?: string; assignee?: string; clientId?: string } = {},
+  filter: { status?: string; assignee?: string; clientId?: string; priority?: string } = {},
 ): Promise<TaskRow[]> {
   const where: string[] = [];
   const params: unknown[] = [];
   if (filter.status) {
     where.push("t.status = ?");
     params.push(filter.status);
+  }
+  if (filter.priority) {
+    where.push("t.priority = ?");
+    params.push(filter.priority);
   }
   if (filter.assignee) {
     where.push("t.assignee_id = ?");
@@ -968,4 +975,53 @@ export async function adsTotalsCarteira(refMonth: string, scope?: Scope) {
     ...s.params,
   );
   return row ?? { invested: 0, revenue: 0 };
+}
+
+
+/** Checklist, evidências e comentários de uma tarefa. */
+export async function taskDetail(taskId: string) {
+  const [checklist, evidencias, comentarios, eventos] = await Promise.all([
+    all<TaskChecklistItem & { done_by_name: string | null }>(
+      `SELECT k.*, u.name AS done_by_name FROM task_checklist k
+         LEFT JOIN users u ON u.id = k.done_by
+        WHERE k.task_id = ? ORDER BY k.position, k.created_at`,
+      taskId,
+    ),
+    all<TaskEvidence & { user_name: string | null }>(
+      `SELECT e.*, u.name AS user_name FROM task_evidence e
+         LEFT JOIN users u ON u.id = e.user_id
+        WHERE e.task_id = ? ORDER BY e.created_at DESC`,
+      taskId,
+    ),
+    all<TaskComment & { user_name: string | null; user_color: string | null }>(
+      `SELECT c.*, u.name AS user_name, u.color AS user_color FROM task_comments c
+         LEFT JOIN users u ON u.id = c.user_id
+        WHERE c.task_id = ? ORDER BY c.created_at`,
+      taskId,
+    ),
+    all<{ id: string; type: string; points: number; meta: string | null; created_at: string; user_name: string | null }>(
+      `SELECT e.id, e.type, e.points, e.meta, e.created_at, u.name AS user_name
+         FROM task_events e LEFT JOIN users u ON u.id = e.user_id
+        WHERE e.task_id = ? ORDER BY e.created_at DESC`,
+      taskId,
+    ),
+  ]);
+  return { checklist, evidencias, comentarios, eventos };
+}
+
+/** Contagem de itens de checklist por tarefa, para o cartão do quadro. */
+export async function checklistResumo(taskIds: string[]) {
+  if (!taskIds.length) return new Map<string, { total: number; feitos: number; obrigatoriosPendentes: number }>();
+  const marcas = taskIds.map(() => "?").join(",");
+  const rows = await all<{ task_id: string; total: number; feitos: number; pendentes: number }>(
+    `SELECT task_id,
+            COUNT(*) AS total,
+            COUNT(*) FILTER (WHERE done = 1) AS feitos,
+            COUNT(*) FILTER (WHERE required = 1 AND done = 0) AS pendentes
+       FROM task_checklist WHERE task_id IN (${marcas}) GROUP BY task_id`,
+    ...taskIds,
+  );
+  return new Map(
+    rows.map((r) => [r.task_id, { total: r.total, feitos: r.feitos, obrigatoriosPendentes: r.pendentes }]),
+  );
 }

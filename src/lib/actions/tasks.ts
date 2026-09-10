@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { id, now, one, run } from "@/lib/db";
 import { assertCan, requireUser } from "@/lib/auth";
+import { can } from "@/lib/permissions";
 import { str, strOrNull, toNumber } from "@/lib/format";
 import { TASK_PRIORITIES } from "@/lib/types";
 
@@ -45,19 +46,20 @@ export async function createTaskAction(formData: FormData) {
 
   await run(
     `INSERT INTO tasks (id, title, description, client_id, priority, status, due_date, points, created_by,
-                        assignee_id, claimed_at, created_at, updated_at)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+                        assignee_id, claimed_at, requires_evidence, created_at, updated_at)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     taskId,
     title,
     strOrNull(formData.get("description")),
     strOrNull(formData.get("client_id")),
     priority,
-    assignee ? "em_andamento" : "disponivel",
+    assignee ? "assumida" : "disponivel",
     strOrNull(formData.get("due_date")),
     pointsFor(priority, toNumber(formData.get("points"))),
     user.id,
     assignee,
     assignee ? now() : null,
+    formData.get("requires_evidence") ? 1 : 0,
     now(),
     now(),
   );
@@ -76,13 +78,18 @@ export async function claimTaskAction(formData: FormData) {
   const task = await one<{ status: string }>("SELECT status FROM tasks WHERE id = ?", taskId);
   if (!task || task.status !== "disponivel") redirect("/tarefas?erro=indisponivel");
 
-  await run(
-    "UPDATE tasks SET status='em_andamento', assignee_id=?, claimed_at=?, updated_at=? WHERE id=? AND status='disponivel'",
+  // a condição status='disponivel' no UPDATE e o que impede dois
+  // funcionários de pegarem a mesma tarefa: quem chega depois atualiza
+  // zero linhas e cai no erro, em vez de roubar a tarefa do primeiro
+  const linhas = await run(
+    "UPDATE tasks SET status='assumida', assignee_id=?, claimed_at=?, updated_at=? WHERE id=? AND status='disponivel'",
     user.id,
     now(),
     now(),
     taskId,
   );
+  if (!linhas) redirect("/tarefas?erro=indisponivel");
+
   await logEvent(taskId, user.id, "assumida");
   refresh();
   redirect("/tarefas?aba=minhas&ok=1");
@@ -102,31 +109,156 @@ export async function releaseTaskAction(formData: FormData) {
   redirect("/tarefas?ok=1");
 }
 
-export async function completeTaskAction(formData: FormData) {
+/**
+ * O funcionário diz "terminei". Isso NÃO conclui a tarefa.
+ *
+ * A tarefa vai para revisão e os pontos ficam retidos. Sem esta etapa,
+ * concluir e pontuar eram a mesma ação e ninguém conferia nada.
+ */
+export async function submitTaskAction(formData: FormData) {
   const user = await requireUser();
   const taskId = str(formData.get("task_id"));
-  const task = await one<{ points: number; assignee_id: string | null }>(
-    "SELECT points, assignee_id FROM tasks WHERE id = ?",
+
+  const task = await one<{ status: string; assignee_id: string | null; requires_evidence: number }>(
+    "SELECT status, assignee_id, requires_evidence FROM tasks WHERE id = ?",
     taskId,
   );
   if (!task) redirect("/tarefas");
 
+  const pendentes = await one<{ n: number }>(
+    "SELECT COUNT(*) AS n FROM task_checklist WHERE task_id = ? AND required = 1 AND done = 0",
+    taskId,
+  );
+  if ((pendentes?.n ?? 0) > 0) {
+    throw new Error(`Ainda faltam ${pendentes!.n} itens obrigatórios do checklist.`);
+  }
+
+  if (task.requires_evidence) {
+    const evid = await one<{ n: number }>("SELECT COUNT(*) AS n FROM task_evidence WHERE task_id = ?", taskId);
+    if ((evid?.n ?? 0) === 0) {
+      throw new Error("Esta tarefa exige evidência antes de ir para revisão.");
+    }
+  }
+
   await run(
-    "UPDATE tasks SET status='concluida', completed_at=?, updated_at=?, assignee_id=COALESCE(assignee_id, ?) WHERE id=?",
+    "UPDATE tasks SET status='em_revisao', submitted_at=?, updated_at=?, assignee_id=COALESCE(assignee_id, ?) WHERE id=?",
     now(),
     now(),
     user.id,
     taskId,
   );
-  await logEvent(taskId, task.assignee_id ?? user.id, "concluida", task.points);
+  await logEvent(taskId, task.assignee_id ?? user.id, "enviada_revisao");
+  refresh();
+  redirect("/tarefas?aba=revisao&ok=1");
+}
+
+/**
+ * Aprova a tarefa e só então libera os pontos.
+ *
+ * Quem executou não aprova o próprio trabalho. Sem essa checagem, um gestor
+ * pegaria a própria tarefa e se autoaprovaria, e a revisão viraria enfeite.
+ */
+export async function approveTaskAction(formData: FormData) {
+  const user = await requireUser();
+  assertCan(user, "tarefas.gerenciar", "Somente gestores e admins aprovam tarefas.");
+  const taskId = str(formData.get("task_id"));
+
+  const task = await one<{ points: number; assignee_id: string | null; status: string }>(
+    "SELECT points, assignee_id, status FROM tasks WHERE id = ?",
+    taskId,
+  );
+  if (!task) redirect("/tarefas");
+  if (task.assignee_id === user.id) {
+    throw new Error("Você não pode aprovar a própria tarefa. Peça a outro gestor.");
+  }
+
+  await run(
+    `UPDATE tasks SET status='concluida', completed_at=?, reviewed_at=?, reviewed_by=?, review_note=?,
+            updated_at=? WHERE id=?`,
+    now(), now(), user.id, strOrNull(formData.get("nota")), now(), taskId,
+  );
+  // os pontos só existem a partir daqui
+  await logEvent(taskId, task.assignee_id ?? user.id, "aprovada", task.points);
   refresh();
   redirect("/tarefas?aba=concluidas&ok=1");
 }
 
-export async function reopenTaskAction(formData: FormData) {
+/** Reprova e devolve para o executor, com o motivo obrigatório. */
+export async function rejectTaskAction(formData: FormData) {
+  const user = await requireUser();
+  assertCan(user, "tarefas.gerenciar", "Somente gestores e admins revisam tarefas.");
+  const taskId = str(formData.get("task_id"));
+  const motivo = str(formData.get("nota")).trim();
+
+  if (!motivo) throw new Error("Diga o que precisa mudar. Reprovar sem motivo não ajuda ninguém.");
+
+  const task = await one<{ assignee_id: string | null }>("SELECT assignee_id FROM tasks WHERE id = ?", taskId);
+  if (!task) redirect("/tarefas");
+  if (task.assignee_id === user.id) {
+    throw new Error("Você não pode revisar a própria tarefa.");
+  }
+
+  await run(
+    `UPDATE tasks SET status='em_andamento', submitted_at=NULL, reviewed_at=?, reviewed_by=?, review_note=?,
+            rejections = rejections + 1, updated_at=? WHERE id=?`,
+    now(), user.id, motivo, now(), taskId,
+  );
+  await run(
+    "INSERT INTO task_comments (id, task_id, user_id, body, created_at) VALUES (?,?,?,?,?)",
+    id(), taskId, user.id, `Ajuste pedido na revisão: ${motivo}`, now(),
+  );
+  await logEvent(taskId, user.id, "reprovada", 0, motivo);
+  refresh();
+  redirect("/tarefas?aba=minhas&ok=1");
+}
+
+/** Começa o trabalho: de "assumida" para "em andamento". */
+export async function startTaskAction(formData: FormData) {
   const user = await requireUser();
   const taskId = str(formData.get("task_id"));
-  await run("UPDATE tasks SET status='em_andamento', completed_at=NULL, updated_at=? WHERE id=?", now(), taskId);
+  await run(
+    "UPDATE tasks SET status='em_andamento', started_at=COALESCE(started_at, ?), updated_at=? WHERE id=? AND assignee_id=?",
+    now(), now(), taskId, user.id,
+  );
+  await logEvent(taskId, user.id, "iniciada");
+  refresh();
+  redirect("/tarefas?aba=minhas&ok=1");
+}
+
+/** Move a tarefa entre etapas pelo quadro, respeitando quem pode o que. */
+export async function moveTaskAction(formData: FormData) {
+  const user = await requireUser();
+  const taskId = str(formData.get("task_id"));
+  const destino = str(formData.get("status"));
+
+  const task = await one<{ status: string; assignee_id: string | null }>(
+    "SELECT status, assignee_id FROM tasks WHERE id = ?",
+    taskId,
+  );
+  if (!task) redirect("/tarefas");
+
+  const gestor = can(user, "tarefas.gerenciar");
+  const dono = task.assignee_id === user.id;
+  // aprovar e reprovar têm ação própria porque mexem em pontos e exigem
+  // justificativa; o arraste do quadro não passa por aqui
+  if (destino === "concluida") throw new Error("Conclusão passa pela revisão.");
+  if (!gestor && !dono) throw new Error("Esta tarefa não é sua.");
+
+  await run("UPDATE tasks SET status=?, updated_at=? WHERE id=?", destino, now(), taskId);
+  await logEvent(taskId, user.id, `moveu_para_${destino}`);
+  refresh();
+  redirect(str(formData.get("redirect_to")) || "/tarefas");
+}
+
+export async function reopenTaskAction(formData: FormData) {
+  const user = await requireUser();
+  assertCan(user, "tarefas.gerenciar", "Somente gestores e admins reabrem tarefas.");
+  const taskId = str(formData.get("task_id"));
+  await run(
+    "UPDATE tasks SET status='em_andamento', completed_at=NULL, reviewed_at=NULL, updated_at=? WHERE id=?",
+    now(),
+    taskId,
+  );
   await logEvent(taskId, user.id, "reaberta");
   refresh();
   redirect("/tarefas?aba=minhas");
