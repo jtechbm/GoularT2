@@ -929,6 +929,20 @@ export async function alertasDaCarteira(
     ),
   ]);
 
+  // campanhas do mês e do anterior: os alertas mais úteis são sobre
+  // mudança, e mudança precisa de dois pontos no tempo
+  const anterior = addMonths(refMonth, -1);
+  const campanhasMes = await all<AdsEntry & { client_id: string }>(
+    `SELECT * FROM ads_entries
+      WHERE substr(period_start,1,7) <= ? AND substr(period_end,1,7) >= ? AND client_id IN (${marcas})`,
+    refMonth, refMonth, ...ids,
+  );
+  const campanhasAntes = await all<AdsEntry & { client_id: string }>(
+    `SELECT * FROM ads_entries
+      WHERE substr(period_start,1,7) <= ? AND substr(period_end,1,7) >= ? AND client_id IN (${marcas})`,
+    anterior, anterior, ...ids,
+  );
+
   const porChave = new Map(resolucoes.map((r) => [r.alert_key, r]));
 
   const brutos = rows.flatMap((row) => {
@@ -959,6 +973,26 @@ export async function alertasDaCarteira(
           .map((x) => ({ marketplace: x.marketplace, desde: x.last_sync_at })),
         tarefasCriticasAtrasadas: tarefas.filter((x) => x.client_id === row.id),
         cobrancasVencidas: cobrancas.filter((x) => x.client_id === row.id),
+        campanhas: campanhasMes
+          .filter((x) => x.client_id === row.id)
+          .map((camp) => {
+            // casa pelo id da campanha no marketplace; lançamento manual
+            // não tem esse id e simplesmente não ganha comparação
+            const antes = camp.external_id
+              ? campanhasAntes.find((z) => z.client_id === row.id && z.external_id === camp.external_id)
+              : undefined;
+            return {
+              id: camp.id,
+              nome: camp.campaign ?? "sem nome",
+              marketplace: camp.marketplace,
+              invested: camp.invested,
+              revenue: camp.revenue,
+              clicks: camp.clicks,
+              orders: camp.orders,
+              budget: metas.find((m) => m.client_id === row.id)?.ads_budget ?? null,
+              conversaoAnterior: antes && antes.clicks > 0 ? antes.orders / antes.clicks : null,
+            };
+          }),
       },
       refMonth,
     );

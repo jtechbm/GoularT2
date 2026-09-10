@@ -33,6 +33,10 @@ export interface Alerta {
 }
 
 export const TIPOS_ALERTA: { kind: string; label: string }[] = [
+  { kind: "ads_sem_venda", label: "Investimento sem vendas" },
+  { kind: "ads_conversao_caiu", label: "Conversão em queda" },
+  { kind: "ads_orcamento", label: "Orçamento perto do limite" },
+  { kind: "ads_limitada", label: "Campanha boa limitada pelo orçamento" },
   { kind: "queda_faturamento", label: "Queda de faturamento" },
   { kind: "acos_alto", label: "ACOS acima da meta" },
   { kind: "roas_baixo", label: "ROAS abaixo da meta" },
@@ -56,6 +60,28 @@ export const NIVEL_LABEL: Record<NivelAlerta, string> = {
   informativo: "Informativo",
 };
 
+/**
+ * Uma campanha vista de perto, para os alertas de Ads.
+ *
+ * Os dois períodos existem porque a maioria dos alertas úteis é sobre
+ * MUDANÇA, não sobre nível. Uma conversão de 2% pode ser normal para o
+ * segmento; a mesma conversão depois de duas semanas em 5% é um problema
+ * que apareceu esta semana e ainda dá para corrigir.
+ */
+export interface CampanhaParaAlerta {
+  id: string;
+  nome: string;
+  marketplace: string;
+  invested: number;
+  revenue: number;
+  clicks: number;
+  orders: number;
+  /** teto combinado para o cliente no mês, quando houver */
+  budget: number | null;
+  /** conversão do período anterior, para comparar */
+  conversaoAnterior: number | null;
+}
+
 export interface ClienteParaAlerta {
   id: string;
   name: string;
@@ -73,6 +99,7 @@ export interface ClienteParaAlerta {
   contasParadas: { marketplace: string; desde: string | null }[];
   tarefasCriticasAtrasadas: { id: string; title: string; due_date: string | null }[];
   cobrancasVencidas: { id: string; total: number; due_date: string | null }[];
+  campanhas: CampanhaParaAlerta[];
 }
 
 export function alertasDoCliente(c: ClienteParaAlerta, refMonth: string): Alerta[] {
@@ -97,8 +124,12 @@ export function alertasDoCliente(c: ClienteParaAlerta, refMonth: string): Alerta
     }
   }
 
-  // --- metas de Ads
-  const progresso = compararMetas(c.goal, c.realizado);
+  // --- metas de Ads no nível do cliente
+  //
+  // Sem investimento não existe ROAS nem ACOS para julgar. A conta dá zero
+  // e zero passa em qualquer teste de "abaixo da meta", o que geraria
+  // alerta de campanha ruim justamente para quem não anuncia.
+  const progresso = c.realizado.ads > 0 ? compararMetas(c.goal, c.realizado) : [];
   const acos = progresso.find((p) => p.key === "max_acos");
   if (acos && !acos.bom) {
     add({
@@ -186,6 +217,109 @@ export function alertasDoCliente(c: ClienteParaAlerta, refMonth: string): Alerta
       href: `${base}?tab=dados`,
       tarefaSugerida: `Definir o contrato de ${c.name}`,
     });
+  }
+
+  // --- campanhas
+  for (const camp of c.campanhas) {
+    const chave = `${c.id}:${camp.id}`;
+
+    // dinheiro saindo sem nenhuma venda atribuída é o alerta mais direto
+    // que existe: não depende de meta, de histórico nem de contexto
+    if (camp.invested > 0 && camp.revenue === 0) {
+      add({
+        key: `ads_sem_venda:${chave}:${refMonth}`,
+        kind: "ads_sem_venda",
+        nivel: camp.invested >= 50 ? "critico" : "atencao",
+        titulo: `${camp.nome}: ${camp.invested.toFixed(2)} investido sem nenhuma venda`,
+        detalhe: `${camp.clicks} cliques e nenhum pedido atribuído no período.`,
+        href: `${base}?tab=ads&mes=${refMonth}`,
+        tarefaSugerida: `Revisar a campanha ${camp.nome} de ${c.name}`,
+      });
+      continue;
+    }
+
+    const acos = camp.revenue > 0 ? camp.invested / camp.revenue : null;
+    const roas = camp.invested > 0 ? camp.revenue / camp.invested : null;
+    const conversao = camp.clicks > 0 ? camp.orders / camp.clicks : null;
+
+    if (acos !== null && c.goal?.max_acos != null && acos > c.goal.max_acos) {
+      add({
+        key: `acos_alto:${chave}:${refMonth}`,
+        kind: "acos_alto",
+        nivel: acos > c.goal.max_acos * 1.5 ? "critico" : "atencao",
+        titulo: `${camp.nome}: ACOS em ${(acos * 100).toFixed(1)}%`,
+        detalhe: `A meta é ${(c.goal.max_acos * 100).toFixed(1)}%. Cada venda está custando mais do que o combinado.`,
+        href: `${base}?tab=ads&mes=${refMonth}`,
+        tarefaSugerida: `Baixar o ACOS da campanha ${camp.nome} de ${c.name}`,
+      });
+    }
+
+    if (roas !== null && c.goal?.min_roas != null && roas < c.goal.min_roas) {
+      add({
+        key: `roas_baixo:${chave}:${refMonth}`,
+        kind: "roas_baixo",
+        nivel: roas < c.goal.min_roas * 0.5 ? "critico" : "atencao",
+        titulo: `${camp.nome}: ROAS em ${roas.toFixed(2)}x`,
+        detalhe: `A meta é ${c.goal.min_roas.toFixed(2)}x.`,
+        href: `${base}?tab=ads&mes=${refMonth}`,
+        tarefaSugerida: `Subir o ROAS da campanha ${camp.nome} de ${c.name}`,
+      });
+    }
+
+    // queda de conversão só vale como alerta com volume: com 8 cliques,
+    // um pedido a menos derruba a taxa pela metade e não significa nada
+    if (
+      conversao !== null &&
+      camp.conversaoAnterior !== null &&
+      camp.clicks >= 30 &&
+      camp.conversaoAnterior > 0 &&
+      conversao < camp.conversaoAnterior * 0.6
+    ) {
+      add({
+        key: `ads_conversao_caiu:${chave}:${refMonth}`,
+        kind: "ads_conversao_caiu",
+        nivel: "atencao",
+        titulo: `${camp.nome}: conversão caiu de ${(camp.conversaoAnterior * 100).toFixed(1)}% para ${(conversao * 100).toFixed(1)}%`,
+        detalhe: "Mesmo tráfego, menos pedidos. Costuma ser preço, estoque ou concorrência.",
+        href: `${base}?tab=ads&mes=${refMonth}`,
+        tarefaSugerida: `Investigar a queda de conversão em ${camp.nome}`,
+      });
+    }
+
+    if (camp.budget && camp.invested >= camp.budget * 0.85) {
+      const estourou = camp.invested > camp.budget;
+      add({
+        key: `ads_orcamento:${chave}:${refMonth}`,
+        kind: "ads_orcamento",
+        nivel: estourou ? "critico" : "atencao",
+        titulo: estourou
+          ? `${camp.nome}: orçamento estourado`
+          : `${camp.nome}: ${Math.round((camp.invested / camp.budget) * 100)}% do orçamento consumido`,
+        detalhe: `Investido ${camp.invested.toFixed(2)} de um teto de ${camp.budget.toFixed(2)}.`,
+        href: `${base}?tab=metas&mes=${refMonth}`,
+        tarefaSugerida: `Revisar o orçamento de Ads de ${c.name}`,
+      });
+    }
+
+    // o inverso do estouro: campanha que dá lucro e bateu no teto está
+    // deixando venda na mesa. É oportunidade, não problema.
+    if (
+      camp.budget &&
+      roas !== null &&
+      c.goal?.min_roas != null &&
+      roas >= c.goal.min_roas &&
+      camp.invested >= camp.budget * 0.95
+    ) {
+      add({
+        key: `ads_limitada:${chave}:${refMonth}`,
+        kind: "ads_limitada",
+        nivel: "informativo",
+        titulo: `${camp.nome} está rendendo ${roas.toFixed(2)}x e travou no orçamento`,
+        detalhe: "Aumentar o teto tende a trazer mais venda com o mesmo retorno.",
+        href: `${base}?tab=metas&mes=${refMonth}`,
+        tarefaSugerida: `Avaliar aumento de orçamento em ${camp.nome}`,
+      });
+    }
   }
 
   for (const cob of c.cobrancasVencidas) {
