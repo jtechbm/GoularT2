@@ -156,6 +156,9 @@ export default async function ClientePage({
             <Link href={`/tarefas?cliente=${client.id}`} className="btn btn-ghost">
               Tarefas ({clientTasks.filter((t) => t.status !== "concluida").length})
             </Link>
+            <Link href={`/clientes/${client.id}/relatorio?mes=${ref}`} className="btn btn-ghost">
+              Relatório
+            </Link>
             <Link href={`/clientes/${client.id}?tab=historico`} className="btn btn-accent">
               + Anotação
             </Link>

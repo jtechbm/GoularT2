@@ -366,3 +366,48 @@ body {
 .flash {
   animation: fadeslide 0.25s ease-out;
 }
+
+/* ---------------------------------------------------------------- impressao
+   O PDF do relatorio sai pela impressao do navegador. Aqui a pagina perde a
+   navegacao, os fundos escuros e as sombras: papel branco com texto preto
+   imprime melhor e gasta menos tinta do que uma captura da tela. */
+@media print {
+  @page {
+    margin: 14mm;
+  }
+
+  body {
+    background: #fff !important;
+    color: #111 !important;
+  }
+
+  /* menu lateral, cabecalho do app e qualquer barra de acao somem */
+  aside,
+  nav.app-nav,
+  header.app-header,
+  .print\:hidden {
+    display: none !important;
+  }
+
+  main {
+    padding: 0 !important;
+    margin: 0 !important;
+    max-width: none !important;
+  }
+
+  .card,
+  table,
+  article > * {
+    box-shadow: none !important;
+    border-color: #ddd !important;
+    background: #fff !important;
+    /* nao corta um cartao no meio entre duas paginas */
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  a {
+    text-decoration: none !important;
+    color: inherit !important;
+  }
+}
