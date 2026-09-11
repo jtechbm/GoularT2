@@ -21,6 +21,12 @@ export interface User {
   color: string;
   active: number;
   created_at: string;
+  /** 1 enquanto a pessoa ainda não escolheu a própria senha */
+  must_change_password: number;
+  /** convite pendente: existe até a pessoa definir a senha */
+  invite_token: string | null;
+  invite_expires_at: string | null;
+  password_changed_at: string | null;
 }
 
 /** 'cliente' é atendido pela operação; 'propria' é loja do próprio Kadu. */

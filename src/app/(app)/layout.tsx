@@ -1,3 +1,4 @@
+import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth";
 import { one } from "@/lib/db";
 import { Sidebar } from "@/components/nav";
@@ -9,6 +10,13 @@ export const dynamic = "force-dynamic";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const user = await requireUser();
+
+  // convite pendente trava o sistema inteiro até a pessoa escolher a senha.
+  // Deixar entrar com a senha temporária é o que faz ninguém trocá-la.
+  if (user.must_change_password === 1 && user.invite_token) {
+    redirect(`/convite/${user.invite_token}`);
+  }
+
   const pending =
     (await one<{ n: number }>(
       `SELECT COUNT(*) n FROM tasks

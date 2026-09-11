@@ -10,8 +10,10 @@ const COOKIE = "goulart_session";
 const SESSION_DAYS = 14;
 
 /** Colunas de usuário liberadas para a aplicação — nunca o hash da senha. */
-const USER_COLS = "id, name, email, role, job_title, color, active, created_at";
-const USER_COLS_U = "u.id, u.name, u.email, u.role, u.job_title, u.color, u.active, u.created_at";
+const USER_COLS =
+  "id, name, email, role, job_title, color, active, created_at, must_change_password, invite_token, invite_expires_at, password_changed_at";
+const USER_COLS_U =
+  "u.id, u.name, u.email, u.role, u.job_title, u.color, u.active, u.created_at, u.must_change_password, u.invite_token, u.invite_expires_at, u.password_changed_at";
 
 export function hashPassword(password: string): string {
   const salt = randomBytes(16).toString("hex");
@@ -144,6 +146,13 @@ export async function listUsers(includeInactive = false): Promise<User[]> {
   );
 }
 
+/**
+ * Criação direta, usada só pelo script de primeiro admin.
+ *
+ * O cadastro pela tela usa convite: ninguém digita a senha de outra
+ * pessoa. Esta função existe para o `npm run criar-admin`, que roda antes
+ * de haver qualquer conta para enviar convite.
+ */
 export async function createUser(input: {
   name: string;
   email: string;

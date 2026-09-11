@@ -15,7 +15,7 @@ const COLORS = ["#a855f7", "#7c3aed", "#f97316", "#fb923c", "#ec4899", "#22d3ee"
 export default async function EquipePage({
   searchParams,
 }: {
-  searchParams: Promise<{ u?: string; ok?: string }>;
+  searchParams: Promise<{ u?: string; ok?: string; convite?: string }>;
 }) {
   const user = await requireUser();
   const sp = await searchParams;
@@ -34,6 +34,9 @@ export default async function EquipePage({
   );
 
   const selected = sp.u ? users.find((u) => u.id === sp.u) : undefined;
+  const convidado = sp.convite ? users.find((u) => u.id === sp.convite) : undefined;
+  // o link precisa do endereço público; em produção vem da Vercel
+  const base = process.env.NEXT_PUBLIC_APP_URL ?? process.env.ML_REDIRECT_URI?.split("/api/")[0] ?? "";
 
   return (
     <>
@@ -41,6 +44,20 @@ export default async function EquipePage({
         title="Equipe"
         subtitle="Quem opera a carteira, com quais clientes e quanta tarefa carrega."
       />
+
+      {sp.convite && convidado?.invite_token && (
+        <div className="mb-4 rounded-[12px] border border-brand/30 bg-brand-soft px-4 py-3">
+          <p className="text-sm font-medium text-ink">
+            Acesso criado para {convidado.name}. Mande este link para {convidado.email.split("@")[0]}:
+          </p>
+          <p className="mt-2 break-all rounded-lg bg-surface px-3 py-2 font-mono text-xs text-muted">
+            {`${base}/convite/${convidado.invite_token}`}
+          </p>
+          <p className="mt-2 text-[0.7rem] text-dim">
+            Vale uma vez só e vence em 7 dias. A pessoa escolhe a própria senha — você não precisa saber qual é.
+          </p>
+        </div>
+      )}
 
       {sp.ok && (
         <div className="flash mb-4 rounded-lg border border-ok/30 bg-ok-soft px-4 py-2.5 text-sm font-medium text-ok">
@@ -219,20 +236,17 @@ export default async function EquipePage({
                   <Field label="E-mail *">
                     <input name="email" type="email" required className="input" />
                   </Field>
-                  <Field label="Senha provisória *" hint="Mínimo de 6 caracteres.">
-                    <input name="password" type="password" required minLength={6} className="input" />
-                  </Field>
-                  <Field label="Cargo">
-                    <input name="job_title" className="input" placeholder="cargo na operação" />
-                  </Field>
-                  <Field label="Papel">
+                  <Field label="Papel no sistema" hint="Define o que a pessoa enxerga e pode fazer.">
                     <select name="role" defaultValue="membro" className="select">
                       {ROLES.map((r) => (
                         <option key={r.value} value={r.value}>
-                          {r.label}
+                          {r.label} — {r.description}
                         </option>
                       ))}
                     </select>
+                  </Field>
+                  <Field label="Cargo">
+                    <input name="job_title" className="input" placeholder="cargo na operação" />
                   </Field>
                   <Field label="Cor">
                     <div className="flex flex-wrap gap-2">
@@ -248,7 +262,7 @@ export default async function EquipePage({
                     </div>
                   </Field>
                 </div>
-                <SaveBar label="Criar acesso" hint="" />
+                <SaveBar label="Criar acesso e gerar convite" hint="" />
               </Card>
             </form>
           )}

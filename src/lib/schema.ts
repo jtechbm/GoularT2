@@ -359,6 +359,33 @@ CREATE INDEX IF NOT EXISTS idx_runs_data  ON sync_runs(started_at DESC);
 ALTER TABLE client_marketplaces ADD COLUMN IF NOT EXISTS daily_synced_until text;
 ALTER TABLE client_marketplaces ADD COLUMN IF NOT EXISTS last_success_at    text;
 
+-- Acesso da equipe.
+--
+-- Ninguem mais digita a senha de outra pessoa. O admin cria a conta e o
+-- sistema devolve um link de convite de uso unico; quem recebe escolhe a
+-- propria senha. Senha provisoria digitada por terceiro circula por
+-- WhatsApp, fica salva no historico da conversa e quase nunca e trocada.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS must_change_password integer NOT NULL DEFAULT 0;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS invite_token         text;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS invite_expires_at    text;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS password_changed_at  text;
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_convite ON users(invite_token)
+  WHERE invite_token IS NOT NULL;
+
+-- Trilha de quem mexeu em acesso. Este sistema guarda faturamento e tokens
+-- de loja: mudanca de papel e desativacao precisam deixar rastro.
+CREATE TABLE IF NOT EXISTS user_events (
+  id         text PRIMARY KEY,
+  user_id    text REFERENCES users(id) ON DELETE CASCADE,
+  actor_id   text REFERENCES users(id) ON DELETE SET NULL,
+  type       text NOT NULL,
+  detail     text,
+  created_at text NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_events ON user_events(user_id, created_at DESC);
+
 CREATE INDEX IF NOT EXISTS idx_charges_month  ON agency_charges(ref_month, status);
 CREATE INDEX IF NOT EXISTS idx_expenses_month ON agency_expenses(ref_month);
 
@@ -396,6 +423,7 @@ CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
 
 /** Tabelas na ordem segura para limpeza (filhas antes das pais). */
 export const TABLES = [
+  "user_events",
   "sync_runs",
   "finance_daily",
   "task_comments",
