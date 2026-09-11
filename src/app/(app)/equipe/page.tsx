@@ -2,8 +2,9 @@ import Link from "next/link";
 import { listUsers, requireUser, visibleClientIds } from "@/lib/auth";
 import { can, permissionsOf, PERMISSION_LABEL, PERMISSION_ORDER } from "@/lib/permissions";
 import { all } from "@/lib/db";
-import { clientRows, leaderboard, rankingMensal, tasks } from "@/lib/queries";
+import { clientRows, desempenhoEquipe, leaderboard, periodoDe, rankingMensal, tasks } from "@/lib/queries";
 import { Ranking } from "@/components/ranking";
+import { DesempenhoEquipe } from "@/components/desempenho-equipe";
 import { brlShort, currentMonth, dateBR } from "@/lib/format";
 import { Avatar, Card, Chip, Field, PageHeader, Stat } from "@/components/ui";
 import { SaveBar, SubmitButton } from "@/components/submit";
@@ -15,7 +16,7 @@ const COLORS = ["#a855f7", "#7c3aed", "#f97316", "#fb923c", "#ec4899", "#22d3ee"
 export default async function EquipePage({
   searchParams,
 }: {
-  searchParams: Promise<{ u?: string; ok?: string; convite?: string }>;
+  searchParams: Promise<{ u?: string; ok?: string; convite?: string; periodo?: string; mes?: string }>;
 }) {
   const user = await requireUser();
   const sp = await searchParams;
@@ -24,6 +25,12 @@ export default async function EquipePage({
   const users = await listUsers(manager);
   const board = new Map((await leaderboard()).map((b) => [b.id, b] as const));
   const ranking = await rankingMensal(currentMonth());
+
+  // desempenho: o período vale para o que já aconteceu, não para a carga
+  // atual, que é sempre "agora"
+  const atalho = sp.periodo ?? "mes";
+  const periodo = periodoDe(atalho, sp.mes ?? currentMonth());
+  const desempenho = manager ? await desempenhoEquipe(periodo.inicio, periodo.fim) : [];
   const carteira = await clientRows(currentMonth(), undefined, await visibleClientIds(user));
   const openTasks = await tasks({ statuses: ["assumida", "em_andamento", "em_revisao"] });
 
@@ -76,6 +83,27 @@ export default async function EquipePage({
           tone={carteira.some((c) => !c.owner_id) ? "bad" : "ok"}
         />
       </div>
+
+      {manager && (
+        <div className="mt-3 space-y-3">
+          <nav className="flex flex-wrap gap-1">
+            {[
+              { key: "7d", label: "7 dias" },
+              { key: "30d", label: "30 dias" },
+              { key: "mes", label: "Mês" },
+            ].map((a) => (
+              <Link
+                key={a.key}
+                href={`/equipe?periodo=${a.key}`}
+                className={`btn btn-sm ${atalho === a.key ? "btn-primary" : "btn-ghost"}`}
+              >
+                {a.label}
+              </Link>
+            ))}
+          </nav>
+          <DesempenhoEquipe pessoas={desempenho} periodoLabel={periodo.label} />
+        </div>
+      )}
 
       <div className="mt-3">
         <Ranking linhas={ranking} refMonth={currentMonth()} />

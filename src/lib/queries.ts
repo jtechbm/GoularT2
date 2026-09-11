@@ -1347,3 +1347,123 @@ export async function historicoCobranca(chargeId: string) {
   ]);
   return { ajustes, eventos };
 }
+
+
+// ---------------------------------------------------------------- desempenho da equipe
+
+export interface DesempenhoPessoa {
+  id: string;
+  name: string;
+  color: string;
+  role: string;
+  job_title: string | null;
+  /** tarefas na mão agora, em qualquer etapa antes da aprovação */
+  ativas: number;
+  atrasadas: number;
+  emRevisao: number;
+  aprovadas: number;
+  pontos: number;
+  /** entregues dentro do prazo dividido pelas que tinham prazo */
+  pontualidade: number | null;
+  reaberturas: number;
+  /** horas entre pegar a tarefa e mandar para revisão, mediana */
+  tempoMedioHoras: number | null;
+  clientes: number;
+}
+
+/**
+ * Desempenho por pessoa num período.
+ *
+ * Nada aqui mede tempo de tela, login ou "atividade". Esse tipo de métrica
+ * premia quem fica com o sistema aberto e pune quem resolve rápido. O que
+ * conta é trabalho aprovado, prazo cumprido e retrabalho gerado.
+ *
+ * Tempo médio usa a MEDIANA, não a média: uma tarefa esquecida por trinta
+ * dias distorce a média da pessoa inteira e some na mediana.
+ */
+export async function desempenhoEquipe(inicio: string, fim: string): Promise<DesempenhoPessoa[]> {
+  const hoje = new Date().toISOString().slice(0, 10);
+
+  const pessoas = await all<{
+    id: string;
+    name: string;
+    color: string;
+    role: string;
+    job_title: string | null;
+  }>("SELECT id, name, color, role, job_title FROM users WHERE active = 1 ORDER BY lower(name)");
+
+  const [cargas, aprovadas, tempos, carteiras] = await Promise.all([
+    all<{ assignee_id: string; ativas: number; atrasadas: number; revisao: number }>(
+      `SELECT assignee_id,
+              COUNT(*) FILTER (WHERE status IN ('assumida','em_andamento','em_revisao'))   AS ativas,
+              COUNT(*) FILTER (WHERE status <> 'concluida'
+                                 AND due_date IS NOT NULL AND due_date < ?)                AS atrasadas,
+              COUNT(*) FILTER (WHERE status = 'em_revisao')                                AS revisao
+         FROM tasks WHERE assignee_id IS NOT NULL GROUP BY assignee_id`,
+      hoje,
+    ),
+    all<{ user_id: string; pontos: number; aprovadas: number; no_prazo: number; com_prazo: number; reaberturas: number }>(
+      `SELECT e.user_id,
+              COALESCE(SUM(e.points), 0)                                                     AS pontos,
+              COUNT(e.id)                                                                    AS aprovadas,
+              COUNT(*) FILTER (WHERE t.due_date IS NOT NULL AND t.submitted_at IS NOT NULL
+                                 AND t.submitted_at <= t.due_date || 'T23:59:59')            AS no_prazo,
+              COUNT(*) FILTER (WHERE t.due_date IS NOT NULL)                                 AS com_prazo,
+              COALESCE(SUM(t.rejections), 0)                                                 AS reaberturas
+         FROM task_events e JOIN tasks t ON t.id = e.task_id
+        WHERE e.type IN ('aprovada','concluida') AND e.points > 0
+          AND e.created_at >= ? AND e.created_at <= ?
+        GROUP BY e.user_id`,
+      inicio,
+      `${fim}T23:59:59`,
+    ),
+    all<{ assignee_id: string; horas: number }>(
+      `SELECT assignee_id,
+              PERCENTILE_CONT(0.5) WITHIN GROUP (
+                ORDER BY EXTRACT(EPOCH FROM (submitted_at::timestamptz - claimed_at::timestamptz)) / 3600
+              ) AS horas
+         FROM tasks
+        WHERE assignee_id IS NOT NULL AND claimed_at IS NOT NULL AND submitted_at IS NOT NULL
+          AND submitted_at >= ? AND submitted_at <= ?
+        GROUP BY assignee_id`,
+      inicio,
+      `${fim}T23:59:59`,
+    ),
+    all<{ user_id: string; n: number }>(
+      "SELECT user_id, COUNT(*) AS n FROM client_team GROUP BY user_id",
+    ),
+  ]);
+
+  return pessoas.map((p) => {
+    const carga = cargas.find((c) => c.assignee_id === p.id);
+    const ap = aprovadas.find((a) => a.user_id === p.id);
+    const t = tempos.find((x) => x.assignee_id === p.id);
+
+    return {
+      ...p,
+      ativas: carga?.ativas ?? 0,
+      atrasadas: carga?.atrasadas ?? 0,
+      emRevisao: carga?.revisao ?? 0,
+      aprovadas: ap?.aprovadas ?? 0,
+      pontos: ap?.pontos ?? 0,
+      pontualidade: ap?.com_prazo ? ap.no_prazo / ap.com_prazo : null,
+      reaberturas: ap?.reaberturas ?? 0,
+      tempoMedioHoras: t?.horas ?? null,
+      clientes: carteiras.find((c) => c.user_id === p.id)?.n ?? 0,
+    };
+  });
+}
+
+/**
+ * Quantas tarefas ativas já é demais.
+ *
+ * Não existe número universal, então o limite sai da própria equipe: quem
+ * carrega mais que o dobro da mediana está sobrecarregado. Assim o aviso
+ * acompanha o ritmo da operação em vez de um chute fixo.
+ */
+export function faixaDeCarga(pessoas: DesempenhoPessoa[]): { alta: number; baixa: number } {
+  const cargas = pessoas.map((p) => p.ativas).sort((a, b) => a - b);
+  if (!cargas.length) return { alta: Infinity, baixa: -1 };
+  const mediana = cargas[Math.floor(cargas.length / 2)];
+  return { alta: Math.max(3, mediana * 2), baixa: 0 };
+}
