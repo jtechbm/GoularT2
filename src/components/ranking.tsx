@@ -30,7 +30,7 @@ export function Ranking({ linhas, refMonth }: { linhas: LinhaRanking[]; refMonth
     >
       {comAtividade.length ? (
         <div className="table-wrap">
-          <table className="data">
+          <table className="data responsiva">
             <thead>
               <tr>
                 <th>#</th>
@@ -44,16 +44,16 @@ export function Ranking({ linhas, refMonth }: { linhas: LinhaRanking[]; refMonth
             <tbody>
               {comAtividade.map((l, i) => (
                 <tr key={l.id}>
-                  <td className="text-xs text-dim">{i + 1}</td>
-                  <td>
+                  <td className="text-xs text-dim" data-label="#">{i + 1}</td>
+                  <td data-label="Pessoa">
                     <span className="flex items-center gap-2">
                       <Avatar name={l.name} color={l.color} size={24} />
                       <span className="text-sm text-ink">{l.name}</span>
                     </span>
                   </td>
-                  <td className="num font-semibold text-ink">{num(l.points)}</td>
-                  <td className="num text-muted">{num(l.concluidas)}</td>
-                  <td className="num">
+                  <td className="num font-semibold text-ink" data-label="Pontos">{num(l.points)}</td>
+                  <td className="num text-muted" data-label="Aprovadas">{num(l.concluidas)}</td>
+                  <td className="num" data-label="No prazo">
                     {l.pontualidade === null ? (
                       <span className="text-dim">—</span>
                     ) : (
@@ -62,7 +62,7 @@ export function Ranking({ linhas, refMonth }: { linhas: LinhaRanking[]; refMonth
                       </Chip>
                     )}
                   </td>
-                  <td className="num text-muted">
+                  <td className="num text-muted" data-label="Retrabalho">
                     {l.retrabalho ? <Chip tone="warn">{l.retrabalho} voltas</Chip> : <span className="text-dim">—</span>}
                   </td>
                 </tr>

@@ -108,14 +108,35 @@ export function Sidebar({
         </div>
       </div>
 
+      {/* no celular o menu cobre a tela: meia tela de menu sobre meia tela
+          de conteudo confunde mais do que ajuda */}
+      {open && (
+        <button
+          type="button"
+          aria-label="Fechar menu"
+          onClick={() => setOpen(false)}
+          className="fixed inset-0 z-40 bg-black/40 lg:hidden"
+        />
+      )}
+
       <aside
         className={`${
-          open ? "flex" : "hidden"
-        } w-full shrink-0 flex-col border-b border-line bg-surface p-3 lg:sticky lg:top-0 lg:flex lg:h-screen lg:w-[236px] lg:border-b-0 lg:border-r`}
+          open ? "fixed inset-y-0 left-0 z-50 flex w-[85vw] max-w-[300px] overflow-y-auto" : "hidden"
+        } shrink-0 flex-col border-line bg-surface p-3 lg:sticky lg:top-0 lg:left-auto lg:z-auto lg:flex lg:h-screen lg:w-[236px] lg:max-w-none lg:border-r`}
       >
-        <Link href="/" className="mb-6 hidden px-2 pt-3 lg:block">
-          <Wordmark />
-        </Link>
+        <div className="mb-6 flex items-center justify-between px-2 pt-3">
+          <Link href="/" onClick={() => setOpen(false)}>
+            <Wordmark />
+          </Link>
+          <button
+            type="button"
+            onClick={() => setOpen(false)}
+            aria-label="Fechar menu"
+            className="btn btn-ghost btn-sm lg:hidden"
+          >
+            ✕
+          </button>
+        </div>
 
         <nav className="flex flex-col gap-1">{items}</nav>
 

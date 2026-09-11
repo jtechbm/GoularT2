@@ -43,7 +43,7 @@ export function DesempenhoEquipe({
       bodyClassName="p-0"
     >
       <div className="table-wrap">
-        <table className="data">
+        <table className="data responsiva">
           <thead>
             <tr>
               <th>Pessoa</th>
@@ -65,7 +65,7 @@ export function DesempenhoEquipe({
               const ocioso = p.ativas === 0 && p.clientes > 0;
               return (
                 <tr key={p.id}>
-                  <td>
+                  <td data-label="Pessoa">
                     <span className="flex items-center gap-2">
                       <Avatar name={p.name} color={p.color} size={26} />
                       <span className="min-w-0">
@@ -76,13 +76,13 @@ export function DesempenhoEquipe({
                       </span>
                     </span>
                   </td>
-                  <td className={`num font-semibold ${sobrecarga ? "text-bad" : "text-ink"}`}>{num(p.ativas)}</td>
-                  <td className="num">
+                  <td className={`num font-semibold ${sobrecarga ? "text-bad" : "text-ink"}`} data-label="Ativas">{num(p.ativas)}</td>
+                  <td className="num" data-label="Atrasadas">
                     {p.atrasadas ? <Chip tone="bad">{p.atrasadas}</Chip> : <span className="text-dim">—</span>}
                   </td>
-                  <td className="num text-muted">{p.emRevisao || "—"}</td>
-                  <td className="num text-muted">{num(p.aprovadas)}</td>
-                  <td className="num">
+                  <td className="num text-muted" data-label="Em revisão">{p.emRevisao || "—"}</td>
+                  <td className="num text-muted" data-label="Aprovadas">{num(p.aprovadas)}</td>
+                  <td className="num" data-label="No prazo">
                     {p.pontualidade === null ? (
                       <span className="text-dim">—</span>
                     ) : (
@@ -91,11 +91,11 @@ export function DesempenhoEquipe({
                       </Chip>
                     )}
                   </td>
-                  <td className="num text-muted">
+                  <td className="num text-muted" data-label="Retrabalho">
                     {p.reaberturas ? <Chip tone="warn">{p.reaberturas}</Chip> : <span className="text-dim">—</span>}
                   </td>
-                  <td className="num text-muted">{horas(p.tempoMedioHoras)}</td>
-                  <td className="num text-muted">
+                  <td className="num text-muted" data-label="Tempo típico">{horas(p.tempoMedioHoras)}</td>
+                  <td className="num text-muted" data-label="Clientes">
                     {p.clientes ? (
                       <Link href={`/clientes?resp=${p.id}`} className="hover:text-brand">
                         {p.clientes}
@@ -104,8 +104,8 @@ export function DesempenhoEquipe({
                       <span className="text-dim">—</span>
                     )}
                   </td>
-                  <td className="num font-semibold text-ink">{num(p.pontos)}</td>
-                  <td>
+                  <td className="num font-semibold text-ink" data-label="Pontos">{num(p.pontos)}</td>
+                  <td data-label="Situação">
                     {sobrecarga ? (
                       <Chip tone="bad">sobrecarregado</Chip>
                     ) : ocioso ? (

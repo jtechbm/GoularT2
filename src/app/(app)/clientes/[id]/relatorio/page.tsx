@@ -151,7 +151,7 @@ export default async function RelatorioPage({
 
         <Card title="Comparação com o mês anterior" bodyClassName="p-0">
           <div className="table-wrap">
-            <table className="data">
+            <table className="data responsiva">
               <thead>
                 <tr>
                   <th />
@@ -172,7 +172,7 @@ export default async function RelatorioPage({
         {progresso.length > 0 && (
           <Card title="Meta e realizado" bodyClassName="p-0">
             <div className="table-wrap">
-              <table className="data">
+              <table className="data responsiva">
                 <thead>
                   <tr>
                     <th>Meta</th>
@@ -184,10 +184,10 @@ export default async function RelatorioPage({
                 <tbody>
                   {progresso.map((p) => (
                     <tr key={p.key}>
-                      <td className="text-sm text-ink">{p.label}</td>
-                      <td className="num text-muted">{formatar(p.goal, p.format)}</td>
-                      <td className="num font-semibold text-ink">{formatar(p.realized, p.format)}</td>
-                      <td className="num">
+                      <td className="text-sm text-ink" data-label="Meta">{p.label}</td>
+                      <td className="num text-muted" data-label="Combinado">{formatar(p.goal, p.format)}</td>
+                      <td className="num font-semibold text-ink" data-label="Realizado">{formatar(p.realized, p.format)}</td>
+                      <td className="num" data-label="Situação">
                         <Chip tone={p.bom ? "ok" : "bad"}>{p.bom ? "cumprida" : "não cumprida"}</Chip>
                       </td>
                     </tr>
@@ -201,7 +201,7 @@ export default async function RelatorioPage({
         {dados.porMarketplace.length > 0 && (
           <Card title="Resultado por loja" bodyClassName="p-0">
             <div className="table-wrap">
-              <table className="data">
+              <table className="data responsiva">
                 <thead>
                   <tr>
                     <th>Loja</th>
@@ -214,11 +214,11 @@ export default async function RelatorioPage({
                 <tbody>
                   {dados.porMarketplace.map((m) => (
                     <tr key={m.marketplace}>
-                      <td className="text-sm text-ink">{marketplaceLabel(m.marketplace)}</td>
-                      <td className="num font-semibold text-ink">{brl(m.revenue)}</td>
-                      <td className="num text-muted">{num(m.orders)}</td>
-                      <td className="num text-muted">{brl(m.profit)}</td>
-                      <td className="num text-muted">
+                      <td className="text-sm text-ink" data-label="Loja">{marketplaceLabel(m.marketplace)}</td>
+                      <td className="num font-semibold text-ink" data-label="Faturamento">{brl(m.revenue)}</td>
+                      <td className="num text-muted" data-label="Pedidos">{num(m.orders)}</td>
+                      <td className="num text-muted" data-label="Lucro">{brl(m.profit)}</td>
+                      <td className="num text-muted" data-label="Participação">
                         {atual.revenue ? pct(m.revenue / atual.revenue) : "—"}
                       </td>
                     </tr>

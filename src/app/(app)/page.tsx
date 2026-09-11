@@ -242,7 +242,7 @@ export default async function DashboardPage({
       >
         {rows.length ? (
           <div className="table-wrap">
-            <table className="data">
+            <table className="data responsiva">
               <thead>
                 <tr>
                   <th>Cliente</th>
@@ -261,13 +261,13 @@ export default async function DashboardPage({
                   const roasCliente = c.ads ? (adsPorCliente.get(c.id) ?? 0) / c.ads : 0;
                   return (
                     <tr key={c.id}>
-                      <td>
+                      <td data-label="Cliente">
                         <Link href={`/clientes/${c.id}`} className="font-medium text-ink hover:text-brand">
                           {c.name}
                         </Link>
                         <StatusChip value={c.status} />
                       </td>
-                      <td>
+                      <td data-label="Responsável">
                         {c.owner_name ? (
                           <span className="flex items-center gap-1.5">
                             <Avatar name={c.owner_name} color={c.owner_color} size={22} />
@@ -277,13 +277,13 @@ export default async function DashboardPage({
                           <Chip tone="bad">definir</Chip>
                         )}
                       </td>
-                      <td className="num font-semibold text-ink">{brlShort(c.revenue)}</td>
-                      <td className="num">
+                      <td className="num font-semibold text-ink" data-label="Faturamento">{brlShort(c.revenue)}</td>
+                      <td className="num" data-label="vs. ant.">
                         <Delta value={growth(c.revenue, c.prev_revenue)} />
                       </td>
-                      <td className="num text-muted">{roasCliente ? `${roasCliente.toFixed(2)}x` : "—"}</td>
-                      <td>{sc && <ScoreChip score={sc} />}</td>
-                      <td className="text-xs text-muted">
+                      <td className="num text-muted" data-label="ROAS">{roasCliente ? `${roasCliente.toFixed(2)}x` : "—"}</td>
+                      <td data-label="Saúde">{sc && <ScoreChip score={sc} />}</td>
+                      <td className="text-xs text-muted" data-label="Principal pendência">
                         {doCliente.length ? (
                           <Link href={doCliente[0].href} className="hover:text-brand">
                             {doCliente[0].titulo}

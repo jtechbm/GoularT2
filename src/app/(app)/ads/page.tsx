@@ -249,7 +249,7 @@ export default async function AdsPage({
       <Card className="mt-3" title="Todas as campanhas" bodyClassName="p-0">
         {campanhas.length ? (
           <div className="table-wrap">
-            <table className="data">
+            <table className="data responsiva">
               <thead>
                 <tr>
                   <th>Campanha</th>
@@ -267,20 +267,20 @@ export default async function AdsPage({
               <tbody>
                 {campanhas.map((c) => (
                   <tr key={c.id}>
-                    <td>
+                    <td data-label="Campanha">
                       <span className="text-sm text-ink">{c.nome}</span>
                       <Chip tone={c.automatica ? "info" : "neutral"}>{c.automatica ? "da loja" : "à mão"}</Chip>
                     </td>
-                    <td className="text-xs text-muted">{c.clientName}</td>
-                    <td>
+                    <td className="text-xs text-muted" data-label="Cliente">{c.clientName}</td>
+                    <td data-label="Loja">
                       <MarketplaceChip value={c.marketplace} />
                     </td>
-                    <td className="num font-semibold text-ink">{brlShort(c.invested)}</td>
-                    <td className="num text-muted">{c.revenue ? brlShort(c.revenue) : "—"}</td>
-                    <td className={`num font-semibold ${roasTom(c.roas, metaRoas)}`}>
+                    <td className="num font-semibold text-ink" data-label="Investido">{brlShort(c.invested)}</td>
+                    <td className="num text-muted" data-label="Receita">{c.revenue ? brlShort(c.revenue) : "—"}</td>
+                    <td className={`num font-semibold ${roasTom(c.roas, metaRoas)}`} data-label="ROAS">
                       {c.roas === null ? "—" : `${c.roas.toFixed(2)}x`}
                     </td>
-                    <td className="num text-muted">
+                    <td className="num text-muted" data-label="ACOS">
                       {c.acos === null ? (
                         c.invested > 0 ? (
                           <Chip tone="bad">sem venda</Chip>
@@ -291,8 +291,8 @@ export default async function AdsPage({
                         pct(c.acos)
                       )}
                     </td>
-                    <td className="num text-muted">{c.cpc === null ? "—" : brl(c.cpc)}</td>
-                    <td className="num text-muted">{c.conversao === null ? "—" : pct(c.conversao)}</td>
+                    <td className="num text-muted" data-label="CPC">{c.cpc === null ? "—" : brl(c.cpc)}</td>
+                    <td className="num text-muted" data-label="Conversão">{c.conversao === null ? "—" : pct(c.conversao)}</td>
                     <td className="num">
                       {!c.automatica && (
                         <form action={deleteAdsAction}>
@@ -398,7 +398,7 @@ function TabelaCampanhas({
   }
   return (
     <div className="table-wrap">
-      <table className="data">
+      <table className="data responsiva">
         <thead>
           <tr>
             <th>Campanha</th>
@@ -410,15 +410,15 @@ function TabelaCampanhas({
         <tbody>
           {lista.map((c) => (
             <tr key={c.id}>
-              <td>
+              <td data-label="Campanha">
                 <span className="block text-sm text-ink">{c.nome}</span>
                 <span className="text-[0.65rem] text-dim">{c.clientName}</span>
               </td>
-              <td className="num text-muted">{brlShort(c.invested)}</td>
-              <td className={`num font-semibold ${roasTom(c.roas, null)}`}>
+              <td className="num text-muted" data-label="Investido">{brlShort(c.invested)}</td>
+              <td className={`num font-semibold ${roasTom(c.roas, null)}`} data-label="ROAS">
                 {c.roas === null ? "—" : `${c.roas.toFixed(2)}x`}
               </td>
-              <td className="num text-muted">
+              <td className="num text-muted" data-label="ACOS">
                 {c.acos === null ? <Chip tone="bad">sem venda</Chip> : pct(c.acos)}
               </td>
             </tr>

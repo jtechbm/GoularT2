@@ -136,7 +136,7 @@ export default async function IntegracoesPage({
       <Card className="mt-3" title="Contas por cliente" bodyClassName="p-0">
         {accounts.length ? (
           <div className="table-wrap">
-            <table className="data">
+            <table className="data responsiva">
               <thead>
                 <tr>
                   <th>Cliente</th>
@@ -151,17 +151,17 @@ export default async function IntegracoesPage({
               <tbody>
                 {accounts.map((a) => (
                   <tr key={a.id}>
-                    <td>
+                    <td data-label="Cliente">
                       <Link href={`/clientes/${a.client_id}?tab=marketplaces`} className="font-medium text-ink hover:text-brand">
                         {a.client_name}
                       </Link>
                     </td>
-                    <td>
+                    <td data-label="Canal">
                       <MarketplaceChip value={a.marketplace} />
                     </td>
-                    <td className="text-xs text-muted">{a.nickname ?? "—"}</td>
-                    <td className="font-mono text-[0.7rem] text-dim">{a.external_id ?? "—"}</td>
-                    <td>
+                    <td className="text-xs text-muted" data-label="Conta">{a.nickname ?? "—"}</td>
+                    <td className="font-mono text-[0.7rem] text-dim" data-label="ID externo">{a.external_id ?? "—"}</td>
+                    <td data-label="Status">
                       <StatusChip value={a.status} />
                       {a.last_error && (
                         <div className="mt-1 max-w-56 text-[0.65rem] text-bad">
@@ -169,7 +169,7 @@ export default async function IntegracoesPage({
                         </div>
                       )}
                     </td>
-                    <td className="text-xs text-dim">
+                    <td className="text-xs text-dim" data-label="Última sync">
                       {a.last_success_at ? (
                         <span title={dateTimeBR(a.last_success_at)}>{relativeBR(a.last_success_at)}</span>
                       ) : (
@@ -238,7 +238,7 @@ export default async function IntegracoesPage({
       >
         {rodadas.length ? (
           <div className="table-wrap">
-            <table className="data">
+            <table className="data responsiva">
               <thead>
                 <tr>
                   <th>Início</th>
@@ -259,24 +259,24 @@ export default async function IntegracoesPage({
                       : null;
                   return (
                     <tr key={r.id}>
-                      <td className="text-xs text-dim">{dateTimeBR(r.started_at)}</td>
-                      <td className="text-xs text-dim">{duracao === null ? "—" : `${duracao}s`}</td>
-                      <td className="text-xs text-muted">{r.client_name ?? "—"}</td>
-                      <td>{r.marketplace ? <MarketplaceChip value={r.marketplace} /> : "—"}</td>
-                      <td className="text-xs text-dim">
+                      <td className="text-xs text-dim" data-label="Início">{dateTimeBR(r.started_at)}</td>
+                      <td className="text-xs text-dim" data-label="Duração">{duracao === null ? "—" : `${duracao}s`}</td>
+                      <td className="text-xs text-muted" data-label="Cliente">{r.client_name ?? "—"}</td>
+                      <td data-label="Canal">{r.marketplace ? <MarketplaceChip value={r.marketplace} /> : "—"}</td>
+                      <td className="text-xs text-dim" data-label="Origem">
                         {r.trigger === "cron"
                           ? "automática"
                           : r.trigger === "cli"
                             ? "linha de comando"
                             : r.started_by_name ?? "manual"}
                       </td>
-                      <td>
+                      <td data-label="Status">
                         <Chip tone={r.status === "ok" ? "ok" : r.status === "rodando" ? "warn" : "bad"}>
                           {r.status === "ok" ? "ok" : r.status === "rodando" ? "rodando" : "erro"}
                         </Chip>
                       </td>
-                      <td className="num text-xs text-muted">{r.days_written || "—"}</td>
-                      <td className="max-w-64 truncate text-xs text-muted" title={r.error ?? r.message ?? ""}>
+                      <td className="num text-xs text-muted" data-label="Dias">{r.days_written || "—"}</td>
+                      <td className="max-w-64 truncate text-xs text-muted" title={r.error ?? r.message ?? ""} data-label="Detalhe">
                         {r.error ? diagnosticar(r.error)?.titulo : r.message ?? "—"}
                       </td>
                     </tr>

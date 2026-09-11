@@ -214,7 +214,7 @@ export default async function FinanceiroPage({
               bodyClassName="p-0"
             >
               <div className="table-wrap">
-                <table className="data">
+                <table className="data responsiva">
                   <thead>
                     <tr>
                       <th>Loja</th>
@@ -229,19 +229,19 @@ export default async function FinanceiroPage({
                   <tbody>
                     {lojasProprias.map((l) => (
                       <tr key={l.id}>
-                        <td>
+                        <td data-label="Loja">
                           <Link href={`/clientes/${l.id}`} className="font-medium text-ink hover:text-brand">
                             {l.name}
                           </Link>
                         </td>
-                        <td className="text-xs text-muted">
+                        <td className="text-xs text-muted" data-label="Canais">
                           {l.marketplaces ? l.marketplaces.split(",").map((m) => marketplaceLabel(m)).join(" · ") : "—"}
                         </td>
-                        <td className="num font-semibold text-ink">{brl(l.revenue)}</td>
-                        <td className="num text-muted">{brl(l.ads)}</td>
-                        <td className="num text-muted">{brl(l.tax)}</td>
-                        <td className="num font-semibold text-ink">{brl(l.profit)}</td>
-                        <td className="num">{l.revenue ? pct(l.profit / l.revenue) : "—"}</td>
+                        <td className="num font-semibold text-ink" data-label="Faturamento">{brl(l.revenue)}</td>
+                        <td className="num text-muted" data-label="Ads">{brl(l.ads)}</td>
+                        <td className="num text-muted" data-label="Impostos">{brl(l.tax)}</td>
+                        <td className="num font-semibold text-ink" data-label="Lucro">{brl(l.profit)}</td>
+                        <td className="num" data-label="Margem">{l.revenue ? pct(l.profit / l.revenue) : "—"}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -334,7 +334,7 @@ export default async function FinanceiroPage({
           >
             {chargesFiltradas.length ? (
               <div className="table-wrap">
-                <table className="data">
+                <table className="data responsiva">
                   <thead>
                     <tr>
                       <th>Cliente</th>
@@ -351,7 +351,7 @@ export default async function FinanceiroPage({
                   <tbody>
                     {chargesFiltradas.map((c) => (
                       <tr key={c.id}>
-                        <td>
+                        <td data-label="Cliente">
                           <Link
                             href={`/clientes/${c.client_id}?tab=financeiro&mes=${ref}`}
                             className="font-medium text-ink hover:text-brand"
@@ -359,15 +359,15 @@ export default async function FinanceiroPage({
                             {c.client_name}
                           </Link>
                         </td>
-                        <td className="text-xs text-muted">{c.fee_model}</td>
-                        <td className="num text-muted">{brl(c.fee)}</td>
-                        <td className="num text-muted">
+                        <td className="text-xs text-muted" data-label="Modelo">{c.fee_model}</td>
+                        <td className="num text-muted" data-label="Fee">{brl(c.fee)}</td>
+                        <td className="num text-muted" data-label="Comissão">
                           {brl(c.commission)}
                           {c.revenue_base > 0 && (
                             <span className="block text-xs text-dim">sobre {brlShort(c.revenue_base)}</span>
                           )}
                         </td>
-                        <td className="num text-muted">
+                        <td className="num text-muted" data-label="Avulso">
                           {c.extra ? brl(c.extra) : "—"}
                           {c.adjustments !== 0 && (
                             <span className={`block text-xs ${c.adjustments > 0 ? "text-warn" : "text-ok"}`}>
@@ -376,7 +376,7 @@ export default async function FinanceiroPage({
                             </span>
                           )}
                         </td>
-                        <td className="num font-semibold text-ink">
+                        <td className="num font-semibold text-ink" data-label="Total">
                           {brl(c.total)}
                           {c.locked === 1 && (
                             <span className="block text-[0.65rem] text-ok" title={`Fechada em ${dateBR(c.closed_at)}`}>
@@ -384,10 +384,10 @@ export default async function FinanceiroPage({
                             </span>
                           )}
                         </td>
-                        <td className={`text-xs ${chargeSituacao(c) === "atrasado" ? "text-bad" : "text-muted"}`}>
+                        <td className={`text-xs ${chargeSituacao(c) === "atrasado" ? "text-bad" : "text-muted"}`} data-label="Vencimento">
                           {dateBR(c.due_date)}
                         </td>
-                        <td>
+                        <td data-label="Status">
                           {(() => {
                             const sit = chargeSituacao(c);
                             const tom =
@@ -610,7 +610,7 @@ export default async function FinanceiroPage({
             >
               {expenses.length ? (
                 <div className="table-wrap">
-                  <table className="data">
+                  <table className="data responsiva">
                     <thead>
                       <tr>
                         <th>Descrição</th>
@@ -624,7 +624,7 @@ export default async function FinanceiroPage({
                     <tbody>
                       {expenses.map((e) => (
                         <tr key={e.id}>
-                          <td>
+                          <td data-label="Descrição">
                             <span className="font-medium text-ink">{e.description}</span>
                             {e.recurring === 1 && (
                               <span className="ml-2">
@@ -632,10 +632,10 @@ export default async function FinanceiroPage({
                               </span>
                             )}
                           </td>
-                          <td className="text-xs text-muted">{expenseCategoryLabel(e.category)}</td>
-                          <td className="text-xs text-muted">{dateBR(e.due_date)}</td>
-                          <td className="num font-semibold text-ink">{brl(e.amount)}</td>
-                          <td>{e.paid === 1 ? <Chip tone="ok">Pago</Chip> : <Chip tone="warn">Em aberto</Chip>}</td>
+                          <td className="text-xs text-muted" data-label="Categoria">{expenseCategoryLabel(e.category)}</td>
+                          <td className="text-xs text-muted" data-label="Vencimento">{dateBR(e.due_date)}</td>
+                          <td className="num font-semibold text-ink" data-label="Valor">{brl(e.amount)}</td>
+                          <td data-label="Status">{e.paid === 1 ? <Chip tone="ok">Pago</Chip> : <Chip tone="warn">Em aberto</Chip>}</td>
                           <td>
                             <div className="flex justify-end gap-1.5">
                               <form action={toggleExpensePaidAction}>

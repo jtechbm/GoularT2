@@ -170,7 +170,7 @@ export default async function TarefasPage({
           <Card title="Minhas tarefas" subtitle="O que está na sua mão agora" bodyClassName="p-0">
             {minhas.length ? (
               <div className="table-wrap">
-                <table className="data">
+                <table className="data responsiva">
                   <thead>
                     <tr>
                       <th>Tarefa</th>
@@ -183,21 +183,21 @@ export default async function TarefasPage({
                   <tbody>
                     {minhas.map((t) => (
                       <tr key={t.id}>
-                        <td>
+                        <td data-label="Tarefa">
                           <Link href={`/tarefas/${t.id}`} className="font-medium text-ink hover:text-brand">
                             {t.title}
                           </Link>
                         </td>
-                        <td className="text-xs text-muted">{t.client_name ?? "—"}</td>
-                        <td>
+                        <td className="text-xs text-muted" data-label="Cliente">{t.client_name ?? "—"}</td>
+                        <td data-label="Etapa">
                           <Chip tone={t.status === "em_revisao" ? "warn" : "brand"}>
                             {TASK_COLUMNS.find((c) => c.value === t.status)?.label ?? t.status}
                           </Chip>
                         </td>
-                        <td className={`num text-xs ${atrasada(t) ? "font-semibold text-bad" : "text-muted"}`}>
+                        <td className={`num text-xs ${atrasada(t) ? "font-semibold text-bad" : "text-muted"}`} data-label="Prazo">
                           {t.due_date ?? "—"}
                         </td>
-                        <td className="num text-muted">{t.points}</td>
+                        <td className="num text-muted" data-label="Pontos">{t.points}</td>
                       </tr>
                     ))}
                   </tbody>

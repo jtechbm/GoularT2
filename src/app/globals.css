@@ -367,6 +367,107 @@ body {
   animation: fadeslide 0.25s ease-out;
 }
 
+/* ---------------------------------------------------------------- celular
+
+   A equipe opera pelo celular. Tres coisas quebram primeiro numa tela
+   pequena: area de toque, tabela larga e formulario espremido. */
+
+@media (max-width: 640px) {
+  /* Area de toque. O alvo de 44px e a recomendacao da Apple e da Google, e
+     existe porque a ponta do dedo cobre mais que o cursor do mouse. Botao
+     pequeno demais faz a pessoa errar e desfazer, o que custa mais tempo
+     do que o espaco economizado. */
+  .btn {
+    min-height: 44px;
+    padding: 0.7rem 1.1rem;
+  }
+  .btn-sm {
+    min-height: 38px;
+    padding: 0.5rem 0.85rem;
+    font-size: 0.82rem;
+  }
+
+  .input,
+  .select,
+  .textarea {
+    /* abaixo de 16px o iOS da zoom sozinho ao focar o campo, e a pagina
+       fica desalinhada depois */
+    font-size: 16px;
+    min-height: 44px;
+  }
+
+  /* Tabela vira lista. Cada linha vira um bloco e cada celula ganha o
+     rotulo da coluna na frente, tirado do atributo data-label. Rolagem
+     horizontal em tabela de oito colunas nao se usa no celular: a pessoa
+     perde a primeira coluna de vista e nao sabe mais de quem e a linha. */
+  table.data.responsiva thead {
+    display: none;
+  }
+  table.data.responsiva,
+  table.data.responsiva tbody,
+  table.data.responsiva tr,
+  table.data.responsiva td {
+    display: block;
+    width: 100%;
+  }
+  table.data.responsiva tr {
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    margin-bottom: 0.6rem;
+    padding: 0.2rem 0;
+    background: var(--surface);
+  }
+  table.data.responsiva td {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.75rem;
+    text-align: right;
+    border: 0;
+    padding: 0.5rem 0.85rem;
+  }
+  table.data.responsiva td::before {
+    content: attr(data-label);
+    font-size: 0.7rem;
+    color: var(--text-dim);
+    text-align: left;
+    flex-shrink: 0;
+  }
+  /* celula sem rotulo (acoes) ocupa a linha inteira */
+  table.data.responsiva td:not([data-label]) {
+    justify-content: flex-end;
+  }
+  table.data.responsiva td.num {
+    text-align: right;
+  }
+
+  /* o quadro de tarefas rola na horizontal, uma coluna por vez */
+  .quadro-colunas {
+    scroll-snap-type: x mandatory;
+    -webkit-overflow-scrolling: touch;
+  }
+  .quadro-colunas > section {
+    scroll-snap-align: start;
+    width: 85vw;
+    max-width: 320px;
+  }
+
+  /* cartao nunca corta texto: o titulo quebra em vez de sumir */
+  .cartao-tarefa {
+    word-break: break-word;
+  }
+}
+
+/* o menu lateral aberto no celular cobre a tela e trava o fundo */
+@media (max-width: 1023px) {
+  .app-shell nav[data-aberto="sim"] {
+    position: fixed;
+    inset: 0;
+    z-index: 50;
+    overflow-y: auto;
+  }
+}
+
 /* ---------------------------------------------------------------- impressao
    O PDF do relatorio sai pela impressao do navegador. Aqui a pagina perde a
    navegacao, os fundos escuros e as sombras: papel branco com texto preto

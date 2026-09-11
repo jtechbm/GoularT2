@@ -41,7 +41,7 @@ function Cartao({
 
   return (
     <div
-      className={`rounded-[10px] border bg-surface px-3 py-2.5 ${
+      className={`cartao-tarefa rounded-[10px] border bg-surface px-3 py-2.5 ${
         late ? "border-bad/40" : "border-line"
       }`}
     >
@@ -134,7 +134,7 @@ export function Quadro({
 }) {
   return (
     <div className="table-wrap">
-      <div className="flex min-w-max gap-3 pb-2">
+      <div className="quadro-colunas flex min-w-max gap-3 overflow-x-auto pb-2">
         {TASK_COLUMNS.map((col) => {
           const lista = porColuna[col.value] ?? [];
           return (

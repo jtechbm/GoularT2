@@ -64,7 +64,7 @@ export function TabMetas({
         >
           {progresso.length ? (
             <div className="table-wrap">
-              <table className="data">
+              <table className="data responsiva">
                 <thead>
                   <tr>
                     <th>Meta</th>
@@ -77,16 +77,16 @@ export function TabMetas({
                 <tbody>
                   {progresso.map((p) => (
                     <tr key={p.key}>
-                      <td>
+                      <td data-label="Meta">
                         <span className="text-sm text-ink">{p.label}</span>
                         {p.hint && <span className="block text-[0.7rem] text-dim">{p.hint}</span>}
                       </td>
-                      <td className="num text-muted">{valorFormatado(p.goal, p.format)}</td>
-                      <td className="num font-semibold text-ink">{valorFormatado(p.realized, p.format)}</td>
-                      <td className={`num font-semibold ${p.bom ? "text-ok" : "text-bad"}`}>
+                      <td className="num text-muted" data-label="Combinado">{valorFormatado(p.goal, p.format)}</td>
+                      <td className="num font-semibold text-ink" data-label="Realizado">{valorFormatado(p.realized, p.format)}</td>
+                      <td className={`num font-semibold ${p.bom ? "text-ok" : "text-bad"}`} data-label="Alcançado">
                         {Number.isFinite(p.pct) ? pct(p.pct) : "—"}
                       </td>
-                      <td className="num">
+                      <td className="num" data-label="Situação">
                         <Chip tone={p.bom ? "ok" : "bad"}>
                           {p.position === "dentro" ? "na meta" : p.position === "acima" ? "acima" : "abaixo"}
                         </Chip>
@@ -107,7 +107,7 @@ export function TabMetas({
         {porLoja.length > 0 && (
           <Card title="Metas por loja" subtitle="Detalhamento além da meta geral" bodyClassName="p-0">
             <div className="table-wrap">
-              <table className="data">
+              <table className="data responsiva">
                 <thead>
                   <tr>
                     <th>Loja</th>
@@ -120,11 +120,11 @@ export function TabMetas({
                 <tbody>
                   {porLoja.map((g) => (
                     <tr key={g.id}>
-                      <td className="text-sm text-ink">{marketplaceLabel(g.marketplace ?? "")}</td>
-                      <td className="num text-muted">{g.revenue === null ? "—" : brl(g.revenue)}</td>
-                      <td className="num text-muted">{g.orders === null ? "—" : num(g.orders)}</td>
-                      <td className="num text-muted">{g.ads_budget === null ? "—" : brl(g.ads_budget)}</td>
-                      <td className="num text-muted">{g.min_roas === null ? "—" : `${g.min_roas.toFixed(2)}x`}</td>
+                      <td className="text-sm text-ink" data-label="Loja">{marketplaceLabel(g.marketplace ?? "")}</td>
+                      <td className="num text-muted" data-label="Faturamento">{g.revenue === null ? "—" : brl(g.revenue)}</td>
+                      <td className="num text-muted" data-label="Pedidos">{g.orders === null ? "—" : num(g.orders)}</td>
+                      <td className="num text-muted" data-label="Teto de Ads">{g.ads_budget === null ? "—" : brl(g.ads_budget)}</td>
+                      <td className="num text-muted" data-label="ROAS mínimo">{g.min_roas === null ? "—" : `${g.min_roas.toFixed(2)}x`}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -136,7 +136,7 @@ export function TabMetas({
         {historico.length > 1 && (
           <Card title="Histórico das metas" subtitle="Faturamento combinado mês a mês" bodyClassName="p-0">
             <div className="table-wrap">
-              <table className="data">
+              <table className="data responsiva">
                 <thead>
                   <tr>
                     <th>Mês</th>
@@ -149,11 +149,11 @@ export function TabMetas({
                 <tbody>
                   {historico.map((h) => (
                     <tr key={h.id}>
-                      <td className="text-xs text-muted">{monthLabel(h.ref_month)}</td>
-                      <td className="num text-muted">{h.revenue === null ? "—" : brl(h.revenue)}</td>
-                      <td className="num text-muted">{h.orders === null ? "—" : num(h.orders)}</td>
-                      <td className="num text-muted">{h.min_margin === null ? "—" : pct(h.min_margin)}</td>
-                      <td className="num text-muted">{h.ads_budget === null ? "—" : brl(h.ads_budget)}</td>
+                      <td className="text-xs text-muted" data-label="Mês">{monthLabel(h.ref_month)}</td>
+                      <td className="num text-muted" data-label="Faturamento">{h.revenue === null ? "—" : brl(h.revenue)}</td>
+                      <td className="num text-muted" data-label="Pedidos">{h.orders === null ? "—" : num(h.orders)}</td>
+                      <td className="num text-muted" data-label="Margem mínima">{h.min_margin === null ? "—" : pct(h.min_margin)}</td>
+                      <td className="num text-muted" data-label="Teto de Ads">{h.ads_budget === null ? "—" : brl(h.ads_budget)}</td>
                     </tr>
                   ))}
                 </tbody>

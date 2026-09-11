@@ -130,7 +130,7 @@ export default async function ClientesPage({
 
         {rows.length ? (
           <div className="table-wrap">
-            <table className="data">
+            <table className="data responsiva">
               <thead>
                 <tr>
                   <th>Cliente</th>
@@ -149,7 +149,7 @@ export default async function ClientesPage({
               <tbody>
                 {rows.map((c) => (
                   <tr key={c.id}>
-                    <td>
+                    <td data-label="Cliente">
                       <Link href={`/clientes/${c.id}`} className="block min-w-40">
                         <span className="block font-semibold text-ink hover:text-brand">{c.name}</span>
                         <span className="mt-1 flex items-center gap-1.5">
@@ -163,7 +163,7 @@ export default async function ClientesPage({
                         </span>
                       </Link>
                     </td>
-                    <td>
+                    <td data-label="Responsável">
                       {c.owner_name ? (
                         <span className="flex items-center gap-2">
                           <Avatar name={c.owner_name} color={c.owner_color} size={24} />
@@ -173,8 +173,8 @@ export default async function ClientesPage({
                         <Chip tone="warn">definir</Chip>
                       )}
                     </td>
-                    <td className="num text-muted">{num(c.team_size)}</td>
-                    <td>
+                    <td className="num text-muted" data-label="Equipe">{num(c.team_size)}</td>
+                    <td data-label="Canais">
                       <span className="flex flex-wrap gap-1">
                         {c.marketplaces ? (
                           c.marketplaces.split(",").map((m) => <MarketplaceChip key={m} value={m} />)
@@ -183,17 +183,17 @@ export default async function ClientesPage({
                         )}
                       </span>
                     </td>
-                    <td className="num font-semibold text-ink">{brlShort(c.revenue)}</td>
-                    <td className="num">{brlShort(c.profit)}</td>
-                    <td className="num text-muted">{brlShort(c.ads)}</td>
-                    <td className="num">
+                    <td className="num font-semibold text-ink" data-label="Faturamento">{brlShort(c.revenue)}</td>
+                    <td className="num" data-label="Lucro">{brlShort(c.profit)}</td>
+                    <td className="num text-muted" data-label="Ads">{brlShort(c.ads)}</td>
+                    <td className="num" data-label="vs. ant.">
                       <Delta value={growth(c.revenue, c.prev_revenue)} />
                     </td>
-                    <td className="num">
+                    <td className="num" data-label="Tarefas">
                       {c.open_tasks > 0 ? <Chip tone="accent">{c.open_tasks}</Chip> : <span className="text-dim">—</span>}
                     </td>
-                    <td>{scores.has(c.id) && <ScoreChip score={scores.get(c.id)!} mostrarMotivo />}</td>
-                    <td className="text-xs text-dim">{c.last_note_at ? dateBR(c.last_note_at) : "—"}</td>
+                    <td data-label="Saúde">{scores.has(c.id) && <ScoreChip score={scores.get(c.id)!} mostrarMotivo />}</td>
+                    <td className="text-xs text-dim" data-label="Última nota">{c.last_note_at ? dateBR(c.last_note_at) : "—"}</td>
                   </tr>
                 ))}
               </tbody>
