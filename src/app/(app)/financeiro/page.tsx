@@ -11,6 +11,7 @@ import {
   ownStoreTotals,
   clientRows,
   procedenciaDoMes,
+  carteiraCobrancas,
 } from "@/lib/queries";
 import { brl, brlShort, currentMonth, dateBR, lastMonths, monthLabel, pct } from "@/lib/format";
 import { Card, Chip, Empty, Field, PageHeader, Stat } from "@/components/ui";
@@ -20,6 +21,8 @@ import { MonthPicker } from "@/components/month-picker";
 import { ChartLegend, Donut } from "@/components/charts";
 import { IconBarChart, IconDollar, IconReceipt, IconSync, IconTrendUp } from "@/components/icons";
 import {
+  baixarCobrancaAction,
+  estornarCobrancaAction,
   ajustarCobrancaAction,
   fecharCobrancaAction,
   reabrirCobrancaAction,
@@ -32,7 +35,13 @@ import {
   toggleExpensePaidAction,
   updateChargeAction,
 } from "@/lib/actions/financeiro";
-import { EXPENSE_CATEGORIES, expenseCategoryLabel, marketplaceLabel } from "@/lib/types";
+import {
+  chargeSituacao,
+  EXPENSE_CATEGORIES,
+  expenseCategoryLabel,
+  marketplaceLabel,
+  METODOS_PAGAMENTO,
+} from "@/lib/types";
 
 const ABAS = [
   { key: "receita", label: "Receita e cobrança" },
@@ -49,9 +58,6 @@ const CAT_COLOR = [
   "var(--text-dim)",
 ];
 
-function isLate(due: string | null, status: string): boolean {
-  return Boolean(due && status === "pendente" && new Date(`${due}T23:59:59`) < new Date());
-}
 
 export default async function FinanceiroPage({
   searchParams,
@@ -86,13 +92,21 @@ export default async function FinanceiroPage({
   const propria = await ownStoreTotals(ref);
   const lojasProprias = propria.stores > 0 ? await clientRows(ref, "propria") : [];
   const procedencia = await procedenciaDoMes(ref);
+  const carteira = await carteiraCobrancas(ref);
+
+  // filtros da lista de cobranças
+  const chargesFiltradas = charges.filter((c) => {
+    if (sp.cliente && c.client_id !== sp.cliente) return false;
+    if (sp.status && chargeSituacao(c) !== sp.status) return false;
+    return true;
+  });
 
   // o dinheiro do Kadu vem de duas fontes: o que ele cobra dos clientes
   // e o que a loja dele mesmo dá de lucro
   const entradas = totals.billed + propria.profit;
   const profit = entradas - totals.expenses;
   const margin = entradas ? profit / entradas : 0;
-  const late = charges.filter((c) => isLate(c.due_date, c.status));
+  const late = charges.filter((c) => chargeSituacao(c) === "atrasado");
   const today = new Date().toISOString().slice(0, 10);
 
   return (
@@ -253,12 +267,72 @@ export default async function FinanceiroPage({
               recalculada{Number(sp.fechadas) === 1 ? "" : "s"}. Os valores enviados ao cliente continuam valendo.
             </div>
           )}
+          <div className="mb-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <Stat label="Faturado no mês" value={brl(carteira.faturado)} tone="brand" />
+            <Stat
+              label="Recebido"
+              value={brl(carteira.recebido)}
+              hint={carteira.faturado ? `${pct(carteira.recebido / carteira.faturado)} do faturado` : "—"}
+              tone="ok"
+            />
+            <Stat
+              label="Vencido e não pago"
+              value={brl(carteira.vencido)}
+              hint={
+                carteira.vencidas
+                  ? `${carteira.vencidas} ${carteira.vencidas === 1 ? "cobrança" : "cobranças"} · inadimplência ${pct(carteira.inadimplencia)}`
+                  : "nenhuma vencida"
+              }
+              tone={carteira.vencido ? "bad" : "ok"}
+            />
+            <Stat
+              label="Receita recorrente"
+              value={brl(carteira.recorrente)}
+              hint={`${carteira.contratos} contratos ativos, previsão para o próximo mês`}
+              tone="accent"
+            />
+          </div>
+
+          <Card className="mb-3" bodyClassName="p-4">
+            <form className="grid gap-3 sm:grid-cols-4">
+              <input type="hidden" name="mes" value={ref} />
+              <input type="hidden" name="aba" value={aba} />
+              <Field label="Cliente">
+                <select name="cliente" defaultValue={sp.cliente ?? ""} className="select">
+                  <option value="">Todos</option>
+                  {charges.map((c) => (
+                    <option key={c.client_id} value={c.client_id}>
+                      {c.client_name}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <Field label="Situação">
+                <select name="status" defaultValue={sp.status ?? ""} className="select">
+                  <option value="">Todas</option>
+                  <option value="pendente">A receber</option>
+                  <option value="atrasado">Atrasadas</option>
+                  <option value="pago">Recebidas</option>
+                  <option value="cancelado">Canceladas</option>
+                </select>
+              </Field>
+              <div className="flex items-end gap-2 sm:col-span-2">
+                <SubmitButton variant="ghost" size="sm">
+                  Filtrar
+                </SubmitButton>
+                <Link href={`/financeiro?mes=${ref}&aba=${aba}`} className="btn btn-ghost btn-sm">
+                  Limpar
+                </Link>
+              </div>
+            </form>
+          </Card>
+
           <Card
             title="Cobranças do mês"
             subtitle="Fee do contrato + comissão sobre o faturamento do cliente"
             bodyClassName="p-0"
           >
-            {charges.length ? (
+            {chargesFiltradas.length ? (
               <div className="table-wrap">
                 <table className="data">
                   <thead>
@@ -275,7 +349,7 @@ export default async function FinanceiroPage({
                     </tr>
                   </thead>
                   <tbody>
-                    {charges.map((c) => (
+                    {chargesFiltradas.map((c) => (
                       <tr key={c.id}>
                         <td>
                           <Link
@@ -310,31 +384,88 @@ export default async function FinanceiroPage({
                             </span>
                           )}
                         </td>
-                        <td className={`text-xs ${isLate(c.due_date, c.status) ? "text-bad" : "text-muted"}`}>
+                        <td className={`text-xs ${chargeSituacao(c) === "atrasado" ? "text-bad" : "text-muted"}`}>
                           {dateBR(c.due_date)}
                         </td>
                         <td>
-                          {isLate(c.due_date, c.status) ? (
-                            <Chip tone="bad">Atrasado</Chip>
-                          ) : c.status === "pago" ? (
-                            <Chip tone="ok">Recebido</Chip>
-                          ) : c.status === "cancelado" ? (
-                            <Chip tone="neutral">Cancelado</Chip>
-                          ) : (
-                            <Chip tone="warn">A receber</Chip>
+                          {(() => {
+                            const sit = chargeSituacao(c);
+                            const tom =
+                              sit === "atrasado" ? "bad" : sit === "pago" ? "ok" : sit === "cancelado" ? "neutral" : "warn";
+                            const rotulo =
+                              sit === "atrasado"
+                                ? "Atrasado"
+                                : sit === "pago"
+                                  ? "Recebido"
+                                  : sit === "cancelado"
+                                    ? "Cancelado"
+                                    : "A receber";
+                            return <Chip tone={tom}>{rotulo}</Chip>;
+                          })()}
+                          {c.paid_at && (
+                            <div className="mt-0.5 text-xs text-dim">
+                              {dateBR(c.paid_at)}
+                              {c.method && ` · ${c.method}`}
+                              {c.receipt_url && (
+                                <a
+                                  href={c.receipt_url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="ml-1 text-brand hover:underline"
+                                >
+                                  comprovante
+                                </a>
+                              )}
+                            </div>
                           )}
-                          {c.paid_at && <div className="mt-0.5 text-xs text-dim">{dateBR(c.paid_at)}</div>}
                         </td>
                         <td>
                           <div className="flex justify-end gap-1.5">
-                            <form action={setChargeStatusAction}>
-                              <input type="hidden" name="charge_id" value={c.id} />
-                              <input type="hidden" name="ref_month" value={ref} />
-                              <input type="hidden" name="status" value={c.status === "pago" ? "pendente" : "pago"} />
-                              <SubmitButton variant={c.status === "pago" ? "ghost" : "primary"} size="sm">
-                                {c.status === "pago" ? "Reabrir" : "Dar baixa"}
-                              </SubmitButton>
-                            </form>
+                            {c.status === "pago" ? (
+                              <form action={estornarCobrancaAction}>
+                                <input type="hidden" name="charge_id" value={c.id} />
+                                <input type="hidden" name="ref_month" value={ref} />
+                                <SubmitButton variant="ghost" size="sm" confirm="Desfazer a baixa desta cobrança?">
+                                  Estornar
+                                </SubmitButton>
+                              </form>
+                            ) : (
+                              <details className="relative">
+                                <summary className="btn btn-primary btn-sm cursor-pointer list-none">
+                                  Dar baixa
+                                </summary>
+                                <form
+                                  action={baixarCobrancaAction}
+                                  className="absolute right-0 z-10 mt-1 w-64 space-y-2 rounded-[12px] border border-line bg-surface p-3 text-left shadow-lg"
+                                >
+                                  <input type="hidden" name="charge_id" value={c.id} />
+                                  <input type="hidden" name="ref_month" value={ref} />
+                                  <Field label="Recebido em">
+                                    <input
+                                      name="paid_at"
+                                      type="date"
+                                      defaultValue={new Date().toISOString().slice(0, 10)}
+                                      className="input"
+                                    />
+                                  </Field>
+                                  <Field label="Método">
+                                    <select name="method" className="select" defaultValue="Pix">
+                                      {METODOS_PAGAMENTO.map((m) => (
+                                        <option key={m} value={m}>
+                                          {m}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  </Field>
+                                  <Field label="Comprovante" hint="Link do recibo ou do extrato.">
+                                    <input name="receipt_url" type="url" className="input" placeholder="https://" />
+                                  </Field>
+                                  <SubmitButton size="sm" className="w-full">
+                                    Confirmar recebimento
+                                  </SubmitButton>
+                                </form>
+                              </details>
+                            )}
                             {c.locked === 1 ? (
                               <form action={reabrirCobrancaAction}>
                                 <input type="hidden" name="charge_id" value={c.id} />

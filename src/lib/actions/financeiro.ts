@@ -417,3 +417,51 @@ export async function ajustarCobrancaAction(formData: FormData) {
   refresh();
   redirect(`/financeiro?mes=${refMonth}&ok=1`);
 }
+
+
+/**
+ * Dá baixa numa cobrança, com o que a contabilidade precisa depois.
+ *
+ * Marcar "pago" sem data, método e comprovante resolve a tela e não
+ * resolve a conferência. Três meses depois, ninguém lembra se aquele Pix
+ * entrou e em qual conta.
+ */
+export async function baixarCobrancaAction(formData: FormData) {
+  const user = await assertFinance();
+  const chargeId = str(formData.get("charge_id"));
+  const refMonth = str(formData.get("ref_month"));
+
+  const pagoEm = strOrNull(formData.get("paid_at")) ?? new Date().toISOString().slice(0, 10);
+  const metodo = strOrNull(formData.get("method"));
+  const comprovante = strOrNull(formData.get("receipt_url"));
+
+  await run(
+    "UPDATE agency_charges SET status='pago', paid_at=?, method=?, receipt_url=?, updated_at=? WHERE id=?",
+    pagoEm,
+    metodo,
+    comprovante,
+    now(),
+    chargeId,
+  );
+  await eventoCobranca(chargeId, "recebida", user.id, `${metodo ?? "sem método"} em ${pagoEm}`);
+
+  refresh();
+  redirect(`/financeiro?mes=${refMonth}&ok=1`);
+}
+
+/** Desfaz a baixa, limpando o que só faz sentido em cobrança paga. */
+export async function estornarCobrancaAction(formData: FormData) {
+  const user = await assertFinance();
+  const chargeId = str(formData.get("charge_id"));
+  const refMonth = str(formData.get("ref_month"));
+
+  await run(
+    "UPDATE agency_charges SET status='pendente', paid_at=NULL, method=NULL, receipt_url=NULL, updated_at=? WHERE id=?",
+    now(),
+    chargeId,
+  );
+  await eventoCobranca(chargeId, "estornada", user.id);
+
+  refresh();
+  redirect(`/financeiro?mes=${refMonth}&ok=1`);
+}

@@ -1278,3 +1278,72 @@ export async function sincronizacoes(limit = 20, accountId?: string) {
     limit,
   );
 }
+
+
+/**
+ * Retrato da carteira de cobranças.
+ *
+ * Inadimplência conta o que venceu e não entrou, não o que está em aberto:
+ * cobrança com vencimento no dia 10 não é calote no dia 3.
+ */
+export async function carteiraCobrancas(refMonth: string) {
+  const hoje = new Date().toISOString().slice(0, 10);
+
+  const linha = await one<{
+    faturado: number;
+    recebido: number;
+    aberto: number;
+    vencido: number;
+    vencidas: number;
+    cancelado: number;
+  }>(
+    `SELECT COALESCE(SUM(total) FILTER (WHERE status <> 'cancelado'), 0)                 AS faturado,
+            COALESCE(SUM(total) FILTER (WHERE status = 'pago'), 0)                       AS recebido,
+            COALESCE(SUM(total) FILTER (WHERE status = 'pendente'), 0)                   AS aberto,
+            COALESCE(SUM(total) FILTER (WHERE status = 'pendente'
+                                          AND due_date IS NOT NULL AND due_date < ?), 0) AS vencido,
+            COUNT(*) FILTER (WHERE status = 'pendente'
+                               AND due_date IS NOT NULL AND due_date < ?)                AS vencidas,
+            COALESCE(SUM(total) FILTER (WHERE status = 'cancelado'), 0)                  AS cancelado
+       FROM agency_charges WHERE ref_month = ?`,
+    hoje,
+    hoje,
+    refMonth,
+  );
+
+  // receita recorrente prevista: o que os contratos ativos rendem por mês,
+  // independente de ter cobrança gerada
+  const recorrente = await one<{ fee: number; clientes: number }>(
+    `SELECT COALESCE(SUM(monthly_fee), 0) AS fee, COUNT(*) AS clientes
+       FROM clients
+      WHERE kind = 'cliente' AND status NOT IN ('encerrado', 'pausado') AND monthly_fee > 0`,
+  );
+
+  const base = linha ?? { faturado: 0, recebido: 0, aberto: 0, vencido: 0, vencidas: 0, cancelado: 0 };
+
+  return {
+    ...base,
+    inadimplencia: base.faturado ? base.vencido / base.faturado : 0,
+    recorrente: recorrente?.fee ?? 0,
+    contratos: recorrente?.clientes ?? 0,
+  };
+}
+
+/** Ajustes e eventos de uma cobrança, para a tela de detalhe. */
+export async function historicoCobranca(chargeId: string) {
+  const [ajustes, eventos] = await Promise.all([
+    all<{ id: string; amount: number; reason: string; created_at: string; autor: string | null }>(
+      `SELECT a.id, a.amount, a.reason, a.created_at, u.name AS autor
+         FROM charge_adjustments a LEFT JOIN users u ON u.id = a.created_by
+        WHERE a.charge_id = ? ORDER BY a.created_at`,
+      chargeId,
+    ),
+    all<{ id: string; type: string; detail: string | null; created_at: string; autor: string | null }>(
+      `SELECT e.id, e.type, e.detail, e.created_at, u.name AS autor
+         FROM charge_events e LEFT JOIN users u ON u.id = e.actor_id
+        WHERE e.charge_id = ? ORDER BY e.created_at DESC`,
+      chargeId,
+    ),
+  ]);
+  return { ajustes, eventos };
+}
