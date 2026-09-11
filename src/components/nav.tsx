@@ -13,6 +13,7 @@ import {
   IconCheckSquare,
   IconDollar,
   IconAlert,
+  IconBell,
   IconHome,
   IconMegaphone,
   IconMenu,
@@ -31,6 +32,7 @@ const NAV: { href: string; label: string; Icon: typeof IconHome; exact?: boolean
   { href: "/financeiro", label: "Financeiro", Icon: IconDollar, roles: ["admin", "gestor"] },
   { href: "/tarefas", label: "Tarefas", Icon: IconCheckSquare },
   { href: "/equipe", label: "Equipe", Icon: IconUsers },
+  { href: "/notificacoes", label: "Notificações", Icon: IconBell },
   { href: "/chat", label: "Chat", Icon: IconChat },
   // a tela das conexões é do admin; gestor e membro sincronizam pelo cliente
   { href: "/integracoes", label: "Integrações", Icon: IconSync, roles: ["admin"] },
@@ -48,12 +50,23 @@ export function Wordmark({ size = "md" }: { size?: "md" | "lg" }) {
   );
 }
 
-export function Sidebar({ user, pendingTasks = 0 }: { user: User; pendingTasks?: number }) {
+export function Sidebar({
+  user,
+  pendingTasks = 0,
+  naoLidas = 0,
+}: {
+  user: User;
+  pendingTasks?: number;
+  naoLidas?: number;
+}) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
 
   const items = NAV.filter((i) => !i.roles || i.roles.includes(user.role)).map(({ href, label, Icon, exact }) => {
     const active = exact ? pathname === href : pathname === href || pathname.startsWith(`${href}/`);
+    // o contador fica no item, não num sininho separado: um número no menu
+    // que a pessoa já usa é mais visto do que um ícone a mais no topo
+    const badge = href === "/notificacoes" ? naoLidas : href === "/tarefas" ? pendingTasks : 0;
     return (
       <Link
         key={href}
@@ -67,9 +80,13 @@ export function Sidebar({ user, pendingTasks = 0 }: { user: User; pendingTasks?:
       >
         <Icon size={19} className={active ? "text-brand" : "text-dim"} />
         <span className="flex-1">{label}</span>
-        {href === "/tarefas" && pendingTasks > 0 && (
-          <span className="rounded-full bg-brand px-1.5 py-0.5 text-[0.65rem] font-semibold text-white">
-            {pendingTasks}
+        {badge > 0 && (
+          <span
+            className={`rounded-full px-1.5 py-0.5 text-[0.65rem] font-semibold text-white ${
+              href === "/notificacoes" ? "bg-accent" : "bg-brand"
+            }`}
+          >
+            {badge > 99 ? "99+" : badge}
           </span>
         )}
       </Link>

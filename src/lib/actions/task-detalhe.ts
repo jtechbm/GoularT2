@@ -6,6 +6,7 @@ import { id, now, one, run } from "@/lib/db";
 import { assertCan, requireUser } from "@/lib/auth";
 import { can } from "@/lib/permissions";
 import { str, strOrNull } from "@/lib/format";
+import { notificar, notificarVarios, resolverMencoes, resumir } from "@/lib/notificacoes";
 
 function refresh(taskId: string) {
   revalidatePath("/tarefas");
@@ -131,7 +132,7 @@ export async function addTaskCommentAction(formData: FormData) {
   const body = str(formData.get("body")).trim();
   if (!body) redirect(`/tarefas/${taskId}`);
 
-  await tarefaOuErro(taskId);
+  const task = await tarefaOuErro(taskId);
   await run(
     "INSERT INTO task_comments (id, task_id, user_id, body, created_at) VALUES (?,?,?,?,?)",
     id(),
@@ -140,6 +141,35 @@ export async function addTaskCommentAction(formData: FormData) {
     body,
     now(),
   );
+
+  const titulo = await one<{ title: string }>("SELECT title FROM tasks WHERE id = ?", taskId);
+  const href = `/tarefas/${taskId}`;
+
+  // quem foi citado recebe aviso de menção; o responsável recebe aviso de
+  // comentário. Quem é as duas coisas recebe só a menção, que é mais
+  // específica — dois avisos do mesmo comentário viram ruído.
+  const { ids: mencionados } = await resolverMencoes(body);
+  await notificarVarios(mencionados, {
+    actorId: user.id,
+    type: "mencao",
+    title: `${user.name} citou você em "${titulo?.title ?? "uma tarefa"}"`,
+    body: resumir(body),
+    href,
+    taskId,
+  });
+
+  if (task.assignee_id && !mencionados.includes(task.assignee_id)) {
+    await notificar({
+      userId: task.assignee_id,
+      actorId: user.id,
+      type: "comentario",
+      title: `${user.name} comentou em "${titulo?.title ?? "sua tarefa"}"`,
+      body: resumir(body),
+      href,
+      taskId,
+    });
+  }
+
   refresh(taskId);
   redirect(`/tarefas/${taskId}`);
 }

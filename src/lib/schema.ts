@@ -426,6 +426,30 @@ CREATE TABLE IF NOT EXISTS charge_events (
 CREATE INDEX IF NOT EXISTS idx_ajuste_cobranca ON charge_adjustments(charge_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_evento_cobranca ON charge_events(charge_id, created_at DESC);
 
+-- Notificacoes.
+--
+-- Uma linha por pessoa avisada, e nao uma por evento. O mesmo comentario
+-- que menciona tres pessoas gera tres linhas, porque cada uma le e marca
+-- como lida no seu tempo. Com uma linha so por evento, marcar como lida
+-- apagaria o aviso dos outros.
+CREATE TABLE IF NOT EXISTS notifications (
+  id         text PRIMARY KEY,
+  user_id    text NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  -- quem provocou; null quando foi o proprio sistema (prazo vencendo)
+  actor_id   text REFERENCES users(id) ON DELETE SET NULL,
+  type       text NOT NULL,
+  title      text NOT NULL,
+  body       text,
+  -- para onde o clique leva
+  href       text NOT NULL,
+  task_id    text REFERENCES tasks(id) ON DELETE CASCADE,
+  client_id  text REFERENCES clients(id) ON DELETE CASCADE,
+  read_at    text,
+  created_at text NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_notif_pessoa ON notifications(user_id, read_at, created_at DESC);
+
 CREATE INDEX IF NOT EXISTS idx_charges_month  ON agency_charges(ref_month, status);
 CREATE INDEX IF NOT EXISTS idx_expenses_month ON agency_expenses(ref_month);
 
@@ -463,6 +487,7 @@ CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
 
 /** Tabelas na ordem segura para limpeza (filhas antes das pais). */
 export const TABLES = [
+  "notifications",
   "charge_events",
   "charge_adjustments",
   "user_events",

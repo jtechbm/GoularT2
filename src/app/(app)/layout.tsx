@@ -25,9 +25,15 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       user.id,
     ))?.n ?? 0;
 
+  const naoLidas =
+    (await one<{ n: number }>(
+      "SELECT COUNT(*) n FROM notifications WHERE user_id = ? AND read_at IS NULL",
+      user.id,
+    ))?.n ?? 0;
+
   return (
     <div className="app-shell lg:flex">
-      <Sidebar user={user} pendingTasks={pending} />
+      <Sidebar user={user} pendingTasks={pending} naoLidas={naoLidas} />
       <main className="min-w-0 flex-1 px-4 py-6 sm:px-6 lg:px-8">
         <div className="mx-auto max-w-7xl">{children}</div>
       </main>

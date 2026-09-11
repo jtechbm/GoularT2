@@ -7,6 +7,7 @@ import { assertCan, assertClientAccess, requireUser } from "@/lib/auth";
 import { can } from "@/lib/permissions";
 import { str, strOrNull, toNumber } from "@/lib/format";
 import { avaliarOnboardingDoCliente } from "@/lib/queries";
+import { notificarVarios, resolverMencoes, resumir } from "@/lib/notificacoes";
 import type { OnboardingItem } from "@/lib/onboarding";
 
 async function touch(clientId: string) {
@@ -269,6 +270,19 @@ export async function addNoteAction(formData: FormData) {
     formData.get("pinned") ? 1 : 0,
     now(),
   );
+  // anotação de cliente também aceita @ da equipe: a conversa acontece
+  // onde o assunto está, não num chat separado
+  const cliente = await one<{ name: string }>("SELECT name FROM clients WHERE id = ?", clientId);
+  const { ids: mencionados } = await resolverMencoes(body);
+  await notificarVarios(mencionados, {
+    actorId: user.id,
+    type: "mencao",
+    title: `${user.name} citou você numa anotação de ${cliente?.name ?? "um cliente"}`,
+    body: resumir(body),
+    href: `/clientes/${clientId}?tab=historico`,
+    clientId,
+  });
+
   await touch(clientId);
   redirect(`/clientes/${clientId}?tab=historico&ok=1`);
 }

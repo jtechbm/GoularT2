@@ -2,12 +2,13 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { id, now, one, run } from "@/lib/db";
+import { all, id, now, one, run } from "@/lib/db";
 import { assertCan, assertClientAccess, requireUser } from "@/lib/auth";
 import { can } from "@/lib/permissions";
 import { str, strOrNull, toNumber } from "@/lib/format";
 import { TASK_PRIORITIES } from "@/lib/types";
 import { calcularPontos } from "@/lib/pontos";
+import { notificar, notificarVarios } from "@/lib/notificacoes";
 
 function refresh() {
   revalidatePath("/tarefas");
@@ -95,7 +96,18 @@ export async function createTaskAction(formData: FormData) {
     0,
     propria ? "registrada pela própria pessoa" : undefined,
   );
-  if (assignee && !propria) await logEvent(taskId, assignee, "assumida", 0, "atribuída na criação");
+  if (assignee && !propria) {
+    await logEvent(taskId, assignee, "assumida", 0, "atribuída na criação");
+    await notificar({
+      userId: assignee,
+      actorId: user.id,
+      type: "atribuicao",
+      title: `${user.name} atribuiu "${title}" a você`,
+      href: `/tarefas/${taskId}`,
+      taskId,
+      clientId,
+    });
+  }
 
   refresh();
   redirect(propria ? `/tarefas/${taskId}` : "/tarefas?ok=1");
@@ -178,6 +190,25 @@ export async function submitTaskAction(formData: FormData) {
     taskId,
   );
   await logEvent(taskId, task.assignee_id ?? user.id, "enviada_revisao");
+
+  // quem revisa precisa saber que chegou trabalho; quem executou não
+  // entra na lista, mesmo sendo gestor, porque não vai aprovar a própria
+  const revisores = await all<{ id: string }>(
+    "SELECT id FROM users WHERE active = 1 AND role IN ('admin','gestor') AND id <> ?",
+    user.id,
+  );
+  const nome = await one<{ title: string }>("SELECT title FROM tasks WHERE id = ?", taskId);
+  await notificarVarios(
+    revisores.map((r) => r.id),
+    {
+      actorId: user.id,
+      type: "revisao",
+      title: `${user.name} mandou "${nome?.title ?? "uma tarefa"}" para revisão`,
+      href: `/tarefas/${taskId}`,
+      taskId,
+    },
+  );
+
   refresh();
   redirect("/tarefas?aba=revisao&ok=1");
 }
@@ -241,6 +272,19 @@ export async function approveTaskAction(formData: FormData) {
     pontos,
     pontos ? nota.motivos.map((m) => `${m.texto}: ${m.valor}`).join(" · ") : "reaprovação, sem novos pontos",
   );
+  if (task.assignee_id) {
+    const nome = await one<{ title: string }>("SELECT title FROM tasks WHERE id = ?", taskId);
+    await notificar({
+      userId: task.assignee_id,
+      actorId: user.id,
+      type: "aprovada",
+      title: `${user.name} aprovou "${nome?.title ?? "sua tarefa"}"`,
+      body: pontos ? `${pontos} pontos liberados.` : "Reaprovação, sem novos pontos.",
+      href: `/tarefas/${taskId}`,
+      taskId,
+    });
+  }
+
   refresh();
   redirect("/tarefas?aba=concluidas&ok=1");
 }
@@ -270,6 +314,20 @@ export async function rejectTaskAction(formData: FormData) {
     id(), taskId, user.id, `Ajuste pedido na revisão: ${motivo}`, now(),
   );
   await logEvent(taskId, user.id, "reprovada", 0, motivo);
+
+  if (task.assignee_id) {
+    const nome = await one<{ title: string }>("SELECT title FROM tasks WHERE id = ?", taskId);
+    await notificar({
+      userId: task.assignee_id,
+      actorId: user.id,
+      type: "reprovada",
+      title: `${user.name} pediu ajuste em "${nome?.title ?? "sua tarefa"}"`,
+      body: motivo,
+      href: `/tarefas/${taskId}`,
+      taskId,
+    });
+  }
+
   refresh();
   redirect("/tarefas?aba=minhas&ok=1");
 }

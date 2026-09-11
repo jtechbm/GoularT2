@@ -47,7 +47,7 @@ export function TabHistorico({
                 rows={6}
                 required
                 className="textarea"
-                placeholder="O que aconteceu, o que foi combinado, o que precisa de atenção…"
+                placeholder="o que aconteceu. Use @nome para avisar alguém."
               />
             </Field>
             <label className="flex items-center gap-2 text-sm text-muted">

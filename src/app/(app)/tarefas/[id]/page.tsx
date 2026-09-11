@@ -335,7 +335,13 @@ export default async function TarefaPage({ params }: { params: Promise<{ id: str
 
             <form action={addTaskCommentAction} className="mt-3 space-y-2 border-t border-line pt-3">
               <input type="hidden" name="task_id" value={task.id} />
-              <textarea name="body" rows={2} required className="textarea" placeholder="escreva um comentário" />
+              <textarea
+                name="body"
+                rows={2}
+                required
+                className="textarea"
+                placeholder="escreva um comentário. Use @nome para avisar alguém."
+              />
               <SubmitButton variant="ghost" size="sm">
                 Comentar
               </SubmitButton>
