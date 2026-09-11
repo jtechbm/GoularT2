@@ -251,6 +251,38 @@ export interface AgencyCharge {
   created_by: string | null;
   created_at: string;
   updated_at: string;
+  /** 1 = fechada: os números não mudam mais, nem por sincronização */
+  locked: number;
+  closed_at: string | null;
+  closed_by: string | null;
+  /** JSON com os números que sustentaram o cálculo no fechamento */
+  snapshot: string | null;
+  /** soma dos ajustes lançados depois do fechamento */
+  adjustments: number;
+  receipt_url: string | null;
+}
+
+export interface ChargeAdjustment {
+  id: string;
+  charge_id: string;
+  amount: number;
+  reason: string;
+  created_by: string | null;
+  created_at: string;
+}
+
+/** O que ficou congelado no fechamento, para a conversa com o cliente. */
+export interface ChargeSnapshot {
+  revenue_base: number;
+  fee: number;
+  commission: number;
+  fee_model: string;
+  commission_pct: number;
+  porMarketplace: { marketplace: string; revenue: number }[];
+  /** de onde vieram os números: api, manual ou os dois */
+  origem: string;
+  /** quando o dado usado foi atualizado pela última vez */
+  dados_de: string | null;
 }
 
 export interface AgencyExpense {
@@ -284,6 +316,24 @@ export const CHARGE_STATUS: { value: ChargeStatus; label: string }[] = [
   { value: "pago", label: "Recebido" },
   { value: "cancelado", label: "Cancelado" },
 ];
+
+/**
+ * "Atrasado" não é um status guardado, é uma leitura da data.
+ *
+ * Se fosse coluna, alguém teria que rodar uma rotina todo dia para virar
+ * pendente em atrasado, e uma cobrança paga no dia seguinte ficaria
+ * marcada como atrasada para sempre. Derivar da data acerta sozinho.
+ */
+export function chargeSituacao(c: {
+  status: string;
+  due_date: string | null;
+}): "pendente" | "pago" | "cancelado" | "atrasado" {
+  if (c.status !== "pendente") return c.status as "pago" | "cancelado";
+  if (c.due_date && new Date(`${c.due_date}T23:59:59`) < new Date()) return "atrasado";
+  return "pendente";
+}
+
+export const METODOS_PAGAMENTO = ["Pix", "Boleto", "Transferência", "Cartão", "Dinheiro", "Outro"];
 
 export function expenseCategoryLabel(value: string): string {
   return EXPENSE_CATEGORIES.find((c) => c.value === value)?.label ?? value;

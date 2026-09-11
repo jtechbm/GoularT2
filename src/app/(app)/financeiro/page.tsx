@@ -20,6 +20,9 @@ import { MonthPicker } from "@/components/month-picker";
 import { ChartLegend, Donut } from "@/components/charts";
 import { IconBarChart, IconDollar, IconReceipt, IconSync, IconTrendUp } from "@/components/icons";
 import {
+  ajustarCobrancaAction,
+  fecharCobrancaAction,
+  reabrirCobrancaAction,
   createExpenseAction,
   deleteChargeAction,
   deleteExpenseAction,
@@ -53,7 +56,17 @@ function isLate(due: string | null, status: string): boolean {
 export default async function FinanceiroPage({
   searchParams,
 }: {
-  searchParams: Promise<{ mes?: string; aba?: string; ok?: string; geradas?: string; atualizadas?: string; repetidas?: string }>;
+  searchParams: Promise<{
+    mes?: string;
+    aba?: string;
+    ok?: string;
+    geradas?: string;
+    atualizadas?: string;
+    repetidas?: string;
+    fechadas?: string;
+    status?: string;
+    cliente?: string;
+  }>;
 }) {
   // dinheiro da agência não é para toda a equipe
   const user = await requirePermission("financeiro");
@@ -234,6 +247,12 @@ export default async function FinanceiroPage({
               </div>
             </Card>
           )}
+          {sp.fechadas && Number(sp.fechadas) > 0 && (
+            <div className="mb-3 rounded-[10px] border border-ok/30 bg-ok-soft px-4 py-2.5 text-sm text-ok">
+              {sp.fechadas} {Number(sp.fechadas) === 1 ? "cobrança fechada não foi" : "cobranças fechadas não foram"}{" "}
+              recalculada{Number(sp.fechadas) === 1 ? "" : "s"}. Os valores enviados ao cliente continuam valendo.
+            </div>
+          )}
           <Card
             title="Cobranças do mês"
             subtitle="Fee do contrato + comissão sobre o faturamento do cliente"
@@ -274,8 +293,23 @@ export default async function FinanceiroPage({
                             <span className="block text-xs text-dim">sobre {brlShort(c.revenue_base)}</span>
                           )}
                         </td>
-                        <td className="num text-muted">{c.extra ? brl(c.extra) : "—"}</td>
-                        <td className="num font-semibold text-ink">{brl(c.total)}</td>
+                        <td className="num text-muted">
+                          {c.extra ? brl(c.extra) : "—"}
+                          {c.adjustments !== 0 && (
+                            <span className={`block text-xs ${c.adjustments > 0 ? "text-warn" : "text-ok"}`}>
+                              ajuste {c.adjustments > 0 ? "+" : ""}
+                              {brlShort(c.adjustments)}
+                            </span>
+                          )}
+                        </td>
+                        <td className="num font-semibold text-ink">
+                          {brl(c.total)}
+                          {c.locked === 1 && (
+                            <span className="block text-[0.65rem] text-ok" title={`Fechada em ${dateBR(c.closed_at)}`}>
+                              fechada
+                            </span>
+                          )}
+                        </td>
                         <td className={`text-xs ${isLate(c.due_date, c.status) ? "text-bad" : "text-muted"}`}>
                           {dateBR(c.due_date)}
                         </td>
@@ -301,13 +335,45 @@ export default async function FinanceiroPage({
                                 {c.status === "pago" ? "Reabrir" : "Dar baixa"}
                               </SubmitButton>
                             </form>
-                            <form action={deleteChargeAction}>
-                              <input type="hidden" name="charge_id" value={c.id} />
-                              <input type="hidden" name="ref_month" value={ref} />
-                              <SubmitButton variant="ghost" size="sm" confirm="Excluir esta cobrança?">
-                                ✕
-                              </SubmitButton>
-                            </form>
+                            {c.locked === 1 ? (
+                              <form action={reabrirCobrancaAction}>
+                                <input type="hidden" name="charge_id" value={c.id} />
+                                <input type="hidden" name="ref_month" value={ref} />
+                                <input
+                                  type="hidden"
+                                  name="motivo"
+                                  value="reaberta manualmente pelo financeiro"
+                                />
+                                <SubmitButton
+                                  variant="ghost"
+                                  size="sm"
+                                  confirm="Reabrir permite que a sincronização recalcule esta cobrança. Continuar?"
+                                >
+                                  Reabrir
+                                </SubmitButton>
+                              </form>
+                            ) : (
+                              <form action={fecharCobrancaAction}>
+                                <input type="hidden" name="charge_id" value={c.id} />
+                                <input type="hidden" name="ref_month" value={ref} />
+                                <SubmitButton
+                                  variant="ghost"
+                                  size="sm"
+                                  confirm="Fechar congela os números desta cobrança. Continuar?"
+                                >
+                                  Fechar
+                                </SubmitButton>
+                              </form>
+                            )}
+                            {c.locked !== 1 && (
+                              <form action={deleteChargeAction}>
+                                <input type="hidden" name="charge_id" value={c.id} />
+                                <input type="hidden" name="ref_month" value={ref} />
+                                <SubmitButton variant="ghost" size="sm" confirm="Excluir esta cobrança?">
+                                  ✕
+                                </SubmitButton>
+                              </form>
+                            )}
                           </div>
                         </td>
                       </tr>

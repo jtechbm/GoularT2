@@ -23,6 +23,19 @@ async function assertFinance() {
  * Cobranças já recebidas ou canceladas não são tocadas — só as pendentes
  * são recalculadas, porque o faturamento do mês ainda pode mudar.
  */
+/** Trilha de tudo que acontece com uma cobrança. */
+async function eventoCobranca(chargeId: string, type: string, actorId: string | null, detail?: string) {
+  await run(
+    "INSERT INTO charge_events (id, charge_id, type, detail, actor_id, created_at) VALUES (?,?,?,?,?,?)",
+    id(),
+    chargeId,
+    type,
+    detail ?? null,
+    actorId,
+    now(),
+  );
+}
+
 export async function generateChargesAction(formData: FormData) {
   const user = await assertFinance();
   const refMonth = str(formData.get("ref_month"));
@@ -45,6 +58,7 @@ export async function generateChargesAction(formData: FormData) {
 
   let criadas = 0;
   let atualizadas = 0;
+  let ignoradas = 0;
 
   for (const c of clients) {
     const revenue =
@@ -60,11 +74,19 @@ export async function generateChargesAction(formData: FormData) {
     const commission = c.fee_model === "fixo" ? 0 : revenue * c.commission_pct;
     const total = fee + commission;
 
-    const existing = await one<{ id: string; status: string; extra: number }>(
-      "SELECT id, status, extra FROM agency_charges WHERE client_id = ? AND ref_month = ?",
+    const existing = await one<{ id: string; status: string; extra: number; locked: number }>(
+      "SELECT id, status, extra, locked FROM agency_charges WHERE client_id = ? AND ref_month = ?",
       c.id,
       refMonth,
     );
+
+    // cobrança fechada não é recalculada, nem que o faturamento mude
+    // depois. Era isto que fazia um número enviado ao cliente mudar em
+    // silêncio na sincronização seguinte.
+    if (existing?.locked === 1) {
+      ignoradas += 1;
+      continue;
+    }
 
     if (!existing) {
       // nada a cobrar e nada configurado: não cria linha vazia
@@ -102,13 +124,20 @@ export async function generateChargesAction(formData: FormData) {
   }
 
   refresh();
-  redirect(`/financeiro?mes=${refMonth}&geradas=${criadas}&atualizadas=${atualizadas}`);
+  redirect(
+    `/financeiro?mes=${refMonth}&geradas=${criadas}&atualizadas=${atualizadas}&fechadas=${ignoradas}`,
+  );
 }
 
 /** Edita uma cobrança (valores avulsos, vencimento, observação). */
 export async function updateChargeAction(formData: FormData) {
-  await assertFinance();
+  const user = await assertFinance();
   const chargeId = str(formData.get("charge_id"));
+
+  const atual = await one<{ locked: number }>("SELECT locked FROM agency_charges WHERE id = ?", chargeId);
+  if (atual?.locked === 1) {
+    throw new Error("Esta cobrança está fechada. Lance um ajuste em vez de alterar o valor original.");
+  }
   const refMonth = str(formData.get("ref_month"));
 
   const fee = toNumber(formData.get("fee"));
@@ -253,4 +282,138 @@ export async function repeatRecurringAction(formData: FormData) {
 
   refresh();
   redirect(`/financeiro?mes=${refMonth}&aba=despesas&repetidas=${anteriores.length}`);
+}
+
+
+/**
+ * Fecha a cobrança: congela os números e guarda de onde eles vieram.
+ *
+ * Depois disto, nem a sincronização nem a tela alteram o valor. O que a
+ * equipe combinar a mais ou a menos entra como ajuste, numa linha própria,
+ * para a diferença ficar visível em vez de sumir dentro do total.
+ */
+export async function fecharCobrancaAction(formData: FormData) {
+  const user = await assertFinance();
+  const chargeId = str(formData.get("charge_id"));
+  const refMonth = str(formData.get("ref_month"));
+
+  const c = await one<{
+    id: string;
+    client_id: string;
+    ref_month: string;
+    fee: number;
+    commission: number;
+    revenue_base: number;
+    locked: number;
+  }>("SELECT id, client_id, ref_month, fee, commission, revenue_base, locked FROM agency_charges WHERE id = ?", chargeId);
+  if (!c) throw new Error("Cobrança não encontrada.");
+  if (c.locked === 1) throw new Error("Esta cobrança já está fechada.");
+
+  const cliente = await one<{ fee_model: string; commission_pct: number }>(
+    "SELECT fee_model, commission_pct FROM clients WHERE id = ?",
+    c.client_id,
+  );
+
+  const porMarketplace = await all<{ marketplace: string; revenue: number }>(
+    `SELECT marketplace, COALESCE(SUM(revenue),0) AS revenue FROM finance_snapshots
+      WHERE client_id = ? AND ref_month = ? GROUP BY marketplace`,
+    c.client_id,
+    c.ref_month,
+  );
+
+  const fontes = await one<{ origem: string; atualizado: string | null }>(
+    `SELECT string_agg(DISTINCT source, '+') AS origem, MAX(updated_at) AS atualizado
+       FROM finance_snapshots WHERE client_id = ? AND ref_month = ?`,
+    c.client_id,
+    c.ref_month,
+  );
+
+  const snapshot = {
+    revenue_base: c.revenue_base,
+    fee: c.fee,
+    commission: c.commission,
+    fee_model: cliente?.fee_model ?? "fixo",
+    commission_pct: cliente?.commission_pct ?? 0,
+    porMarketplace,
+    origem: fontes?.origem ?? "sem dados",
+    dados_de: fontes?.atualizado ?? null,
+  };
+
+  await run(
+    "UPDATE agency_charges SET locked = 1, closed_at = ?, closed_by = ?, snapshot = ?, updated_at = ? WHERE id = ?",
+    now(),
+    user.id,
+    JSON.stringify(snapshot),
+    now(),
+    chargeId,
+  );
+  await eventoCobranca(chargeId, "fechada", user.id, `base ${c.revenue_base.toFixed(2)}`);
+
+  refresh();
+  redirect(`/financeiro?mes=${refMonth}&ok=1`);
+}
+
+/** Reabre uma cobrança fechada, deixando rastro de quem reabriu. */
+export async function reabrirCobrancaAction(formData: FormData) {
+  const user = await requirePermission("financeiro");
+  const chargeId = str(formData.get("charge_id"));
+  const refMonth = str(formData.get("ref_month"));
+  const motivo = str(formData.get("motivo")).trim();
+  if (!motivo) throw new Error("Diga por que está reabrindo a cobrança.");
+
+  await run(
+    "UPDATE agency_charges SET locked = 0, closed_at = NULL, closed_by = NULL, updated_at = ? WHERE id = ?",
+    now(),
+    chargeId,
+  );
+  await eventoCobranca(chargeId, "reaberta", user.id, motivo);
+
+  refresh();
+  redirect(`/financeiro?mes=${refMonth}&ok=1`);
+}
+
+/**
+ * Ajuste depois do fechamento.
+ *
+ * Entra como linha nova e soma ao total, sem tocar em fee, commission nem
+ * revenue_base. Quem olhar a cobrança depois vê o valor combinado, o
+ * ajuste e o motivo, em vez de um total redondo sem explicação.
+ */
+export async function ajustarCobrancaAction(formData: FormData) {
+  const user = await assertFinance();
+  const chargeId = str(formData.get("charge_id"));
+  const refMonth = str(formData.get("ref_month"));
+  const valor = toNumber(formData.get("amount"));
+  const motivo = str(formData.get("reason")).trim();
+
+  if (!valor) throw new Error("Informe o valor do ajuste.");
+  if (!motivo) throw new Error("Todo ajuste precisa de um motivo.");
+
+  await run(
+    "INSERT INTO charge_adjustments (id, charge_id, amount, reason, created_by, created_at) VALUES (?,?,?,?,?,?)",
+    id(),
+    chargeId,
+    valor,
+    motivo,
+    user.id,
+    now(),
+  );
+
+  // o total passa a ser o valor fechado mais a soma dos ajustes
+  await run(
+    `UPDATE agency_charges
+        SET adjustments = COALESCE((SELECT SUM(amount) FROM charge_adjustments WHERE charge_id = ?), 0),
+            total = fee + commission + extra
+                  + COALESCE((SELECT SUM(amount) FROM charge_adjustments WHERE charge_id = ?), 0),
+            updated_at = ?
+      WHERE id = ?`,
+    chargeId,
+    chargeId,
+    now(),
+    chargeId,
+  );
+  await eventoCobranca(chargeId, "ajuste", user.id, `${valor.toFixed(2)}: ${motivo}`);
+
+  refresh();
+  redirect(`/financeiro?mes=${refMonth}&ok=1`);
 }

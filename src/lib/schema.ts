@@ -386,6 +386,46 @@ CREATE TABLE IF NOT EXISTS user_events (
 
 CREATE INDEX IF NOT EXISTS idx_user_events ON user_events(user_id, created_at DESC);
 
+-- Fechamento da cobranca.
+--
+-- Antes, clicar em "gerar cobrancas" reescrevia toda cobranca pendente com
+-- o faturamento do momento. Uma sincronizacao posterior mudava em silencio
+-- o valor de uma cobranca que ja tinha sido enviada ao cliente. Fechar
+-- congela os numeros e guarda o snapshot do que foi usado, para a conversa
+-- com o cliente ter uma base fixa.
+ALTER TABLE agency_charges ADD COLUMN IF NOT EXISTS locked      integer NOT NULL DEFAULT 0;
+ALTER TABLE agency_charges ADD COLUMN IF NOT EXISTS closed_at   text;
+ALTER TABLE agency_charges ADD COLUMN IF NOT EXISTS closed_by   text REFERENCES users(id) ON DELETE SET NULL;
+-- JSON com os numeros que sustentaram o calculo no momento do fechamento
+ALTER TABLE agency_charges ADD COLUMN IF NOT EXISTS snapshot    text;
+-- soma dos ajustes posteriores; o valor fechado em si nunca e reescrito
+ALTER TABLE agency_charges ADD COLUMN IF NOT EXISTS adjustments double precision NOT NULL DEFAULT 0;
+ALTER TABLE agency_charges ADD COLUMN IF NOT EXISTS receipt_url text;
+
+-- Ajuste depois do fechamento entra como linha nova, nunca editando o
+-- valor original. Assim a diferenca entre o que foi combinado e o que foi
+-- cobrado fica visivel em vez de sumir dentro do total.
+CREATE TABLE IF NOT EXISTS charge_adjustments (
+  id         text PRIMARY KEY,
+  charge_id  text NOT NULL REFERENCES agency_charges(id) ON DELETE CASCADE,
+  amount     double precision NOT NULL,
+  reason     text NOT NULL,
+  created_by text REFERENCES users(id) ON DELETE SET NULL,
+  created_at text NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS charge_events (
+  id         text PRIMARY KEY,
+  charge_id  text NOT NULL REFERENCES agency_charges(id) ON DELETE CASCADE,
+  type       text NOT NULL,
+  detail     text,
+  actor_id   text REFERENCES users(id) ON DELETE SET NULL,
+  created_at text NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_ajuste_cobranca ON charge_adjustments(charge_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_evento_cobranca ON charge_events(charge_id, created_at DESC);
+
 CREATE INDEX IF NOT EXISTS idx_charges_month  ON agency_charges(ref_month, status);
 CREATE INDEX IF NOT EXISTS idx_expenses_month ON agency_expenses(ref_month);
 
@@ -423,6 +463,8 @@ CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
 
 /** Tabelas na ordem segura para limpeza (filhas antes das pais). */
 export const TABLES = [
+  "charge_events",
+  "charge_adjustments",
   "user_events",
   "sync_runs",
   "finance_daily",
