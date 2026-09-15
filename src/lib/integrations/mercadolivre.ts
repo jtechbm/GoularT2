@@ -299,7 +299,7 @@ export const mercadoLivre: MarketplaceAdapter = {
     const { start, end } = monthRange(refMonth);
     const out = emptyMonth(refMonth);
     const limit = 50;
-    const prazo = syncDeadline();
+    const prazo = ctx.deadline ?? syncDeadline();
     // o id do envio guarda o dia do pedido: o custo do frete chega numa
     // segunda chamada e precisa cair no dia certo, não no dia da consulta
     const envios = new Map<number, string>();

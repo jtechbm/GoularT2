@@ -36,24 +36,50 @@ export async function GET(req: NextRequest) {
   // nos primeiros dias do mês o mês anterior ainda recebe repasses atrasados
   const meses = new Date().getUTCDate() <= 5 ? [mesAtual, addMonths(mesAtual, -1)] : [mesAtual];
 
+  // Contas com erro entram também. Antes só entravam as "conectadas": uma
+  // falha por tempo virava status de erro e o agendamento nunca mais tentava
+  // aquela conta, que ficava parada até alguém clicar à mão.
   const contas = await all<{ id: string; nome: string; marketplace: string }>(
     `SELECT cm.id, cl.name AS nome, cm.marketplace
        FROM client_marketplaces cm
        JOIN clients cl ON cl.id = cm.client_id
-      WHERE cm.status = 'conectado' AND cm.credentials IS NOT NULL
+      WHERE cm.status IN ('conectado', 'erro') AND cm.credentials IS NOT NULL
       ORDER BY cm.last_sync_at ASC NULLS FIRST`,
+  );
+
+  // batimento no começo: se a Vercel matar a função, fica registrado que a
+  // rodada começou, em vez de o agendamento parecer que nem foi chamado
+  const batimentoId = id();
+  await run(
+    `INSERT INTO sync_logs (id, client_marketplace_id, marketplace, ref_month, status, message, created_at)
+     VALUES (?,NULL,'cron',?,'rodando',?,?)`,
+    batimentoId,
+    mesAtual,
+    `começou com ${contas.length} contas`,
+    now(),
   );
 
   const resultados: { conta: string; mes: string; ok: boolean; detalhe: string }[] = [];
   let semTempo = false;
 
+  // reserva alguns segundos para as penalidades, que vêm depois
+  const contasML = contas.filter((c) => c.marketplace === "mercado_livre").length;
+  const fimSync = fim - contasML * 3000;
+  let restantes = contas.length * meses.length;
+
   for (const conta of contas) {
     for (const mes of meses) {
-      if (Date.now() > fim) {
+      if (Date.now() > fimSync) {
         semTempo = true;
         break;
       }
-      const saida = await syncAccount(conta.id, mes, null, "cron");
+      // Cada conta ganha uma fatia do tempo que sobra. Antes a primeira da
+      // fila podia gastar o prazo inteiro, e uma loja grande deixava todas
+      // as outras sem atualizar. A Shopee guarda o progresso, então fatia
+      // curta não perde trabalho: continua na rodada seguinte.
+      const fatia = Math.max(10_000, (fimSync - Date.now()) / Math.max(1, restantes));
+      restantes -= 1;
+      const saida = await syncAccount(conta.id, mes, null, "cron", Date.now() + fatia);
       resultados.push({ conta: `${conta.nome} · ${conta.marketplace}`, mes, ok: saida.ok, detalhe: saida.message });
     }
     if (semTempo) break;
@@ -77,13 +103,11 @@ export async function GET(req: NextRequest) {
   // de um cron que roda e não encontra nada para fazer
   const erros = resultados.filter((r) => !r.ok).length;
   await run(
-    `INSERT INTO sync_logs (id, client_marketplace_id, marketplace, ref_month, status, message, created_at)
-     VALUES (?,NULL,'cron',?,?,?,?)`,
-    id(),
-    mesAtual,
+    "UPDATE sync_logs SET status = ?, message = ?, created_at = ? WHERE id = ?",
     erros ? "parcial" : "ok",
     `${resultados.length} sincronizações · ${erros} com erro · ${penalidadesVerificadas} contas verificadas, ${penalidadesNovas} penalidades novas${semTempo ? " · fila incompleta" : ""}`,
     now(),
+    batimentoId,
   );
 
   return NextResponse.json({

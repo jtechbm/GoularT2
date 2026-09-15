@@ -72,6 +72,12 @@ export interface MonthlyResult {
    * e o histórico diário simplesmente não é gravado para essa loja.
    */
   days?: DailyResult[];
+  /**
+   * A rodada acabou o tempo antes de ler tudo, mas guardou o progresso.
+   * Não é erro: a próxima rodada continua de onde parou. Enquanto estiver
+   * incompleto, o fechamento do mês não é sobrescrito com um número menor.
+   */
+  incompleto?: { feitos: number; total: number };
 }
 
 export interface StoredCredentials {
@@ -86,6 +92,14 @@ export interface StoredCredentials {
 export interface AdapterContext {
   externalId: string | null;
   credentials: StoredCredentials | null;
+  /** id da conta no banco, para adaptadores que guardam progresso entre rodadas */
+  accountId?: string;
+  /**
+   * Até quando (epoch ms) esta rodada pode trabalhar. O agendamento divide o
+   * tempo entre as contas; sem isto, uma loja grande consumia o prazo todo e
+   * as outras ficavam sem atualizar.
+   */
+  deadline?: number;
   /** Persiste tokens renovados durante a chamada. */
   saveCredentials: (next: StoredCredentials) => void | Promise<void>;
 }

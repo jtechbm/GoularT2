@@ -187,10 +187,18 @@ export default async function ClientePage({
       {sp.sync && (
         <div
           className={`flash mb-4 rounded-lg border px-4 py-2.5 text-sm font-medium ${
-            sp.sync === "ok" ? "border-ok/30 bg-ok-soft text-ok" : "border-bad/30 bg-bad-soft text-bad"
+            sp.sync === "ok"
+              ? "border-ok/30 bg-ok-soft text-ok"
+              : sp.sync === "parcial"
+                ? "border-warn/30 bg-warn-soft text-warn"
+                : "border-bad/30 bg-bad-soft text-bad"
           }`}
         >
-          {sp.sync === "ok" ? "Sincronização concluída." : "Falha na sincronização — veja o detalhe na conta."}
+          {sp.sync === "ok"
+            ? "Sincronização concluída."
+            : sp.sync === "parcial"
+              ? "Carga em andamento: parte dos pedidos já foi lida e o resto continua na próxima rodada."
+              : "Falha na sincronização — veja o detalhe na conta."}
         </div>
       )}
 

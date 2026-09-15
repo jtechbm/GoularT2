@@ -4,7 +4,7 @@ import { requirePermission } from "@/lib/auth";
 import { all } from "@/lib/db";
 import { sincronizacoes } from "@/lib/queries";
 import { integrationStatus } from "@/lib/integrations";
-import { currentMonth, dateTimeBR, lastMonths, monthLabel, relativeBR } from "@/lib/format";
+import { currentMonth, dateTimeBR, emQuantoBR, lastMonths, monthLabel, relativeBR } from "@/lib/format";
 import { diagnosticar, proximaSincronizacao } from "@/lib/integracao-status";
 import { Card, Chip, Empty, MarketplaceChip, PageHeader, Stat, StatusChip } from "@/components/ui";
 import { SubmitButton } from "@/components/submit";
@@ -92,7 +92,7 @@ export default async function IntegracoesPage({
         <Stat label="Com erro" value={String(withError)} tone={withError ? "bad" : "neutral"} />
         <Stat
           label="Próxima rodada"
-          value={relativeBR(proximaSincronizacao().toISOString())}
+          value={emQuantoBR(proximaSincronizacao().toISOString())}
           hint="todo dia às 3h da manhã"
           tone="info"
         />

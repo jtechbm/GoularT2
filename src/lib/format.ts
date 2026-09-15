@@ -121,3 +121,20 @@ export function origemLabel(automaticos: number, manuais: number): string {
   if (!automaticos) return manuais === 1 ? "1 lançamento à mão" : `${manuais} lançamentos à mão`;
   return `${automaticos} da loja · ${manuais} à mão`;
 }
+
+/**
+ * Tempo até uma data futura.
+ *
+ * relativeBR só entende o passado: com uma data futura a diferença fica
+ * negativa e ela respondia "agora", o que fazia a tela dizer "próxima rodada
+ * agora" às dez da manhã.
+ */
+export function emQuantoBR(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  const min = Math.round((new Date(iso).getTime() - Date.now()) / 60000);
+  if (min <= 1) return "em instantes";
+  if (min < 60) return `em ${min} min`;
+  const h = Math.round(min / 60);
+  if (h < 24) return `em ${h} h`;
+  return `em ${Math.round(h / 24)} d`;
+}

@@ -1,7 +1,7 @@
 import { Chip } from "./ui";
 import { SubmitButton } from "./submit";
 import { syncAccountAction, generateAuthLinkAction } from "@/lib/actions/integrations";
-import { dateTimeBR, relativeBR } from "@/lib/format";
+import { dateTimeBR, emQuantoBR, relativeBR } from "@/lib/format";
 import { diagnosticar, diasSemAtualizar, proximaSincronizacao } from "@/lib/integracao-status";
 import type { ClientMarketplace } from "@/lib/types";
 
@@ -51,9 +51,9 @@ export function SaudeConta({
         {parada !== null && parada >= 2 && <Chip tone="bad">parada há {parada} dias</Chip>}
       </div>
 
-      {conta.status === "conectado" && (
+      {(conta.status === "conectado" || conta.status === "erro") && (
         <p className="text-[0.7rem] text-dim">
-          Próxima rodada automática {relativeBR(proxima.toISOString())}, às 3h da manhã.
+          Próxima rodada automática {emQuantoBR(proxima.toISOString())}, às 3h da manhã.
         </p>
       )}
 

@@ -152,6 +152,25 @@ async function saveDailyHistory(
   return gravados;
 }
 
+/**
+ * Rodadas que ficaram "rodando" há mais de cinco minutos morreram.
+ *
+ * Quando a Vercel mata a função por tempo, ela não chega a gravar o fim.
+ * Sem esta limpeza a rodada fica "rodando" para sempre, e a tela nunca
+ * mostra que a conta está parada. Nenhuma função da Vercel no plano atual
+ * passa de um minuto, então cinco é folga larga.
+ */
+async function encerrarRodadasMortas(accountId: string) {
+  await run(
+    `UPDATE sync_runs SET status = 'interrompida', finished_at = ?,
+            error = 'A rodada passou do tempo limite do servidor e foi interrompida antes de terminar.'
+      WHERE client_marketplace_id = ? AND status = 'rodando' AND started_at < ?`,
+    now(),
+    accountId,
+    new Date(Date.now() - 5 * 60_000).toISOString(),
+  );
+}
+
 /** Abre uma rodada de sincronização e devolve o id, para fechar depois. */
 async function abrirRodada(
   accountId: string | null,
@@ -170,7 +189,7 @@ async function abrirRodada(
 
 async function fecharRodada(
   runId: string,
-  status: "ok" | "erro",
+  status: "ok" | "erro" | "parcial",
   message: string,
   diasGravados: number,
   erro?: string,
@@ -183,7 +202,7 @@ async function fecharRodada(
 
 export interface SyncOutcome {
   ok: boolean;
-  status: "ok" | "erro";
+  status: "ok" | "erro" | "parcial";
   message: string;
   result?: MonthlyResult;
 }
@@ -202,6 +221,8 @@ export async function syncAccount(
   userId: string | null,
   /** de onde partiu: 'manual', 'cron' ou 'cli' */
   trigger: "manual" | "cron" | "cli" = "manual",
+  /** até quando esta conta pode trabalhar (epoch ms); o agendamento divide o tempo */
+  deadline?: number,
 ): Promise<SyncOutcome> {
   const row = await one<{
     id: string;
@@ -213,6 +234,7 @@ export async function syncAccount(
   if (!row) return { ok: false, status: "erro", message: "Conta não encontrada." };
 
   const adapter = adapterFor(row.marketplace);
+  await encerrarRodadasMortas(row.id);
   const runId = await abrirRodada(row.id, row.marketplace, trigger, userId);
 
   if (!adapter.isConfigured()) {
@@ -229,9 +251,28 @@ export async function syncAccount(
         externalId: row.external_id,
         credentials: readCredentials(row),
         saveCredentials: (next) => writeCredentials(row.id, next),
+        accountId: row.id,
+        deadline,
       },
       refMonth,
     );
+
+    // Progresso salvo, mas o mês ainda não foi lido inteiro. Não é erro e a
+    // conta continua conectada: a próxima rodada continua de onde parou. O
+    // fechamento do mês não é tocado, senão um número parcial menor
+    // apareceria como se fosse o faturamento real.
+    if (result.incompleto) {
+      const { feitos, total } = result.incompleto;
+      const msg = `Carga em andamento: ${feitos} de ${total} pedidos lidos. A próxima rodada continua de onde parou.`;
+      await run(
+        "UPDATE client_marketplaces SET last_sync_at = ?, last_error = NULL, status = 'conectado' WHERE id = ?",
+        now(),
+        row.id,
+      );
+      await log(row.id, row.marketplace, refMonth, "parcial", msg);
+      await fecharRodada(runId, "parcial", msg, 0);
+      return { ok: true, status: "parcial", message: msg, result };
+    }
 
     const existing = await one<{ id: string; cogs: number; ads: number; shipping: number }>(
       "SELECT id, cogs, ads, shipping FROM finance_snapshots WHERE client_id=? AND marketplace=? AND ref_month=?",

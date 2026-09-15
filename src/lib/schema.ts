@@ -546,6 +546,26 @@ CREATE INDEX IF NOT EXISTS idx_entregas_pendentes ON notification_deliveries(cha
 ALTER TABLE client_marketplaces ADD COLUMN IF NOT EXISTS penalties_checked_at text;
 ALTER TABLE client_marketplaces ADD COLUMN IF NOT EXISTS items_permission     text;
 
+-- Escrow de cada pedido da Shopee, buscado uma vez só.
+--
+-- A Shopee exige uma chamada por pedido para dar o valor liquido. Refazer
+-- todas a cada rodada estourava o limite de 60 segundos da Vercel assim que
+-- o mes passava de uns 500 pedidos: a funcao morria no meio, sem gravar erro,
+-- e a conta ficava "conectada" sem atualizar nada. Pedido concluido nao muda
+-- de valor, entao guarda aqui e cada rodada so busca os que ainda faltam.
+CREATE TABLE IF NOT EXISTS shopee_order_escrow (
+  client_marketplace_id text NOT NULL REFERENCES client_marketplaces(id) ON DELETE CASCADE,
+  order_sn              text NOT NULL,
+  day                   text NOT NULL,
+  revenue               double precision NOT NULL DEFAULT 0,
+  fees                  double precision NOT NULL DEFAULT 0,
+  shipping              double precision NOT NULL DEFAULT 0,
+  fetched_at            text NOT NULL,
+  PRIMARY KEY (client_marketplace_id, order_sn)
+);
+
+CREATE INDEX IF NOT EXISTS idx_escrow_dia ON shopee_order_escrow(client_marketplace_id, day);
+
 CREATE INDEX IF NOT EXISTS idx_charges_month  ON agency_charges(ref_month, status);
 CREATE INDEX IF NOT EXISTS idx_expenses_month ON agency_expenses(ref_month);
 
@@ -583,6 +603,7 @@ CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
 
 /** Tabelas na ordem segura para limpeza (filhas antes das pais). */
 export const TABLES = [
+  "shopee_order_escrow",
   "notification_deliveries",
   "marketplace_notices",
   "reputation_snapshots",
