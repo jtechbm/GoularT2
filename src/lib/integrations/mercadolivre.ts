@@ -390,6 +390,8 @@ export const mercadoLivre: MarketplaceAdapter = {
           const corpo = (await res.json()) as { senders?: { cost?: number }[] };
           return { dia: d, corpo };
         });
+        // todos os envios responderam: o frete somado é o frete real
+        out.freteApurado = results.length === envios.size && results.every((r) => r !== null);
         for (const item of results) {
           for (const remetente of item?.corpo?.senders ?? []) {
             out.shipping += remetente.cost ?? 0;

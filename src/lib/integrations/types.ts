@@ -78,6 +78,19 @@ export interface MonthlyResult {
    * incompleto, o fechamento do mês não é sobrescrito com um número menor.
    */
   incompleto?: { feitos: number; total: number };
+  /**
+   * Parte do faturamento que ainda pode mudar: pedidos pagos que não
+   * concluíram. As taxas já vêm estimadas pelo próprio marketplace.
+   */
+  provisorio?: { pedidos: number; valor: number };
+  /**
+   * O adaptador tem certeza do frete, inclusive quando ele é zero.
+   *
+   * Sem esta marca, frete zero era lido como "não consegui apurar" e o valor
+   * antigo gravado era mantido. Na Shopee o frete real do vendedor costuma
+   * ser zero, e o valor antigo errado nunca sairia do fechamento.
+   */
+  freteApurado?: boolean;
 }
 
 export interface StoredCredentials {

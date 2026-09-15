@@ -200,6 +200,72 @@ async function fecharRodada(
   );
 }
 
+/**
+ * Grava o fechamento do mês, o histórico diário e as campanhas.
+ *
+ * Separado da sincronização para o aviso em tempo real da Shopee gravar pelo
+ * mesmo caminho: dois lugares escrevendo o fechamento de jeitos diferentes
+ * foi exatamente o que já fez o Ads sumir uma vez.
+ */
+export async function gravarResultado(
+  row: { id: string; client_id: string; marketplace: string },
+  refMonth: string,
+  result: MonthlyResult,
+  userId: string | null,
+): Promise<{ ads: number; diasGravados: number }> {
+  const existing = await one<{ id: string; cogs: number; ads: number; shipping: number }>(
+    "SELECT id, cogs, ads, shipping FROM finance_snapshots WHERE client_id=? AND marketplace=? AND ref_month=?",
+    row.client_id,
+    row.marketplace,
+    refMonth,
+  );
+
+  const cogs = existing?.cogs ?? result.cogs;
+  const ads = result.ads || existing?.ads || 0;
+  // frete zero só herda o valor antigo quando o adaptador não tem certeza dele
+  const shipping = result.freteApurado ? result.shipping : result.shipping || existing?.shipping || 0;
+  const profit = result.revenue - result.fees - shipping - result.tax - ads - cogs;
+
+  if (existing) {
+    await run(
+      `UPDATE finance_snapshots SET revenue=?, orders=?, units=?, fees=?, shipping=?, tax=?, cogs=?, ads=?,
+              profit=?, source='api', updated_by=?, updated_at=? WHERE id=?`,
+      result.revenue, result.orders, result.units, result.fees, shipping,
+      result.tax, cogs, ads, profit, userId, now(), existing.id,
+    );
+  } else {
+    await run(
+      `INSERT INTO finance_snapshots (id, client_id, marketplace, ref_month, revenue, orders, units, cogs, fees,
+                                      shipping, tax, ads, profit, source, updated_by, updated_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,'api',?,?)`,
+      id(), row.client_id, row.marketplace, refMonth, result.revenue, result.orders,
+      result.units, cogs, result.fees, shipping, result.tax, ads, profit, userId, now(),
+    );
+  }
+
+  // undefined = a API de Ads não respondeu; array vazio = respondeu e não há
+  // campanha. Só o segundo caso pode limpar o que estava gravado.
+  if (result.adsCampaigns) {
+    await saveAdsCampaigns(row.client_id, row.marketplace, refMonth, result.adsCampaigns, userId);
+  }
+
+  const diasGravados = result.days?.length ? await saveDailyHistory(row.client_id, row.marketplace, result.days) : 0;
+  const ultimoDia = result.days?.length ? result.days[result.days.length - 1].day : null;
+
+  await run(
+    `UPDATE client_marketplaces
+        SET last_sync_at = ?, last_success_at = ?, last_error = NULL, status = 'conectado',
+            daily_synced_until = COALESCE(?, daily_synced_until)
+      WHERE id = ?`,
+    now(),
+    now(),
+    ultimoDia,
+    row.id,
+  );
+
+  return { ads, diasGravados };
+}
+
 export interface SyncOutcome {
   ok: boolean;
   status: "ok" | "erro" | "parcial";
@@ -274,58 +340,7 @@ export async function syncAccount(
       return { ok: true, status: "parcial", message: msg, result };
     }
 
-    const existing = await one<{ id: string; cogs: number; ads: number; shipping: number }>(
-      "SELECT id, cogs, ads, shipping FROM finance_snapshots WHERE client_id=? AND marketplace=? AND ref_month=?",
-      row.client_id,
-      row.marketplace,
-      refMonth,
-    );
-
-    const cogs = existing?.cogs ?? result.cogs;
-    const ads = result.ads || existing?.ads || 0;
-    const shipping = result.shipping || existing?.shipping || 0;
-    const profit = result.revenue - result.fees - shipping - result.tax - ads - cogs;
-
-    if (existing) {
-      await run(
-        `UPDATE finance_snapshots SET revenue=?, orders=?, units=?, fees=?, shipping=?, tax=?, cogs=?, ads=?,
-                profit=?, source='api', updated_by=?, updated_at=? WHERE id=?`,
-        result.revenue, result.orders, result.units, result.fees, shipping,
-        result.tax, cogs, ads, profit, userId, now(), existing.id,
-      );
-    } else {
-      await run(
-        `INSERT INTO finance_snapshots (id, client_id, marketplace, ref_month, revenue, orders, units, cogs, fees,
-                                        shipping, tax, ads, profit, source, updated_by, updated_at)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,'api',?,?)`,
-        id(), row.client_id, row.marketplace, refMonth, result.revenue, result.orders,
-        result.units, cogs, result.fees, shipping, result.tax, ads, profit, userId, now(),
-      );
-    }
-
-    // undefined = a API de Ads não respondeu; array vazio = respondeu e não há
-    // campanha. Só o segundo caso pode limpar o que estava gravado.
-    if (result.adsCampaigns) {
-      await saveAdsCampaigns(row.client_id, row.marketplace, refMonth, result.adsCampaigns, userId);
-    }
-
-    // histórico diário: só grava o que a API abriu por dia
-    const diasGravados = result.days?.length
-      ? await saveDailyHistory(row.client_id, row.marketplace, result.days)
-      : 0;
-
-    const ultimoDia = result.days?.length ? result.days[result.days.length - 1].day : null;
-
-    await run(
-      `UPDATE client_marketplaces
-          SET last_sync_at = ?, last_success_at = ?, last_error = NULL, status = 'conectado',
-              daily_synced_until = COALESCE(?, daily_synced_until)
-        WHERE id = ?`,
-      now(),
-      now(),
-      ultimoDia,
-      row.id,
-    );
+    const { ads, diasGravados } = await gravarResultado(row, refMonth, result, userId);
 
     const msg = `${result.orders} pedidos · faturamento ${result.revenue.toFixed(2)}${ads ? ` · ads ${ads.toFixed(2)}` : ""}${diasGravados ? ` · ${diasGravados} dias` : ""}`;
     await log(row.id, row.marketplace, refMonth, "ok", msg);

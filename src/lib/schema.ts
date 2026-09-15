@@ -566,6 +566,36 @@ CREATE TABLE IF NOT EXISTS shopee_order_escrow (
 
 CREATE INDEX IF NOT EXISTS idx_escrow_dia ON shopee_order_escrow(client_marketplace_id, day);
 
+-- Pedidos da Shopee em tempo real.
+--
+-- A tabela deixou de guardar so pedido concluido: guarda o pedido desde o
+-- pagamento, com o status atual. O valor vem sempre do escrow da Shopee, que
+-- ja existe antes da conclusao com a comissao e a taxa estimadas; final = 1
+-- quando o pedido concluiu e o valor nao muda mais.
+ALTER TABLE shopee_order_escrow ADD COLUMN IF NOT EXISTS status        text;
+ALTER TABLE shopee_order_escrow ADD COLUMN IF NOT EXISTS escrow_amount double precision NOT NULL DEFAULT 0;
+ALTER TABLE shopee_order_escrow ADD COLUMN IF NOT EXISTS final         integer NOT NULL DEFAULT 0;
+ALTER TABLE shopee_order_escrow ADD COLUMN IF NOT EXISTS updated_at    text;
+
+-- Todo aviso recebido de marketplace fica registrado, valido ou nao. O
+-- formato exato do aviso da Shopee so e confirmado quando o primeiro chegar,
+-- e sem este registro uma assinatura recusada seria silenciosa.
+CREATE TABLE IF NOT EXISTS webhook_events (
+  id           text PRIMARY KEY,
+  marketplace  text NOT NULL,
+  received_at  text NOT NULL,
+  valid        integer NOT NULL DEFAULT 0,
+  code         integer,
+  shop_id      text,
+  order_sn     text,
+  order_status text,
+  body         text,
+  result       text,
+  error        text
+);
+
+CREATE INDEX IF NOT EXISTS idx_webhook_recebidos ON webhook_events(marketplace, received_at DESC);
+
 CREATE INDEX IF NOT EXISTS idx_charges_month  ON agency_charges(ref_month, status);
 CREATE INDEX IF NOT EXISTS idx_expenses_month ON agency_expenses(ref_month);
 
@@ -603,6 +633,7 @@ CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
 
 /** Tabelas na ordem segura para limpeza (filhas antes das pais). */
 export const TABLES = [
+  "webhook_events",
   "shopee_order_escrow",
   "notification_deliveries",
   "marketplace_notices",
