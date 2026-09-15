@@ -888,8 +888,10 @@ export interface AlertaComResolucao extends Alerta {
 export async function alertasDaCarteira(
   refMonth = currentMonth(),
   scope?: Scope,
+  /** carteira já carregada pela tela, para não buscar duas vezes */
+  carteira?: ClientRow[],
 ): Promise<AlertaComResolucao[]> {
-  const rows = await clientRows(refMonth, "cliente", scope);
+  const rows = carteira ?? (await clientRows(refMonth, "cliente", scope));
   if (!rows.length) return [];
 
   const ids = rows.map((r) => r.id);

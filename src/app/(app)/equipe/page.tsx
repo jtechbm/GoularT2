@@ -22,23 +22,26 @@ export default async function EquipePage({
   const sp = await searchParams;
   const manager = can(user, "equipe.gerenciar");
 
-  const users = await listUsers(manager);
-  const board = new Map((await leaderboard()).map((b) => [b.id, b] as const));
-  const ranking = await rankingMensal(currentMonth());
-
   // desempenho: o período vale para o que já aconteceu, não para a carga
   // atual, que é sempre "agora"
   const atalho = sp.periodo ?? "mes";
   const periodo = periodoDe(atalho, sp.mes ?? currentMonth());
-  const desempenho = manager ? await desempenhoEquipe(periodo.inicio, periodo.fim) : [];
-  const carteira = await clientRows(currentMonth(), undefined, await visibleClientIds(user));
-  const openTasks = await tasks({ statuses: ["assumida", "em_andamento", "em_revisao"] });
+  const escopo = await visibleClientIds(user);
 
-  const memberships = await all<{ user_id: string; client_id: string; name: string; role: string }>(
-    `SELECT ct.user_id, ct.client_id, c.name, ct.role
-       FROM client_team ct JOIN clients c ON c.id = ct.client_id
-      ORDER BY lower(c.name)`,
-  );
+  const [users, placar, ranking, desempenho, carteira, openTasks, memberships] = await Promise.all([
+    listUsers(manager),
+    leaderboard(),
+    rankingMensal(currentMonth()),
+    manager ? desempenhoEquipe(periodo.inicio, periodo.fim) : Promise.resolve([]),
+    clientRows(currentMonth(), undefined, escopo),
+    tasks({ statuses: ["assumida", "em_andamento", "em_revisao"] }),
+    all<{ user_id: string; client_id: string; name: string; role: string }>(
+      `SELECT ct.user_id, ct.client_id, c.name, ct.role
+         FROM client_team ct JOIN clients c ON c.id = ct.client_id
+        ORDER BY lower(c.name)`,
+    ),
+  ]);
+  const board = new Map(placar.map((b) => [b.id, b] as const));
 
   const selected = sp.u ? users.find((u) => u.id === sp.u) : undefined;
   const convidado = sp.convite ? users.find((u) => u.id === sp.convite) : undefined;

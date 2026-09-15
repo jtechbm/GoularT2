@@ -17,31 +17,30 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     redirect(`/convite/${user.invite_token}`);
   }
 
-  const pending =
-    (await one<{ n: number }>(
+  // os três contadores do menu são independentes: disparados juntos, a
+  // navegação espera o mais lento, não a soma dos três
+  const escopo = await visibleClientIds(user);
+  const [pendentes, notificacoes, penais] = await Promise.all([
+    one<{ n: number }>(
       `SELECT COUNT(*) n FROM tasks
         WHERE status = 'disponivel'
            OR (status IN ('assumida','em_andamento','em_revisao') AND assignee_id = ?)`,
       user.id,
-    ))?.n ?? 0;
-
-  const naoLidas =
-    (await one<{ n: number }>(
-      "SELECT COUNT(*) n FROM notifications WHERE user_id = ? AND read_at IS NULL",
-      user.id,
-    ))?.n ?? 0;
-
-  // o contador respeita a carteira da pessoa: membro não vê número de
-  // penalidade de cliente que ele não acompanha
-  const escopo = await visibleClientIds(user);
-  const penalidadesAbertas =
+    ),
+    one<{ n: number }>("SELECT COUNT(*) n FROM notifications WHERE user_id = ? AND read_at IS NULL", user.id),
+    // o contador respeita a carteira da pessoa: membro não vê número de
+    // penalidade de cliente que ele não acompanha
     escopo !== null && escopo.length === 0
-      ? 0
-      : ((await one<{ n: number }>(
+      ? Promise.resolve({ n: 0 })
+      : one<{ n: number }>(
           `SELECT COUNT(*) n FROM penalties WHERE status = 'aberta' AND severity <> 'informativo'
              ${escopo ? `AND client_id IN (${escopo.map(() => "?").join(",")})` : ""}`,
           ...(escopo ?? []),
-        ))?.n ?? 0);
+        ),
+  ]);
+  const pending = pendentes?.n ?? 0;
+  const naoLidas = notificacoes?.n ?? 0;
+  const penalidadesAbertas = penais?.n ?? 0;
 
   return (
     <div className="app-shell lg:flex">

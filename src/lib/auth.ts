@@ -1,4 +1,5 @@
 import "server-only";
+import { cache } from "react";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
@@ -56,8 +57,13 @@ export async function destroySession() {
   jar.delete(COOKIE);
 }
 
-/** Usuário da sessão atual, ou null. */
-export async function currentUser(): Promise<User | null> {
+/**
+ * Usuário da sessão atual, ou null.
+ *
+ * Memorizado por requisição: o layout e a página pediam a sessão cada um
+ * por conta própria, e cada pedido era uma ida ao banco em toda navegação.
+ */
+export const currentUser = cache(async function currentUser(): Promise<User | null> {
   const jar = await cookies();
   const token = jar.get(COOKIE)?.value;
   if (!token) return null;
@@ -77,7 +83,7 @@ export async function currentUser(): Promise<User | null> {
   }
   const { expires_at: _expires, ...user } = row;
   return user;
-}
+});
 
 /** Usuário da sessão; redireciona para /login quando não houver. */
 export async function requireUser(): Promise<User> {
@@ -111,14 +117,14 @@ export function assertCan(user: User, permission: Permission, message?: string):
  * dizer "opera clientes atribuídos". Sem ninguém o atribuindo, ele vê vazio —
  * é melhor do que ver a carteira toda por omissão.
  */
-export async function visibleClientIds(user: User): Promise<string[] | null> {
+export const visibleClientIds = cache(async function visibleClientIds(user: User): Promise<string[] | null> {
   if (can(user, "carteira.completa")) return null;
   const rows = await all<{ client_id: string }>(
     "SELECT client_id FROM client_team WHERE user_id = ?",
     user.id,
   );
   return rows.map((r) => r.client_id);
-}
+});
 
 export async function canSeeClient(user: User, clientId: string): Promise<boolean> {
   const ids = await visibleClientIds(user);

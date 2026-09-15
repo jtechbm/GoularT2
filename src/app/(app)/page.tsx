@@ -59,12 +59,37 @@ export default async function DashboardPage({
   const escopo = await visibleClientIds(user);
   const verLojasProprias = can(user, "lojas.proprias");
 
-  const totals = await totalsForMonth(ref, escopo);
-  const prev = await totalsForMonth(prevRef, escopo);
-  const rows = await clientRows(ref, "cliente", escopo);
-  const propria = verLojasProprias ? await ownStoreTotals(ref) : null;
-  const series = await monthlySeries(6, undefined, escopo);
-  const byMarketplace = await marketplaceBreakdown(ref, undefined, escopo);
+  // Tudo que não depende de outra consulta sai junto. Em fila, a tela
+  // esperava a soma de todas; em paralelo, espera a mais lenta.
+  const [
+    totals,
+    prev,
+    rows,
+    propria,
+    series,
+    byMarketplace,
+    openTasks,
+    myTasks,
+    board,
+    saude,
+    procedencia,
+    adsCarteira,
+    adsLinhas,
+  ] = await Promise.all([
+    totalsForMonth(ref, escopo),
+    totalsForMonth(prevRef, escopo),
+    clientRows(ref, "cliente", escopo),
+    verLojasProprias ? ownStoreTotals(ref) : Promise.resolve(null),
+    monthlySeries(6, undefined, escopo),
+    marketplaceBreakdown(ref, undefined, escopo),
+    tasks({ status: "disponivel" }),
+    tasks({ statuses: ["assumida", "em_andamento", "em_revisao"], assignee: user.id }),
+    leaderboard(),
+    integrationHealth(escopo),
+    procedenciaDoMes(ref, { scope: escopo }),
+    adsTotalsCarteira(ref, escopo),
+    adsRows({ refMonth: ref, scope: escopo }),
+  ]);
 
   const active = rows.filter((r) => r.status === "ativo" || r.status === "atencao").length;
   const margin = totals.revenue ? totals.profit / totals.revenue : 0;
@@ -73,21 +98,15 @@ export default async function DashboardPage({
     .filter((r) => r.status !== "encerrado" && r.status !== "pausado")
     .reduce((s, r) => s + r.monthly_fee, 0);
 
-  const openTasks = await tasks({ status: "disponivel" });
-  const myTasks = await tasks({ statuses: ["assumida", "em_andamento", "em_revisao"], assignee: user.id });
-  const board = await leaderboard();
-  const saude = await integrationHealth(escopo);
-  const procedencia = await procedenciaDoMes(ref, { scope: escopo });
-  const adsCarteira = await adsTotalsCarteira(ref, escopo);
   // receita atribuída de Ads por cliente, para o ROAS da tabela
-  const adsPorCliente = new Map(
-    (await adsRows({ refMonth: ref, scope: escopo })).reduce((acc, e) => {
-      acc.set(e.client_id, (acc.get(e.client_id) ?? 0) + e.revenue);
-      return acc;
-    }, new Map<string, number>()),
-  );
-  const scores = await scoresEmLote(rows, ref);
-  const alertas = await alertasDaCarteira(ref, escopo);
+  const adsPorCliente = adsLinhas.reduce((acc, e) => {
+    acc.set(e.client_id, (acc.get(e.client_id) ?? 0) + e.revenue);
+    return acc;
+  }, new Map<string, number>());
+
+  // score e alertas dependem da carteira; os dois saem juntos, e os alertas
+  // reaproveitam a carteira já carregada em vez de buscá-la de novo
+  const [scores, alertas] = await Promise.all([scoresEmLote(rows, ref), alertasDaCarteira(ref, escopo, rows)]);
   const alertasAbertos = alertas.filter((a) => !a.resolvido);
 
   const roasCarteira = adsCarteira.invested ? adsCarteira.revenue / adsCarteira.invested : 0;

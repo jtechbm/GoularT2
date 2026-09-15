@@ -88,27 +88,57 @@ export default async function ClientePage({
   const ref = sp.mes && months.includes(sp.mes) ? sp.mes : currentMonth();
   const tab = TABS.some((t) => t.key === sp.tab) ? sp.tab! : "visao";
 
-  const totals = await totalsForClient(client.id, ref);
-  const prev = await totalsForClient(client.id, addMonths(ref, -1));
-  const series = await monthlySeries(6, client.id);
-  const team = await clientTeam(client.id);
-  const accounts = await clientMarketplaces(client.id);
-  const snapshots = await clientSnapshots(client.id, 12);
-  const notes = await clientNotes(client.id);
-  const ads = await clientAds(client.id);
-  const clientTasks = await tasks({ clientId: client.id });
-  const breakdown = await marketplaceBreakdown(ref, client.id);
-  const procedencia = await procedenciaDoMes(ref, { clientId: client.id });
-  const metas = await clientGoals(client.id, ref);
-  const metaGeral = metas.find((m) => m.marketplace === null);
-  const metasHistorico = await goalHistory(client.id, 12);
-  const adsMes = await adsTotals(client.id, ref);
-  const onboarding = await avaliarOnboardingDoCliente(client.id, ref);
-
   // histórico diário: atalho padrão é o mês de referência
   const atalho = sp.periodo ?? "mes";
   const periodo = periodoDe(atalho, ref, sp.de, sp.ate);
-  const dias = await serieDiaria(periodo.inicio, periodo.fim, { clientId: client.id });
+
+  // Mais de quinze consultas independentes. Em fila, a tela esperava a
+  // soma de todas; disparadas juntas, espera a mais lenta.
+  const [
+    totals,
+    prev,
+    series,
+    team,
+    accounts,
+    snapshots,
+    notes,
+    ads,
+    clientTasks,
+    breakdown,
+    procedencia,
+    metas,
+    metasHistorico,
+    adsMes,
+    onboarding,
+    dias,
+    penalidadesCliente,
+    contasML,
+    allUsers,
+    integracoes,
+  ] = await Promise.all([
+    totalsForClient(client.id, ref),
+    totalsForClient(client.id, addMonths(ref, -1)),
+    monthlySeries(6, client.id),
+    clientTeam(client.id),
+    clientMarketplaces(client.id),
+    clientSnapshots(client.id, 12),
+    clientNotes(client.id),
+    clientAds(client.id),
+    tasks({ clientId: client.id }),
+    marketplaceBreakdown(ref, client.id),
+    procedenciaDoMes(ref, { clientId: client.id }),
+    clientGoals(client.id, ref),
+    goalHistory(client.id, 12),
+    adsTotals(client.id, ref),
+    avaliarOnboardingDoCliente(client.id, ref),
+    serieDiaria(periodo.inicio, periodo.fim, { clientId: client.id }),
+    penalidades({ clientId: client.id, status: "aberta" }),
+    saudeContasML(undefined, client.id),
+    listUsers(),
+    integrationStatus(),
+  ]);
+
+  const metaGeral = metas.find((m) => m.marketplace === null);
   const realizado = {
     revenue: totals.revenue,
     orders: totals.orders,
@@ -117,8 +147,6 @@ export default async function ClientePage({
     adsRevenue: adsMes.revenue,
   };
   const hoje = new Date().toISOString().slice(0, 10);
-  const penalidadesCliente = await penalidades({ clientId: client.id, status: "aberta" });
-  const contasML = await saudeContasML(undefined, client.id);
   const score = calcularScore({
     revenue: totals.revenue,
     prevRevenue: prev.revenue,
@@ -141,8 +169,7 @@ export default async function ClientePage({
       total: penalidadesCliente.filter((p) => p.severity !== "informativo").length,
     },
   });
-  const allUsers = await listUsers();
-  const marketplacesDisponiveis = (await integrationStatus()).filter((i) => i.configured).map((i) => i.marketplace);
+  const marketplacesDisponiveis = integracoes.filter((i) => i.configured).map((i) => i.marketplace);
   const manager = can(user, "clientes.gerenciar");
   const margin = totals.revenue ? totals.profit / totals.revenue : 0;
 

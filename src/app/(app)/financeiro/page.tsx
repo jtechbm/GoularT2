@@ -83,16 +83,20 @@ export default async function FinanceiroPage({
   const ref = sp.mes && months.includes(sp.mes) ? sp.mes : currentMonth();
   const aba = ABAS.some((a) => a.key === sp.aba) && isAdmin ? sp.aba! : "receita";
 
-  const totals = await agencyTotals(ref);
-  const charges = await chargesForMonth(ref);
-  const faltando = await clientsWithoutCharge(ref);
-  const expenses = isAdmin ? await expensesForMonth(ref) : [];
-  const byCategory = isAdmin ? await expensesByCategory(ref) : [];
-  const series = isAdmin ? await agencySeries(6) : [];
-  const propria = await ownStoreTotals(ref);
+  // consultas independentes saem juntas; a tela espera a mais lenta
+  const [totals, charges, faltando, expenses, byCategory, series, propria, procedencia, carteira] =
+    await Promise.all([
+      agencyTotals(ref),
+      chargesForMonth(ref),
+      clientsWithoutCharge(ref),
+      isAdmin ? expensesForMonth(ref) : Promise.resolve([]),
+      isAdmin ? expensesByCategory(ref) : Promise.resolve([]),
+      isAdmin ? agencySeries(6) : Promise.resolve([]),
+      ownStoreTotals(ref),
+      procedenciaDoMes(ref),
+      carteiraCobrancas(ref),
+    ]);
   const lojasProprias = propria.stores > 0 ? await clientRows(ref, "propria") : [];
-  const procedencia = await procedenciaDoMes(ref);
-  const carteira = await carteiraCobrancas(ref);
 
   // filtros da lista de cobranças
   const chargesFiltradas = charges.filter((c) => {

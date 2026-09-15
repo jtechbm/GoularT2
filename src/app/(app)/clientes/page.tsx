@@ -30,8 +30,11 @@ export default async function ClientesPage({
 
   const all = await clientRows(ref, "cliente", await visibleClientIds(user));
   // só quem ainda está em onboarding precisa da barra de progresso
-  const onboardings = await avaliarOnboardingEmLote(all.filter((c) => c.status === "onboarding"), ref);
-  const scores = await scoresEmLote(all, ref);
+  // onboarding e score só dependem da carteira: saem juntos
+  const [onboardings, scores] = await Promise.all([
+    avaliarOnboardingEmLote(all.filter((c) => c.status === "onboarding"), ref),
+    scoresEmLote(all, ref),
+  ]);
   const rows = all.filter((c) => {
     if (status && c.status !== status) return false;
     if (onlyMine && c.owner_id !== user.id) return false;
