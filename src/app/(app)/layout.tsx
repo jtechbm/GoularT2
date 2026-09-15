@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { requireUser } from "@/lib/auth";
+import { requireUser, visibleClientIds } from "@/lib/auth";
 import { one } from "@/lib/db";
 import { Sidebar } from "@/components/nav";
 
@@ -31,9 +31,21 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       user.id,
     ))?.n ?? 0;
 
+  // o contador respeita a carteira da pessoa: membro não vê número de
+  // penalidade de cliente que ele não acompanha
+  const escopo = await visibleClientIds(user);
+  const penalidadesAbertas =
+    escopo !== null && escopo.length === 0
+      ? 0
+      : ((await one<{ n: number }>(
+          `SELECT COUNT(*) n FROM penalties WHERE status = 'aberta' AND severity <> 'informativo'
+             ${escopo ? `AND client_id IN (${escopo.map(() => "?").join(",")})` : ""}`,
+          ...(escopo ?? []),
+        ))?.n ?? 0);
+
   return (
     <div className="app-shell lg:flex">
-      <Sidebar user={user} pendingTasks={pending} naoLidas={naoLidas} />
+      <Sidebar user={user} pendingTasks={pending} naoLidas={naoLidas} penalidadesAbertas={penalidadesAbertas} />
       <main className="min-w-0 flex-1 px-4 py-6 sm:px-6 lg:px-8">
         <div className="mx-auto max-w-7xl">{children}</div>
       </main>

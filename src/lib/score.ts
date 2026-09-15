@@ -42,6 +42,8 @@ export interface EntradaScore {
   contasComProblema: number;
   contasConectadas: number;
   tarefasAtrasadas: number;
+  /** penalidades abertas no marketplace; opcional para quem ainda não carrega */
+  penalidades?: { criticas: number; total: number };
 }
 
 const LIMITE_ATENCAO = 70;
@@ -104,6 +106,20 @@ export function calcularScore(e: EntradaScore): Score {
       e.tarefasAtrasadas === 1 ? "Uma tarefa atrasada" : `${e.tarefasAtrasadas} tarefas atrasadas`,
       Math.min(15, 5 * e.tarefasAtrasadas),
     );
+  }
+
+  // --- penalidades do marketplace
+  //
+  // Penalidade crítica pesa mais que qualquer outro sinal: reputação
+  // vermelha ou aviso de bloqueio derruba a venda antes de o faturamento do
+  // mês mostrar a queda.
+  if (e.penalidades && e.penalidades.total > 0) {
+    const { criticas, total } = e.penalidades;
+    if (criticas > 0) {
+      desconta(criticas === 1 ? "Penalidade crítica aberta no marketplace" : `${criticas} penalidades críticas abertas`, 30);
+    } else {
+      desconta(total === 1 ? "Penalidade aberta no marketplace" : `${total} penalidades abertas`, 12);
+    }
   }
 
   // --- onboarding

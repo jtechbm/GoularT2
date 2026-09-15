@@ -18,8 +18,10 @@ import {
   clientGoals,
   getClient,
   goalHistory,
+  penalidades,
   periodoDe,
   procedenciaDoMes,
+  saudeContasML,
   serieDiaria,
   tasks,
   totalsForClient,
@@ -115,6 +117,8 @@ export default async function ClientePage({
     adsRevenue: adsMes.revenue,
   };
   const hoje = new Date().toISOString().slice(0, 10);
+  const penalidadesCliente = await penalidades({ clientId: client.id, status: "aberta" });
+  const contasML = await saudeContasML(undefined, client.id);
   const score = calcularScore({
     revenue: totals.revenue,
     prevRevenue: prev.revenue,
@@ -132,6 +136,10 @@ export default async function ClientePage({
     ).length,
     contasConectadas: accounts.filter((a) => a.status === "conectado").length,
     tarefasAtrasadas: clientTasks.filter((t) => t.status !== "concluida" && t.due_date && t.due_date < hoje).length,
+    penalidades: {
+      criticas: penalidadesCliente.filter((p) => p.severity === "critico").length,
+      total: penalidadesCliente.filter((p) => p.severity !== "informativo").length,
+    },
   });
   const allUsers = await listUsers();
   const marketplacesDisponiveis = (await integrationStatus()).filter((i) => i.configured).map((i) => i.marketplace);
@@ -232,6 +240,8 @@ export default async function ClientePage({
             refMonth={ref}
             onboarding={onboarding}
             score={score}
+            penalidades={penalidadesCliente}
+            contasML={contasML}
             tasks={clientTasks}
             breakdown={breakdown}
             chart={

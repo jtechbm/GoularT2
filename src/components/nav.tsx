@@ -13,6 +13,7 @@ import {
   IconCheckSquare,
   IconDollar,
   IconAlert,
+  IconShield,
   IconBell,
   IconHome,
   IconMegaphone,
@@ -28,6 +29,7 @@ const NAV: { href: string; label: string; Icon: typeof IconHome; exact?: boolean
   { href: "/", label: "Dashboard", Icon: IconHome, exact: true },
   { href: "/clientes", label: "Clientes", Icon: IconUser },
   { href: "/alertas", label: "Atenção", Icon: IconAlert },
+  { href: "/penalidades", label: "Penalidades", Icon: IconShield },
   { href: "/ads", label: "Ads", Icon: IconMegaphone },
   { href: "/financeiro", label: "Financeiro", Icon: IconDollar, roles: ["admin", "gestor"] },
   { href: "/tarefas", label: "Tarefas", Icon: IconCheckSquare },
@@ -54,10 +56,12 @@ export function Sidebar({
   user,
   pendingTasks = 0,
   naoLidas = 0,
+  penalidadesAbertas = 0,
 }: {
   user: User;
   pendingTasks?: number;
   naoLidas?: number;
+  penalidadesAbertas?: number;
 }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
@@ -66,7 +70,14 @@ export function Sidebar({
     const active = exact ? pathname === href : pathname === href || pathname.startsWith(`${href}/`);
     // o contador fica no item, não num sininho separado: um número no menu
     // que a pessoa já usa é mais visto do que um ícone a mais no topo
-    const badge = href === "/notificacoes" ? naoLidas : href === "/tarefas" ? pendingTasks : 0;
+    const badge =
+      href === "/notificacoes"
+        ? naoLidas
+        : href === "/tarefas"
+          ? pendingTasks
+          : href === "/penalidades"
+            ? penalidadesAbertas
+            : 0;
     return (
       <Link
         key={href}
@@ -83,7 +94,7 @@ export function Sidebar({
         {badge > 0 && (
           <span
             className={`rounded-full px-1.5 py-0.5 text-[0.65rem] font-semibold text-white ${
-              href === "/notificacoes" ? "bg-accent" : "bg-brand"
+              href === "/notificacoes" ? "bg-accent" : href === "/penalidades" ? "bg-bad" : "bg-brand"
             }`}
           >
             {badge > 99 ? "99+" : badge}

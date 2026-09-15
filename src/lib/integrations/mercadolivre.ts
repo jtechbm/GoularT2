@@ -37,7 +37,8 @@ function env() {
   };
 }
 
-async function refreshIfNeeded(ctx: AdapterContext): Promise<string> {
+/** Token válido da conta, renovando se preciso. Usado também pelas penalidades. */
+export async function refreshIfNeeded(ctx: AdapterContext): Promise<string> {
   const creds = ctx.credentials;
   if (!creds?.access_token) throw new IntegrationError("Conta do Mercado Livre ainda não autorizada.", "auth");
 

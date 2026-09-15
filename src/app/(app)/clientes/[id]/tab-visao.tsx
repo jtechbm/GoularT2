@@ -7,6 +7,8 @@ import { OnboardingCard } from "@/components/onboarding-card";
 import type { OnboardingResultado } from "@/lib/onboarding";
 import { ScoreSaude } from "@/components/score-saude";
 import type { Score } from "@/lib/score";
+import type { PenalidadeRow, saudeContasML } from "@/lib/queries";
+import { PenalidadesCliente } from "@/components/penalidades-cliente";
 import { brlShort, dateBR, num, relativeBR } from "@/lib/format";
 import { marketplaceLabel, type Client, type ClientMarketplace, type ClientNote, type User } from "@/lib/types";
 import type { TaskRow, Totals } from "@/lib/queries";
@@ -25,6 +27,8 @@ export function TabVisao({
   refMonth,
   onboarding,
   score,
+  penalidades,
+  contasML,
 }: {
   client: Client;
   team: (User & { team_role: string })[];
@@ -39,6 +43,8 @@ export function TabVisao({
   refMonth: string;
   onboarding: OnboardingResultado;
   score: Score;
+  penalidades: PenalidadeRow[];
+  contasML: Awaited<ReturnType<typeof saudeContasML>>;
 }) {
   const openTasks = tasks.filter((t) => t.status !== "concluida");
 
@@ -128,6 +134,8 @@ export function TabVisao({
 
       <div className="space-y-3">
         <ScoreSaude score={score} />
+
+        {contasML.length > 0 && <PenalidadesCliente clientId={client.id} penalidades={penalidades} contas={contasML} />}
 
         <Card title="Time responsável">
           {team.length ? (

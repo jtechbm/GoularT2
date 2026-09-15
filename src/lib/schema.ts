@@ -450,6 +450,102 @@ CREATE TABLE IF NOT EXISTS notifications (
 
 CREATE INDEX IF NOT EXISTS idx_notif_pessoa ON notifications(user_id, read_at, created_at DESC);
 
+-- Penalidades.
+--
+-- Uma linha por penalidade detectada. external_key e a identidade dela
+-- no marketplace (id do aviso, nível de reputação, id da infração), e o
+-- índice único por conta é o que impede a mesma penalidade de ser
+-- avisada de novo a cada rodada.
+CREATE TABLE IF NOT EXISTS penalties (
+  id                    text PRIMARY KEY,
+  client_id             text NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+  client_marketplace_id text NOT NULL REFERENCES client_marketplaces(id) ON DELETE CASCADE,
+  marketplace           text NOT NULL,
+  -- reputacao | aviso | infracao | punicao
+  kind                  text NOT NULL,
+  -- critico | atencao | informativo
+  severity              text NOT NULL,
+  external_key          text NOT NULL,
+  title                 text NOT NULL,
+  detail                text,
+  -- o que a API devolveu no momento, para conferir depois
+  data                  text,
+  status                text NOT NULL DEFAULT 'aberta',
+  detected_at           text NOT NULL,
+  resolved_at           text,
+  resolved_by           text REFERENCES users(id) ON DELETE SET NULL,
+  resolution_note       text,
+  -- 1 quando o proprio marketplace mostrou que passou (reputacao voltou)
+  auto_resolved         integer NOT NULL DEFAULT 0,
+  UNIQUE (client_marketplace_id, kind, external_key)
+);
+
+CREATE INDEX IF NOT EXISTS idx_penal_cliente ON penalties(client_id, status, detected_at DESC);
+CREATE INDEX IF NOT EXISTS idx_penal_status  ON penalties(status, detected_at DESC);
+
+-- Reputacao e estado, nao evento: so da para saber que piorou comparando
+-- com a leitura anterior. Guardar a serie tambem mostra a tendencia das
+-- metricas antes de a cor mudar.
+CREATE TABLE IF NOT EXISTS reputation_snapshots (
+  id                    text PRIMARY KEY,
+  client_marketplace_id text NOT NULL REFERENCES client_marketplaces(id) ON DELETE CASCADE,
+  level_id              text,
+  -- durante a protecao do Decola a cor exibida nao e a real
+  real_level            text,
+  protection_end_date   text,
+  power_seller_status   text,
+  claims_rate           double precision,
+  claims_value          integer,
+  delayed_rate          double precision,
+  delayed_value         integer,
+  cancellations_rate    double precision,
+  cancellations_value   integer,
+  sales_completed       integer,
+  metrics_period        text,
+  captured_at           text NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_rep_conta ON reputation_snapshots(client_marketplace_id, captured_at DESC);
+
+-- Avisos oficiais do marketplace ao vendedor. Guarda todos, mesmo os que
+-- nao sao penalidade, porque a categoria de alerta nunca apareceu numa
+-- conta real ainda e a classificacao precisa ser conferida contra o bruto.
+CREATE TABLE IF NOT EXISTS marketplace_notices (
+  id                    text PRIMARY KEY,
+  client_marketplace_id text NOT NULL REFERENCES client_marketplaces(id) ON DELETE CASCADE,
+  external_id           text NOT NULL,
+  category              text,
+  sub_category          text,
+  title                 text,
+  description           text,
+  highlighted           integer NOT NULL DEFAULT 0,
+  from_date             text,
+  is_alert              integer NOT NULL DEFAULT 0,
+  first_seen_at         text NOT NULL,
+  UNIQUE (client_marketplace_id, external_id)
+);
+
+-- Entrega das notificacoes por canal. Hoje so existe 'app'. O WhatsApp
+-- entra como outro canal lendo as pendentes daqui, sem refazer a deteccao
+-- e sem criar a penalidade de novo quando um envio falhar.
+CREATE TABLE IF NOT EXISTS notification_deliveries (
+  id              text PRIMARY KEY,
+  notification_id text NOT NULL REFERENCES notifications(id) ON DELETE CASCADE,
+  channel         text NOT NULL,
+  status          text NOT NULL DEFAULT 'pendente',
+  attempts        integer NOT NULL DEFAULT 0,
+  last_error      text,
+  created_at      text NOT NULL,
+  sent_at         text,
+  UNIQUE (notification_id, channel)
+);
+
+CREATE INDEX IF NOT EXISTS idx_entregas_pendentes ON notification_deliveries(channel, status);
+
+-- quando cada conta foi verificada e se a permissao de anuncios existe
+ALTER TABLE client_marketplaces ADD COLUMN IF NOT EXISTS penalties_checked_at text;
+ALTER TABLE client_marketplaces ADD COLUMN IF NOT EXISTS items_permission     text;
+
 CREATE INDEX IF NOT EXISTS idx_charges_month  ON agency_charges(ref_month, status);
 CREATE INDEX IF NOT EXISTS idx_expenses_month ON agency_expenses(ref_month);
 
@@ -487,6 +583,10 @@ CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
 
 /** Tabelas na ordem segura para limpeza (filhas antes das pais). */
 export const TABLES = [
+  "notification_deliveries",
+  "marketplace_notices",
+  "reputation_snapshots",
+  "penalties",
   "notifications",
   "charge_events",
   "charge_adjustments",

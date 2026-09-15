@@ -802,6 +802,7 @@ export async function scoresEmLote(rows: ClientRow[], refMonth = currentMonth())
   const paradoDesde = new Date(Date.now() - 3 * 864e5).toISOString();
   const hoje = new Date().toISOString().slice(0, 10);
 
+  const penais = await penalidadesAbertasPorCliente(ids);
   const [metas, onboardings, ads, atrasadas, contas] = await Promise.all([
     goalsForMonth(refMonth, ids),
     avaliarOnboardingEmLote(rows, refMonth),
@@ -860,6 +861,7 @@ export async function scoresEmLote(rows: ClientRow[], refMonth = currentMonth())
         contasComProblema: c?.problema ?? 0,
         contasConectadas: c?.conectadas ?? 0,
         tarefasAtrasadas: atrasadas.find((x) => x.client_id === row.id)?.n ?? 0,
+        penalidades: penais.get(row.id),
       }),
     );
   }
@@ -1466,4 +1468,136 @@ export function faixaDeCarga(pessoas: DesempenhoPessoa[]): { alta: number; baixa
   if (!cargas.length) return { alta: Infinity, baixa: -1 };
   const mediana = cargas[Math.floor(cargas.length / 2)];
   return { alta: Math.max(3, mediana * 2), baixa: 0 };
+}
+
+
+// ---------------------------------------------------------------- penalidades
+
+export interface PenalidadeRow {
+  id: string;
+  client_id: string;
+  client_name: string;
+  client_marketplace_id: string;
+  marketplace: string;
+  kind: string;
+  severity: string;
+  title: string;
+  detail: string | null;
+  status: string;
+  detected_at: string;
+  resolved_at: string | null;
+  resolution_note: string | null;
+  auto_resolved: number;
+  resolved_by_name: string | null;
+}
+
+/** Penalidades do recorte que a pessoa enxerga. */
+export async function penalidades(
+  filtro: { scope?: Scope; clientId?: string; status?: string; kind?: string } = {},
+): Promise<PenalidadeRow[]> {
+  const cond: string[] = ["1 = 1"];
+  const params: unknown[] = [];
+  if (filtro.clientId) {
+    cond.push("p.client_id = ?");
+    params.push(filtro.clientId);
+  }
+  if (filtro.status) {
+    cond.push("p.status = ?");
+    params.push(filtro.status);
+  }
+  if (filtro.kind) {
+    cond.push("p.kind = ?");
+    params.push(filtro.kind);
+  }
+  const esc = scoped(filtro.scope, "p.client_id");
+
+  return all<PenalidadeRow>(
+    `SELECT p.id, p.client_id, c.name AS client_name, p.client_marketplace_id, p.marketplace, p.kind,
+            p.severity, p.title, p.detail, p.status, p.detected_at, p.resolved_at, p.resolution_note,
+            p.auto_resolved, u.name AS resolved_by_name
+       FROM penalties p
+       JOIN clients c ON c.id = p.client_id
+       LEFT JOIN users u ON u.id = p.resolved_by
+      WHERE ${cond.join(" AND ")}${esc.sql}
+      ORDER BY (p.status = 'aberta') DESC,
+               (CASE p.severity WHEN 'critico' THEN 0 WHEN 'atencao' THEN 1 ELSE 2 END),
+               p.detected_at DESC
+      LIMIT 300`,
+    ...params,
+    ...esc.params,
+  );
+}
+
+/** Situação de cada conta do Mercado Livre: última reputação lida e permissões. */
+export async function saudeContasML(scope?: Scope, clientId?: string) {
+  const esc = scoped(scope, "cm.client_id");
+  const cli = clientId ? " AND cm.client_id = ?" : "";
+  return all<{
+    id: string;
+    client_id: string;
+    client_name: string;
+    penalties_checked_at: string | null;
+    items_permission: string | null;
+    level_id: string | null;
+    real_level: string | null;
+    protection_end_date: string | null;
+    claims_rate: number | null;
+    delayed_rate: number | null;
+    cancellations_rate: number | null;
+    captured_at: string | null;
+  }>(
+    `SELECT cm.id, cm.client_id, c.name AS client_name, cm.penalties_checked_at, cm.items_permission,
+            r.level_id, r.real_level, r.protection_end_date, r.claims_rate, r.delayed_rate,
+            r.cancellations_rate, r.captured_at
+       FROM client_marketplaces cm
+       JOIN clients c ON c.id = cm.client_id
+       LEFT JOIN LATERAL (
+         SELECT * FROM reputation_snapshots s
+          WHERE s.client_marketplace_id = cm.id
+          ORDER BY s.captured_at DESC LIMIT 1
+       ) r ON true
+      WHERE cm.marketplace = 'mercado_livre' AND cm.status = 'conectado'${cli}${esc.sql}
+      ORDER BY lower(c.name)`,
+    ...(clientId ? [clientId] : []),
+    ...esc.params,
+  );
+}
+
+/** Avisos oficiais recebidos, os mais recentes primeiro. */
+export async function avisosMarketplace(scope?: Scope, limit = 30) {
+  const esc = scoped(scope, "cm.client_id");
+  return all<{
+    id: string;
+    client_name: string;
+    category: string | null;
+    sub_category: string | null;
+    title: string | null;
+    from_date: string | null;
+    is_alert: number;
+  }>(
+    `SELECT n.id, c.name AS client_name, n.category, n.sub_category, n.title, n.from_date, n.is_alert
+       FROM marketplace_notices n
+       JOIN client_marketplaces cm ON cm.id = n.client_marketplace_id
+       JOIN clients c ON c.id = cm.client_id
+      WHERE 1 = 1${esc.sql}
+      ORDER BY n.from_date DESC NULLS LAST LIMIT ?`,
+    ...esc.params,
+    limit,
+  );
+}
+
+/** Quantas penalidades abertas por cliente, para score e listas. */
+export async function penalidadesAbertasPorCliente(ids: string[]) {
+  if (!ids.length) return new Map<string, { criticas: number; total: number }>();
+  const marcas = ids.map(() => "?").join(",");
+  const linhas = await all<{ client_id: string; criticas: number; total: number }>(
+    `SELECT client_id,
+            COUNT(*) FILTER (WHERE severity = 'critico') AS criticas,
+            COUNT(*) FILTER (WHERE severity <> 'informativo') AS total
+       FROM penalties
+      WHERE status = 'aberta' AND client_id IN (${marcas})
+      GROUP BY client_id`,
+    ...ids,
+  );
+  return new Map(linhas.map((l) => [l.client_id, { criticas: l.criticas, total: l.total }]));
 }

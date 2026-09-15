@@ -19,7 +19,8 @@ export type TipoNotificacao =
   | "revisao"
   | "aprovada"
   | "reprovada"
-  | "prazo";
+  | "prazo"
+  | "penalidade";
 
 export interface NovaNotificacao {
   userId: string;
@@ -32,14 +33,16 @@ export interface NovaNotificacao {
   clientId?: string | null;
 }
 
-export async function notificar(n: NovaNotificacao): Promise<void> {
+/** Devolve o id criado, ou null quando não havia a quem avisar. */
+export async function notificar(n: NovaNotificacao): Promise<string | null> {
   // a própria ação não vira aviso para quem a fez
-  if (n.actorId && n.actorId === n.userId) return;
+  if (n.actorId && n.actorId === n.userId) return null;
 
+  const notifId = id();
   await run(
     `INSERT INTO notifications (id, user_id, actor_id, type, title, body, href, task_id, client_id, created_at)
      VALUES (?,?,?,?,?,?,?,?,?,?)`,
-    id(),
+    notifId,
     n.userId,
     n.actorId,
     n.type,
@@ -50,12 +53,18 @@ export async function notificar(n: NovaNotificacao): Promise<void> {
     n.clientId ?? null,
     now(),
   );
+  return notifId;
 }
 
-export async function notificarVarios(usuarios: string[], base: Omit<NovaNotificacao, "userId">): Promise<number> {
+/** Avisa várias pessoas de uma vez e devolve os ids das notificações criadas. */
+export async function notificarVarios(usuarios: string[], base: Omit<NovaNotificacao, "userId">): Promise<string[]> {
   const unicos = [...new Set(usuarios)].filter((u) => u && u !== base.actorId);
-  for (const userId of unicos) await notificar({ ...base, userId });
-  return unicos.length;
+  const ids: string[] = [];
+  for (const userId of unicos) {
+    const criado = await notificar({ ...base, userId });
+    if (criado) ids.push(criado);
+  }
+  return ids;
 }
 
 /** Nomes citados com @ no texto, na ordem em que aparecem. */

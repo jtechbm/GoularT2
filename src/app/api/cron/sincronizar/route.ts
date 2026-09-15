@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { all, id, now, run } from "@/lib/db";
 import { syncAccount } from "@/lib/integrations";
+import { verificarPenalidadesML } from "@/lib/penalidades/mercadolivre";
 import { addMonths, currentMonth } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
@@ -58,6 +59,20 @@ export async function GET(req: NextRequest) {
     if (semTempo) break;
   }
 
+  // penalidades depois dos números: se o tempo acabar, o faturamento, que é o
+  // que a agência cobra, já foi gravado. Cada verificação são três chamadas.
+  let penalidadesNovas = 0;
+  let penalidadesVerificadas = 0;
+  for (const conta of contas.filter((c) => c.marketplace === "mercado_livre")) {
+    if (Date.now() > fim) {
+      semTempo = true;
+      break;
+    }
+    const r = await verificarPenalidadesML(conta.id);
+    penalidadesVerificadas += 1;
+    penalidadesNovas += r.novas;
+  }
+
   // batimento cardíaco: sem isto, um cron que nunca roda é indistinguível
   // de um cron que roda e não encontra nada para fazer
   const erros = resultados.filter((r) => !r.ok).length;
@@ -67,7 +82,7 @@ export async function GET(req: NextRequest) {
     id(),
     mesAtual,
     erros ? "parcial" : "ok",
-    `${resultados.length} sincronizações · ${erros} com erro${semTempo ? " · fila incompleta" : ""}`,
+    `${resultados.length} sincronizações · ${erros} com erro · ${penalidadesVerificadas} contas verificadas, ${penalidadesNovas} penalidades novas${semTempo ? " · fila incompleta" : ""}`,
     now(),
   );
 
@@ -77,6 +92,7 @@ export async function GET(req: NextRequest) {
     ok: resultados.filter((r) => r.ok).length,
     erros,
     incompleto: semTempo,
+    penalidades: { verificadas: penalidadesVerificadas, novas: penalidadesNovas },
     resultados,
   });
 }

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Suspense } from "react";
 import { requireUser, visibleClientIds } from "@/lib/auth";
-import { alertasDaCarteira, clientOptions } from "@/lib/queries";
+import { alertasDaCarteira, clientOptions, penalidades } from "@/lib/queries";
 import { currentMonth, dateTimeBR, lastMonths, monthLabel } from "@/lib/format";
 import { Card, Chip, Empty, Field, PageHeader, Stat } from "@/components/ui";
 import { SubmitButton } from "@/components/submit";
@@ -34,6 +34,11 @@ export default async function AlertasPage({
   });
 
   const abertos = todos.filter((a) => !a.resolvido);
+  // penalidade tem tela e ciclo próprios; aqui só aponta para lá, para a
+  // mesma coisa não ser resolvida em dois lugares
+  const penalAbertas = (await penalidades({ scope: escopo, status: "aberta" })).filter(
+    (p) => p.severity !== "informativo",
+  );
   const porNivel = (n: NivelAlerta) => abertos.filter((a) => a.nivel === n).length;
 
   const link = (extra: Record<string, string | undefined>) => {
@@ -67,6 +72,21 @@ export default async function AlertasPage({
         <Stat label="Informativos" value={String(porNivel("informativo"))} tone="info" />
         <Stat label="Resolvidos" value={String(todos.length - abertos.length)} tone="neutral" />
       </div>
+
+      {penalAbertas.length > 0 && (
+        <Link
+          href="/penalidades"
+          className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-[12px] border border-bad/30 bg-bad-soft px-4 py-3 transition-colors hover:border-bad"
+        >
+          <span className="text-sm font-medium text-ink">
+            {penalAbertas.length} {penalAbertas.length === 1 ? "penalidade aberta" : "penalidades abertas"} no Mercado
+            Livre
+          </span>
+          <span className="text-xs text-bad">
+            {penalAbertas.filter((p) => p.severity === "critico").length} críticas · ver penalidades
+          </span>
+        </Link>
+      )}
 
       <Card className="mt-3" bodyClassName="p-4">
         <form className="grid gap-3 sm:grid-cols-4">
