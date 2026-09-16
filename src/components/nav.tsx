@@ -20,6 +20,7 @@ import {
   IconMenu,
   IconPower,
   IconSync,
+  IconTag,
   IconUser,
   IconUsers,
 } from "./icons";
@@ -31,6 +32,7 @@ const NAV: { href: string; label: string; Icon: typeof IconHome; exact?: boolean
   { href: "/alertas", label: "Atenção", Icon: IconAlert },
   { href: "/penalidades", label: "Penalidades", Icon: IconShield },
   { href: "/ads", label: "Ads", Icon: IconMegaphone },
+  { href: "/precos", label: "Preços", Icon: IconTag },
   { href: "/financeiro", label: "Financeiro", Icon: IconDollar, roles: ["admin", "gestor"] },
   { href: "/tarefas", label: "Tarefas", Icon: IconCheckSquare },
   { href: "/equipe", label: "Equipe", Icon: IconUsers },

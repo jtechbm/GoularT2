@@ -31,7 +31,9 @@ export type Permission =
   /** criar e remover canais do chat */
   | "chat.gerenciar"
   /** marcar penalidade como resolvida; ver continua limitado à carteira da pessoa */
-  | "penalidades.resolver";
+  | "penalidades.resolver"
+  /** disparar a busca de preços de concorrentes, que custa dinheiro por execução */
+  | "precos.pesquisar";
 
 const TODAS: Permission[] = [
   "equipe.gerenciar",
@@ -44,6 +46,7 @@ const TODAS: Permission[] = [
   "financeiro",
   "chat.gerenciar",
   "penalidades.resolver",
+  "precos.pesquisar",
 ];
 
 const POR_PAPEL: Record<Role, Permission[]> = {
@@ -62,6 +65,7 @@ const POR_PAPEL: Record<Role, Permission[]> = {
     "financeiro",
     "chat.gerenciar",
     "penalidades.resolver",
+    "precos.pesquisar",
   ],
 
   // opera o que é dele: lança número, escreve anotação, pega tarefa e manda
@@ -91,6 +95,7 @@ export const PERMISSION_LABEL: Record<Permission, string> = {
   financeiro: "Cobranças, despesas e resultado",
   "chat.gerenciar": "Criar e remover canais",
   "penalidades.resolver": "Resolver penalidades",
+  "precos.pesquisar": "Pesquisar preços de concorrentes",
 };
 
 /** Ordem em que as permissões aparecem na tabela. */

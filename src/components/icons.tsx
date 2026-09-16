@@ -53,6 +53,13 @@ export const IconMegaphone = (p: IconProps) => (
   </Base>
 );
 
+export const IconTag = (p: IconProps) => (
+  <Base {...p}>
+    <path d="M3.5 11.2V5a1.5 1.5 0 0 1 1.5-1.5h6.2a1.5 1.5 0 0 1 1.06.44l7.3 7.3a1.5 1.5 0 0 1 0 2.12l-6.2 6.2a1.5 1.5 0 0 1-2.12 0l-7.3-7.3a1.5 1.5 0 0 1-.44-1.06Z" />
+    <circle cx="8" cy="8" r="1.4" />
+  </Base>
+);
+
 export const IconCheckSquare = (p: IconProps) => (
   <Base {...p}>
     <rect x="3.5" y="3.5" width="17" height="17" rx="4" />

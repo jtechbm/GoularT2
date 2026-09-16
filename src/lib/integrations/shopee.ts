@@ -82,7 +82,7 @@ export async function refreshIfNeeded(ctx: AdapterContext): Promise<StoredCreden
   return next;
 }
 
-async function call<T>(
+export async function call<T>(
   path: string,
   params: Record<string, string | number>,
   creds?: StoredCredentials,

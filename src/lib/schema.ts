@@ -596,6 +596,49 @@ CREATE TABLE IF NOT EXISTS webhook_events (
 
 CREATE INDEX IF NOT EXISTS idx_webhook_recebidos ON webhook_events(marketplace, received_at DESC);
 
+-- Anuncios da propria loja, importados do marketplace.
+--
+-- Existem para o comparador ter um produto "dele" com dono: a consulta da
+-- comparacao filtra pelo cliente do usuario no proprio WHERE, e para isso o
+-- produto precisa estar preso a uma conta conectada.
+CREATE TABLE IF NOT EXISTS client_products (
+  id                    text PRIMARY KEY,
+  client_id             text NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+  client_marketplace_id text NOT NULL REFERENCES client_marketplaces(id) ON DELETE CASCADE,
+  marketplace           text NOT NULL,
+  external_id           text NOT NULL,
+  title                 text NOT NULL,
+  price                 double precision NOT NULL DEFAULT 0,
+  url                   text,
+  status                text,
+  updated_at            text NOT NULL,
+  UNIQUE (client_marketplace_id, external_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_produtos_cliente ON client_products(client_id, marketplace);
+
+-- Fotografia do mercado para um produto, quando o preco veio de busca na web.
+--
+-- Nao e historico: cada busca substitui a anterior inteira, numa transacao.
+-- Misturar buscas de datas diferentes distorce a mediana, que e justamente o
+-- numero que a tela usa para dizer se o preco esta alto.
+CREATE TABLE IF NOT EXISTS market_comparisons (
+  id             text PRIMARY KEY,
+  product_id     text NOT NULL REFERENCES client_products(id) ON DELETE CASCADE,
+  -- copiada do produto na criacao, para travar a comparacao na mesma plataforma
+  marketplace    text NOT NULL,
+  seller         text,
+  title          text NOT NULL,
+  price          double precision NOT NULL,
+  url            text,
+  source_snippet text,
+  note           text,
+  author         text REFERENCES users(id),
+  created_at     text NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_comparacoes_produto ON market_comparisons(product_id);
+
 CREATE INDEX IF NOT EXISTS idx_charges_month  ON agency_charges(ref_month, status);
 CREATE INDEX IF NOT EXISTS idx_expenses_month ON agency_expenses(ref_month);
 
@@ -633,6 +676,8 @@ CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
 
 /** Tabelas na ordem segura para limpeza (filhas antes das pais). */
 export const TABLES = [
+  "market_comparisons",
+  "client_products",
   "webhook_events",
   "shopee_order_escrow",
   "notification_deliveries",
