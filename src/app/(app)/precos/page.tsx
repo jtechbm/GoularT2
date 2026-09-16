@@ -30,6 +30,7 @@ export default async function PrecosPage({
     importados?: string;
     achados?: string;
     fora?: string;
+    erro?: string;
   }>;
 }) {
   const user = await requireUser();
@@ -56,6 +57,12 @@ export default async function PrecosPage({
         subtitle="Compara o anúncio da loja com os concorrentes do mesmo produto, na mesma plataforma"
       />
 
+      {sp.erro && (
+        <div className="mb-4 rounded-[12px] border border-warn/30 bg-warn-soft px-4 py-3 text-sm">
+          <p className="font-medium text-ink">Não deu para importar agora.</p>
+          <p className="mt-1 text-xs text-muted">{sp.erro}</p>
+        </div>
+      )}
       {sp.importados !== undefined && (
         <div className="flash mb-4 rounded-lg border border-ok/30 bg-ok-soft px-4 py-2.5 text-sm font-medium text-ok">
           {sp.importados} {sp.importados === "1" ? "anúncio importado" : "anúncios importados"}.

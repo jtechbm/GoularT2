@@ -8,6 +8,7 @@ import {
   numerosDoTrecho,
   precoConfere,
   precoDaShopee,
+  precoDoAnuncio,
   TETO_ANUNCIOS,
   type ProdutoConcorrente,
 } from "./analise.ts";
@@ -54,6 +55,12 @@ test("análise completa e lista vazia sem erro", () => {
 test("preço da Shopee vem multiplicado por 100.000", () => {
   assert.equal(precoDaShopee(5_000_000), 50);
   assert.equal(precoDaShopee(4_940_000), 49.4);
+});
+
+test("a conversão só vale para a rota que reporta em micro-unidades", () => {
+  assert.equal(precoDoAnuncio(5_000_000, true), 50);
+  // get_model_list, conferido na loja real, já devolve reais
+  assert.equal(precoDoAnuncio(99.9, false), 99.9);
 });
 
 test("números do trecho leem o formato brasileiro", () => {

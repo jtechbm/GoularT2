@@ -82,6 +82,18 @@ export function precoDaShopee(bruto: number): number {
   return bruto / 100_000;
 }
 
+/**
+ * Preço de um anúncio, convertendo só quando a rota reporta em micro-unidades.
+ *
+ * Nem toda rota da Shopee usa a mesma unidade, e a escolha não pode ficar no
+ * olho de quem escreve a chamada. Conferido na loja real: get_model_list e
+ * get_item_base_info devolvem reais (99.9 é R$ 99,90), então lá esta função
+ * recebe false. Onde a rota devolver micro-unidades, recebe true.
+ */
+export function precoDoAnuncio(bruto: number, microUnidades: boolean): number {
+  return microUnidades ? precoDaShopee(bruto) : bruto;
+}
+
 /** Aceita "1.234,56", "1234,56", "1234.56" e "1234". */
 function paraNumero(texto: string): number {
   if (texto.includes(",")) return Number(texto.replace(/\./g, "").replace(",", "."));

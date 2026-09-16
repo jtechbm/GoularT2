@@ -2,8 +2,8 @@ import { all, id, now, run } from "../db.ts";
 import { decryptJSON, encryptJSON } from "../crypto.ts";
 import { refreshIfNeeded as tokenML } from "../integrations/mercadolivre.ts";
 import { call as chamarShopee, refreshIfNeeded as tokenShopee } from "../integrations/shopee.ts";
-import { IntegrationError, type StoredCredentials } from "../integrations/types.ts";
-import { precoDaShopee } from "./analise.ts";
+import { IntegrationError, mapLimit, type StoredCredentials } from "../integrations/types.ts";
+import { precoDoAnuncio } from "./analise.ts";
 
 /**
  * Os anúncios da própria loja, importados do marketplace.
@@ -89,10 +89,17 @@ async function anunciosML(conta: Conta): Promise<AnuncioImportado[]> {
   return anuncios;
 }
 
-/** Anúncios da loja Shopee. O preço bruto vem multiplicado — ver precoDaShopee. */
+/**
+ * Anúncios da loja Shopee.
+ *
+ * O preço não está onde parece: anúncio com variação (has_model) não traz
+ * price_info nenhum, e o valor real mora em get_model_list, uma chamada por
+ * anúncio. Guardamos o menor preço entre as variações, que é o que a Shopee
+ * mostra na vitrine e o que o concorrente vê.
+ */
 async function anunciosShopee(conta: Conta): Promise<AnuncioImportado[]> {
   const creds = await tokenShopee(await contexto(conta));
-  const lista = await chamarShopee<{ response?: { item?: { item_id: number; item_status?: string }[] } }>(
+  const lista = await chamarShopee<{ response?: { item?: { item_id: number }[] } }>(
     "/api/v2/product/get_item_list",
     { offset: 0, page_size: 100, item_status: "NORMAL" },
     creds,
@@ -100,32 +107,49 @@ async function anunciosShopee(conta: Conta): Promise<AnuncioImportado[]> {
   const ids = (lista.response?.item ?? []).map((i) => i.item_id);
   if (!ids.length) return [];
 
-  const anuncios: AnuncioImportado[] = [];
+  const base: { item_id: number; item_name?: string; item_status?: string; has_model?: boolean; preco: number }[] = [];
   for (let i = 0; i < ids.length; i += 50) {
-    const lote = ids.slice(i, i + 50);
     const detalhe = await chamarShopee<{
       response?: {
         item_list?: {
           item_id: number;
           item_name?: string;
           item_status?: string;
+          has_model?: boolean;
           price_info?: { current_price?: number; original_price?: number }[];
         }[];
       };
-    }>("/api/v2/product/get_item_base_info", { item_id_list: lote.join(",") }, creds);
+    }>("/api/v2/product/get_item_base_info", { item_id_list: ids.slice(i, i + 50).join(",") }, creds);
 
     for (const item of detalhe.response?.item_list ?? []) {
       const bruto = item.price_info?.[0]?.current_price ?? item.price_info?.[0]?.original_price ?? 0;
-      anuncios.push({
-        external_id: String(item.item_id),
-        title: item.item_name ?? String(item.item_id),
-        price: precoDaShopee(bruto),
-        url: `https://shopee.com.br/product/${creds.shop_id}/${item.item_id}`,
-        status: item.item_status ?? null,
-      });
+      base.push({ ...item, preco: precoDoAnuncio(bruto, false) });
     }
   }
-  return anuncios;
+
+  // uma chamada por anúncio com variação, em paralelo e com prazo: numa loja
+  // de cem anúncios, em fila, isso sozinho estouraria o tempo da função
+  const comVariacao = base.filter((b) => b.has_model);
+  const precos = new Map<number, number>();
+  const { results } = await mapLimit(comVariacao, 6, Date.now() + 35_000, async (item) => {
+    const modelos = await chamarShopee<{
+      response?: { model?: { price_info?: { current_price?: number }[] }[] };
+    }>("/api/v2/product/get_model_list", { item_id: item.item_id }, creds);
+
+    const valores = (modelos.response?.model ?? [])
+      .map((m) => precoDoAnuncio(m.price_info?.[0]?.current_price ?? 0, false))
+      .filter((v) => v > 0);
+    return { item_id: item.item_id, preco: valores.length ? Math.min(...valores) : 0 };
+  });
+  for (const r of results) precos.set(r.item_id, r.preco);
+
+  return base.map((item) => ({
+    external_id: String(item.item_id),
+    title: item.item_name ?? String(item.item_id),
+    price: precos.get(item.item_id) ?? item.preco,
+    url: `https://shopee.com.br/product/${creds.shop_id}/${item.item_id}`,
+    status: item.item_status ?? null,
+  }));
 }
 
 /**
