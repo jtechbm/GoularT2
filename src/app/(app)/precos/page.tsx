@@ -7,7 +7,7 @@ import { marketplaceLabel } from "@/lib/types";
 import { Card, Chip, Empty, Field, MarketplaceChip, PageHeader, Stat } from "@/components/ui";
 import { SubmitButton } from "@/components/submit";
 import { buscarConcorrentesAction, importarAnunciosAction } from "@/lib/actions/precos";
-import { diferencaPct } from "@/lib/precos/analise";
+import { diferencaRelativa } from "@/lib/precos/analise";
 import {
   contasDoCliente,
   produtoDoUsuario,
@@ -49,7 +49,7 @@ export default async function PrecosPage({
   const regua = produto ? await reguaDoProduto(produto) : null;
 
   // acima da mediana é o alerta; o verde fica para quem está abaixo
-  const acima = produto && regua?.analise.total ? diferencaPct(produto.price, regua.analise.mediana) : 0;
+  const acima = produto && regua?.analise.total ? diferencaRelativa(produto.price, regua.analise.mediana) : 0;
 
   return (
     <>
@@ -172,7 +172,7 @@ export default async function PrecosPage({
                           : `você está ${pct(Math.abs(acima))} abaixo`
                         : "sem concorrentes"
                     }
-                    tone={!regua.analise.total ? "neutral" : acima > 10 ? "bad" : acima > 0 ? "warn" : "ok"}
+                    tone={!regua.analise.total ? "neutral" : acima > 0.1 ? "bad" : acima > 0 ? "warn" : "ok"}
                   />
                   <Stat label="Média aparada" value={brl(regua.analise.mediaAparada)} hint="sem as duas pontas" />
                   <Stat label="Menor preço" value={brl(regua.analise.minimo)} />
@@ -232,7 +232,7 @@ export default async function PrecosPage({
                       </thead>
                       <tbody>
                         {regua.analise.ordenados.map((c) => {
-                          const dif = diferencaPct(produto.price, c.preco);
+                          const dif = diferencaRelativa(produto.price, c.preco);
                           return (
                             <tr key={c.idExterno}>
                               <td data-label="Anúncio">

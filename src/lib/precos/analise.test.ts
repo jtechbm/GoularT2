@@ -3,6 +3,7 @@ import { test } from "node:test";
 import {
   analisarPrecos,
   dedupe,
+  diferencaRelativa,
   mediaAparada,
   mediana,
   numerosDoTrecho,
@@ -87,4 +88,12 @@ test("dedupe tira o anúncio repetido e respeita o teto", () => {
 
   const vinte = Array.from({ length: 20 }, (_, i) => p(10 + i, { titulo: `Anúncio ${i}`, url: `https://loja/${i}` }));
   assert.equal(dedupe(vinte).length, TETO_ANUNCIOS);
+});
+
+test("diferença sai em proporção, que é o que o pct() do projeto espera", () => {
+  // seu preço 30,41 contra concorrente de 37,05: dezessete por cento abaixo
+  assert.equal(Math.round(diferencaRelativa(30.41, 37.05) * 10000) / 10000, -0.1792);
+  assert.equal(diferencaRelativa(120, 100), 0.2);
+  // referência zero não vira divisão por zero
+  assert.equal(diferencaRelativa(50, 0), 0);
 });

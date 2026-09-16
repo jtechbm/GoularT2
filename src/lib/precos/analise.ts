@@ -143,8 +143,15 @@ export function dedupe(produtos: ProdutoConcorrente[]): ProdutoConcorrente[] {
   return saida.slice(0, TETO_ANUNCIOS);
 }
 
-/** Quanto o preço está acima (positivo) ou abaixo (negativo) da referência, em %. */
-export function diferencaPct(preco: number, referencia: number): number {
+/**
+ * Quanto o preço está acima (positivo) ou abaixo (negativo) da referência.
+ *
+ * Devolve proporção, não porcentagem: 0,1792 para 17,92% abaixo. É a
+ * convenção do pct() do projeto, que multiplica por 100 na hora de escrever.
+ * Devolver já em porcentagem fazia a tela multiplicar duas vezes e anunciar
+ * "1.792% abaixo" numa diferença de dezessete por cento.
+ */
+export function diferencaRelativa(preco: number, referencia: number): number {
   if (!referencia) return 0;
-  return ((preco - referencia) / referencia) * 100;
+  return (preco - referencia) / referencia;
 }
