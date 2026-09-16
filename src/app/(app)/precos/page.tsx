@@ -30,6 +30,7 @@ export default async function PrecosPage({
     importados?: string;
     achados?: string;
     fora?: string;
+    proprios?: string;
     erro?: string;
   }>;
 }) {
@@ -71,7 +72,8 @@ export default async function PrecosPage({
       {sp.achados !== undefined && (
         <div className="flash mb-4 rounded-lg border border-ok/30 bg-ok-soft px-4 py-2.5 text-sm font-medium text-ok">
           Busca concluída: {sp.achados} {sp.achados === "1" ? "anúncio conferido" : "anúncios conferidos"}
-          {sp.fora && sp.fora !== "0" ? ` · ${sp.fora} descartados por não bater com a fonte` : ""}.
+          {sp.fora && sp.fora !== "0" ? ` · ${sp.fora} descartados por não bater com a fonte` : ""}
+          {sp.proprios && sp.proprios !== "0" ? ` · ${sp.proprios} da própria loja ignorados` : ""}.
         </div>
       )}
 

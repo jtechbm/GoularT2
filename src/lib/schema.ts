@@ -617,6 +617,14 @@ CREATE TABLE IF NOT EXISTS client_products (
 
 CREATE INDEX IF NOT EXISTS idx_produtos_cliente ON client_products(client_id, marketplace);
 
+-- Quando a busca rodou, e o que ela disse.
+--
+-- Sem isto, busca que nao achou nada fica idêntica à busca que nunca
+-- aconteceu: as duas mostram tabela vazia, e a explicação do modelo ("o
+-- único anúncio comparável tinha faixa de preço") se perdia junto.
+ALTER TABLE client_products ADD COLUMN IF NOT EXISTS last_search_at   text;
+ALTER TABLE client_products ADD COLUMN IF NOT EXISTS last_search_note text;
+
 -- Fotografia do mercado para um produto, quando o preco veio de busca na web.
 --
 -- Nao e historico: cada busca substitui a anterior inteira, numa transacao.

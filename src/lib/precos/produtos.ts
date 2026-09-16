@@ -99,6 +99,17 @@ async function anunciosML(conta: Conta): Promise<AnuncioImportado[]> {
  */
 async function anunciosShopee(conta: Conta): Promise<AnuncioImportado[]> {
   const creds = await tokenShopee(await contexto(conta));
+
+  // o nome da loja é guardado na importação porque a busca precisa dele
+  // para não comparar a loja com ela mesma
+  const info = await chamarShopee<{ shop_name?: string; response?: { shop_name?: string } }>(
+    "/api/v2/shop/get_shop_info",
+    {},
+    creds,
+  );
+  const nome = info.shop_name ?? info.response?.shop_name ?? null;
+  if (nome) await run("UPDATE client_marketplaces SET nickname = ? WHERE id = ?", nome, conta.id);
+
   const lista = await chamarShopee<{ response?: { item?: { item_id: number }[] } }>(
     "/api/v2/product/get_item_list",
     { offset: 0, page_size: 100, item_status: "NORMAL" },

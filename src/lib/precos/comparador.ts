@@ -21,6 +21,11 @@ export interface ProdutoDoCliente {
   price: number;
   url: string | null;
   updated_at: string;
+  /** nome da loja no marketplace, para a busca não trazer os anúncios dela */
+  vendedor_proprio: string | null;
+  /** quando a última busca rodou, tenha ela achado algo ou não */
+  last_search_at: string | null;
+  last_search_note: string | null;
 }
 
 export type Fonte = "api" | "busca";
@@ -50,9 +55,10 @@ export async function produtoDoUsuario(
   const limite = escopo ? ` AND p.client_id IN (${escopo.map(() => "?").join(",") || "NULL"})` : "";
   return one<ProdutoDoCliente>(
     `SELECT p.id, p.client_id, c.name AS client_name, p.marketplace, p.external_id, p.title, p.price, p.url,
-            p.updated_at
+            p.updated_at, p.last_search_at, p.last_search_note, cm.nickname AS vendedor_proprio
        FROM client_products p
        JOIN clients c ON c.id = p.client_id
+       JOIN client_marketplaces cm ON cm.id = p.client_marketplace_id
       WHERE p.id = ?${limite}`,
     produtoId,
     ...(escopo ?? []),
@@ -63,9 +69,10 @@ export async function produtosDoCliente(clientId: string, escopo: string[] | nul
   if (escopo && !escopo.includes(clientId)) return [];
   return all<ProdutoDoCliente>(
     `SELECT p.id, p.client_id, c.name AS client_name, p.marketplace, p.external_id, p.title, p.price, p.url,
-            p.updated_at
+            p.updated_at, p.last_search_at, p.last_search_note, cm.nickname AS vendedor_proprio
        FROM client_products p
        JOIN clients c ON c.id = p.client_id
+       JOIN client_marketplaces cm ON cm.id = p.client_marketplace_id
       WHERE p.client_id = ?
       ORDER BY p.title`,
     clientId,
@@ -105,8 +112,10 @@ async function comparacaoGravada(produto: ProdutoDoCliente): Promise<Regua> {
   return {
     fonte: "busca",
     analise: analisarPrecos(produtos),
-    atualizadoEm: linhas[0]?.created_at ?? null,
-    observacao: linhas.find((l) => l.note)?.note ?? null,
+    // a data vem do produto, e não das linhas: busca que não achou nada
+    // também aconteceu, e precisa aparecer como tal
+    atualizadoEm: produto.last_search_at ?? linhas[0]?.created_at ?? null,
+    observacao: produto.last_search_note ?? linhas.find((l) => l.note)?.note ?? null,
     casaram: null,
     semPermissao: false,
   };
@@ -137,6 +146,8 @@ export interface ResultadoBusca {
   gravados: number;
   descartados: number;
   observacao: string;
+  /** anúncios da própria loja que a busca trouxe e foram ignorados */
+  proprios: number;
 }
 
 /**
@@ -150,10 +161,20 @@ export async function buscarConcorrentes(
   produto: ProdutoDoCliente,
   userId: string | null,
 ): Promise<ResultadoBusca> {
-  const { produtos, observacao, descartados } = await concorrentesPorBusca(produto.marketplace, produto.title);
+  const { produtos, observacao, descartados, proprios } = await concorrentesPorBusca(
+    produto.marketplace,
+    produto.title,
+    produto.vendedor_proprio,
+  );
 
   await transaction(async (q) => {
     await q("DELETE FROM market_comparisons WHERE product_id = ?", produto.id);
+    await q(
+      "UPDATE client_products SET last_search_at = ?, last_search_note = ? WHERE id = ?",
+      now(),
+      observacao || null,
+      produto.id,
+    );
     for (const c of produtos) {
       await q(
         `INSERT INTO market_comparisons (id, product_id, marketplace, seller, title, price, url, source_snippet,
@@ -176,7 +197,7 @@ export async function buscarConcorrentes(
     }
   });
 
-  return { gravados: produtos.length, descartados, observacao };
+  return { gravados: produtos.length, descartados, proprios, observacao };
 }
 
 /** Contas conectadas do cliente, para o botão de importar anúncios. */

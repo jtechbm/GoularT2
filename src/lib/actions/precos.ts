@@ -61,7 +61,7 @@ export async function buscarConcorrentesAction(formData: FormData) {
   }
 
   const volta = `/precos?cliente=${produto.client_id}&produto=${produto.id}`;
-  let resultado: { gravados: number; descartados: number };
+  let resultado: { gravados: number; descartados: number; proprios: number };
   try {
     resultado = await buscarConcorrentes(produto, user.id);
   } catch (e) {
@@ -70,5 +70,7 @@ export async function buscarConcorrentesAction(formData: FormData) {
   }
 
   revalidatePath("/precos");
-  redirect(`${volta}&achados=${resultado.gravados}&fora=${resultado.descartados}`);
+  redirect(
+    `${volta}&achados=${resultado.gravados}&fora=${resultado.descartados}&proprios=${resultado.proprios}`,
+  );
 }

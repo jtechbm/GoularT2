@@ -67,13 +67,22 @@ export interface ResultadoLLM {
   observacao: string;
   /** quantos anúncios o modelo devolveu e foram recusados na conferência */
   descartados: number;
+  /** anúncios da própria loja que vieram na busca e foram tirados da conta */
+  proprios: number;
 }
 
-function instrucoes(plataforma: string, titulo: string): string {
+function instrucoes(plataforma: string, titulo: string, vendedorProprio: string | null): string {
   const p = PLATAFORMAS[plataforma] ?? { nome: plataforma, dominio: "" };
   return [
     `Busque na ${p.nome} (${p.dominio}) anúncios do produto "${titulo}".`,
     "Extraia os preços de VENDA dos concorrentes.",
+    ...(vendedorProprio
+      ? [
+          "",
+          `NÃO inclua anúncios do vendedor "${vendedorProprio}": essa é a própria`,
+          "loja, e comparar a loja com ela mesma puxa a mediana para o preço dela.",
+        ]
+      : []),
     "",
     "A regra que mais importa: FRETE NÃO É PREÇO. Ignore 'Frete grátis R$ X',",
     "'Frete R$ X' e 'R$ 0,00' de entrega. O valor do frete aparece no mesmo",
@@ -99,6 +108,15 @@ function instrucoes(plataforma: string, titulo: string): string {
   ].join("\n");
 }
 
+/** Para comparar nome de vendedor sem tropeçar em hífen, acento ou caixa. */
+function chaveDoVendedor(nome: string): string {
+  return nome
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, "");
+}
+
 /** O modelo pode cercar o JSON de texto; aproveita o que estiver lá dentro. */
 function extrairJSON(texto: string): Resposta | null {
   const tentativas = [texto, texto.slice(texto.indexOf("{"), texto.lastIndexOf("}") + 1)];
@@ -119,7 +137,11 @@ function extrairJSON(texto: string): Resposta | null {
  * O teto de 45s deixa margem para gravar o resultado dentro dos 60s da
  * função.
  */
-export async function concorrentesPorBusca(plataforma: string, titulo: string): Promise<ResultadoLLM> {
+export async function concorrentesPorBusca(
+  plataforma: string,
+  titulo: string,
+  vendedorProprio: string | null = null,
+): Promise<ResultadoLLM> {
   if (!process.env.OPENAI_API_KEY) {
     throw new Error("Falta OPENAI_API_KEY para buscar preços nesta plataforma.");
   }
@@ -127,7 +149,7 @@ export async function concorrentesPorBusca(plataforma: string, titulo: string): 
   const client = new OpenAI({ timeout: 45_000, maxRetries: 1 });
   const resposta = await client.responses.create({
     model: MODELO,
-    input: instrucoes(plataforma, titulo),
+    input: instrucoes(plataforma, titulo, vendedorProprio),
     tools: [{ type: "web_search" }],
     reasoning: { effort: ESFORCO },
     text: {
@@ -137,12 +159,24 @@ export async function concorrentesPorBusca(plataforma: string, titulo: string): 
 
   const lido = extrairJSON(resposta.output_text ?? "");
   if (!lido) {
-    return { produtos: [], observacao: "O modelo não devolveu um resultado legível.", descartados: 0 };
+    return { produtos: [], observacao: "O modelo não devolveu um resultado legível.", descartados: 0, proprios: 0 };
   }
+
+  // o pedido no texto ajuda, mas não basta: a loja do Kadu apareceu como
+  // concorrente na primeira busca real, e por isso a exclusão também é feita
+  // aqui, onde não depende da boa vontade do modelo
+  const proprio = vendedorProprio ? chaveDoVendedor(vendedorProprio) : "";
 
   const conferidos: ProdutoConcorrente[] = [];
   let descartados = 0;
+  let proprios = 0;
   for (const a of lido.anuncios ?? []) {
+    const vendedor = chaveDoVendedor(a.vendedor ?? "");
+    if (proprio && vendedor && (vendedor === proprio || vendedor.includes(proprio) || proprio.includes(vendedor))) {
+      proprios += 1;
+      continue;
+    }
+
     const preco = Number(a.preco);
     if (!Number.isFinite(preco) || preco <= 0 || !precoConfere(preco, a.trecho_origem)) {
       descartados += 1;
@@ -158,5 +192,5 @@ export async function concorrentesPorBusca(plataforma: string, titulo: string): 
     });
   }
 
-  return { produtos: dedupe(conferidos), observacao: lido.observacao ?? "", descartados };
+  return { produtos: dedupe(conferidos), observacao: lido.observacao ?? "", descartados, proprios };
 }
