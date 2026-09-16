@@ -1,4 +1,4 @@
-import Anthropic from "@anthropic-ai/sdk";
+import OpenAI from "openai";
 import { dedupe, precoConfere, TETO_ANUNCIOS, type ProdutoConcorrente } from "./analise.ts";
 
 /**
@@ -16,14 +16,16 @@ import { dedupe, precoConfere, TETO_ANUNCIOS, type ProdutoConcorrente } from "./
  * a colar o trecho de onde leu o preço, e o código confere o número ali.
  */
 
-const MODELO = "claude-opus-5";
+/** Equilibra capacidade e preço, e atende busca na web. */
+const MODELO = "gpt-5.6-terra";
 
 /**
- * Esforço baixo, de propósito. Medido nesta tarefa: 26s no baixo contra 89s
- * no médio, com a mesma taxa de acerto — todos os preços conferiram com a
- * fonte nos dois casos. O médio estoura o teto de 60s da função.
+ * Esforço de raciocínio baixo, de propósito. Medido nesta tarefa: 26s no
+ * baixo contra 89s no médio, com a mesma taxa de acerto — todos os preços
+ * conferiram com a fonte nos dois casos. O médio estoura o teto de 60s da
+ * função.
  */
-const ESFORCO = "low";
+const ESFORCO = "low" as const;
 
 const PLATAFORMAS: Record<string, { nome: string; dominio: string }> = {
   shopee: { nome: "Shopee", dominio: "shopee.com.br" },
@@ -53,7 +55,7 @@ const ESQUEMA = {
   },
   required: ["anuncios", "observacao"],
   additionalProperties: false,
-} as const;
+};
 
 interface Resposta {
   anuncios: { titulo: string; vendedor: string; preco: number; url: string; trecho_origem: string }[];
@@ -97,43 +99,44 @@ function instrucoes(plataforma: string, titulo: string): string {
   ].join("\n");
 }
 
+/** O modelo pode cercar o JSON de texto; aproveita o que estiver lá dentro. */
+function extrairJSON(texto: string): Resposta | null {
+  const tentativas = [texto, texto.slice(texto.indexOf("{"), texto.lastIndexOf("}") + 1)];
+  for (const t of tentativas) {
+    if (!t.trim()) continue;
+    try {
+      return JSON.parse(t) as Resposta;
+    } catch {
+      continue;
+    }
+  }
+  return null;
+}
+
 /**
  * Pergunta ao modelo e devolve só o que sobreviveu à conferência.
  *
  * O teto de 45s deixa margem para gravar o resultado dentro dos 60s da
- * função. pause_turn não é erro: é o modelo pedindo para continuar depois de
- * uma rodada longa de busca, e sem retomar a resposta volta truncada.
+ * função.
  */
 export async function concorrentesPorBusca(plataforma: string, titulo: string): Promise<ResultadoLLM> {
-  if (!process.env.ANTHROPIC_API_KEY) {
-    throw new Error("Falta ANTHROPIC_API_KEY para buscar preços nesta plataforma.");
+  if (!process.env.OPENAI_API_KEY) {
+    throw new Error("Falta OPENAI_API_KEY para buscar preços nesta plataforma.");
   }
 
-  const client = new Anthropic({ timeout: 45_000, maxRetries: 1 });
-  const mensagens: Anthropic.MessageParam[] = [{ role: "user", content: instrucoes(plataforma, titulo) }];
+  const client = new OpenAI({ timeout: 45_000, maxRetries: 1 });
+  const resposta = await client.responses.create({
+    model: MODELO,
+    input: instrucoes(plataforma, titulo),
+    tools: [{ type: "web_search" }],
+    reasoning: { effort: ESFORCO },
+    text: {
+      format: { type: "json_schema", name: "concorrentes", schema: ESQUEMA, strict: true },
+    },
+  });
 
-  let resposta: Anthropic.Message | null = null;
-  for (let volta = 0; volta < 3; volta++) {
-    resposta = await client.messages.create({
-      model: MODELO,
-      max_tokens: 8000,
-      messages: mensagens,
-      tools: [{ type: "web_search_20260209", name: "web_search", max_uses: 6 }],
-      output_config: { effort: ESFORCO, format: { type: "json_schema", schema: ESQUEMA } },
-    });
-    if (resposta.stop_reason !== "pause_turn") break;
-    mensagens.push({ role: "assistant", content: resposta.content });
-  }
-
-  const texto = (resposta?.content ?? [])
-    .filter((b): b is Anthropic.TextBlock => b.type === "text")
-    .map((b) => b.text)
-    .join("");
-
-  let lido: Resposta;
-  try {
-    lido = JSON.parse(texto) as Resposta;
-  } catch {
+  const lido = extrairJSON(resposta.output_text ?? "");
+  if (!lido) {
     return { produtos: [], observacao: "O modelo não devolveu um resultado legível.", descartados: 0 };
   }
 
