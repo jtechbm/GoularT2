@@ -144,6 +144,26 @@ export function dedupe(produtos: ProdutoConcorrente[]): ProdutoConcorrente[] {
 }
 
 /**
+ * Um anúncio por vendedor e preço.
+ *
+ * No catálogo, a mesma caminha de cachorro vira três anúncios do mesmo
+ * vendedor, um por cor, todos a R$ 120. Contar os três dá a esse vendedor
+ * peso triplo na mediana, que passa a medir quantas cores ele cadastrou em
+ * vez de medir o mercado. O dedupe por url e título não pega esse caso,
+ * porque os títulos diferem de verdade.
+ */
+export function umPorVendedorEPreco(produtos: ProdutoConcorrente[]): ProdutoConcorrente[] {
+  const vistos = new Set<string>();
+  return produtos.filter((p) => {
+    if (!p.vendedor) return true;
+    const chave = `${p.vendedor.toLowerCase()}|${p.preco.toFixed(2)}`;
+    if (vistos.has(chave)) return false;
+    vistos.add(chave);
+    return true;
+  });
+}
+
+/**
  * Quanto o preço está acima (positivo) ou abaixo (negativo) da referência.
  *
  * Devolve proporção, não porcentagem: 0,1792 para 17,92% abaixo. É a

@@ -26,6 +26,7 @@ export default async function PrecosPage({
 }: {
   searchParams: Promise<{
     cliente?: string;
+    mp?: string;
     produto?: string;
     importados?: string;
     achados?: string;
@@ -41,12 +42,23 @@ export default async function PrecosPage({
   const podePesquisar = can(user, "precos.pesquisar");
 
   const clienteId = sp.cliente ?? clientes[0]?.id;
+  const filtro = sp.mp ?? "todos";
   const [produtos, contas, produto] = await Promise.all([
     clienteId ? produtosDoCliente(clienteId, escopo) : [],
     clienteId ? contasDoCliente(clienteId) : [],
     sp.produto ? produtoDoUsuario(sp.produto, escopo) : null,
   ]);
   const regua = produto ? await reguaDoProduto(produto) : null;
+
+  // o filtro é feito aqui, sobre a lista já carregada, para as contagens de
+  // cada aba saírem do mesmo lugar que a lista e nunca discordarem dela
+  const porMarketplace = (mp: string) => produtos.filter((p) => p.marketplace === mp).length;
+  const visiveis = filtro === "todos" ? produtos : produtos.filter((p) => p.marketplace === filtro);
+  const abas = [
+    { valor: "todos", label: "Todos", total: produtos.length },
+    { valor: "mercado_livre", label: "Mercado Livre", total: porMarketplace("mercado_livre") },
+    { valor: "shopee", label: "Shopee", total: porMarketplace("shopee") },
+  ].filter((a) => a.total > 0 || a.valor === "todos");
 
   // acima da mediana é o alerta; o verde fica para quem está abaixo
   const acima = produto && regua?.analise.total ? diferencaRelativa(produto.price, regua.analise.mediana) : 0;
@@ -108,15 +120,44 @@ export default async function PrecosPage({
       </Card>
 
       <div className="mt-3 grid gap-3 lg:grid-cols-[minmax(0,20rem)_minmax(0,1fr)]">
-        <Card title="Anúncios da loja" bodyClassName="p-0">
-          {produtos.length === 0 ? (
-            <Empty title="Nenhum anúncio importado" hint="Importe os anúncios da loja para começar a comparar." />
+        <Card
+          title="Anúncios da loja"
+          bodyClassName="p-0"
+          actions={
+            produtos.length > 0 ? (
+              <div className="flex flex-wrap gap-1">
+                {abas.map((aba) => (
+                  <Link
+                    key={aba.valor}
+                    href={`/precos?cliente=${clienteId}${aba.valor === "todos" ? "" : `&mp=${aba.valor}`}`}
+                    className={`rounded-full px-2.5 py-1 text-xs font-medium transition-colors ${
+                      filtro === aba.valor
+                        ? "bg-brand text-white"
+                        : "border border-line text-muted hover:border-line-strong"
+                    }`}
+                  >
+                    {aba.label} ({aba.total})
+                  </Link>
+                ))}
+              </div>
+            ) : null
+          }
+        >
+          {visiveis.length === 0 ? (
+            <Empty
+              title={produtos.length ? "Nenhum anúncio nesta plataforma" : "Nenhum anúncio importado"}
+              hint={
+                produtos.length
+                  ? "A loja tem anúncios, mas não nesta plataforma."
+                  : "Importe os anúncios da loja para começar a comparar."
+              }
+            />
           ) : (
             <ul className="divide-y divide-line">
-              {produtos.map((p) => (
+              {visiveis.map((p) => (
                 <li key={p.id}>
                   <Link
-                    href={`/precos?cliente=${p.client_id}&produto=${p.id}`}
+                    href={`/precos?cliente=${p.client_id}${filtro === "todos" ? "" : `&mp=${filtro}`}&produto=${p.id}`}
                     className={`block px-4 py-3 transition-colors hover:bg-surface-2 ${
                       p.id === produto?.id ? "bg-surface-2" : ""
                     }`}

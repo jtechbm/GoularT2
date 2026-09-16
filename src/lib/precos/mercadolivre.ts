@@ -1,5 +1,5 @@
 import { IntegrationError } from "../integrations/types.ts";
-import type { ProdutoConcorrente } from "./analise.ts";
+import { umPorVendedorEPreco, type ProdutoConcorrente } from "./analise.ts";
 
 /**
  * Fonte A: preço exato, direto da API do Mercado Livre.
@@ -80,12 +80,19 @@ interface ItemDoCatalogo {
   sold_quantity?: number;
 }
 
-/** Apelido dos vendedores numa chamada só; sem ele a tabela mostra o id. */
+/**
+ * Apelido dos vendedores; sem ele a tabela mostra "Vendedor 1484868055".
+ *
+ * O multiget /users?ids= responde 403 mesmo com a permissão de anúncios
+ * liberada, mas /users/{id} responde. São chamadas independentes, então vão
+ * todas juntas — e a resposta fica guardada pela mesma hora das outras.
+ */
 async function apelidos(ids: number[], acesso: string): Promise<Map<number, string>> {
-  const unicos = [...new Set(ids)].slice(0, 50);
-  if (!unicos.length) return new Map();
-  const { dados } = await buscar<{ id: number; nickname?: string }[]>(`/users?ids=${unicos.join(",")}`, acesso);
-  return new Map((dados ?? []).filter((u) => u?.nickname).map((u) => [u.id, u.nickname!]));
+  const unicos = [...new Set(ids)].slice(0, 30);
+  const achados = await Promise.all(
+    unicos.map(async (id) => ({ id, dados: (await buscar<{ nickname?: string }>(`/users/${id}`, acesso)).dados })),
+  );
+  return new Map(achados.filter((a) => a.dados?.nickname).map((a) => [a.id, a.dados!.nickname!]));
 }
 
 export interface ResultadoFonte {
@@ -140,13 +147,15 @@ export async function concorrentesML(titulo: string, ignorarItemId?: string | nu
   return {
     casaram: catalogo.length,
     semPermissao: false,
-    produtos: brutos.map(({ item, produto }) => ({
-      idExterno: item.item_id,
-      vendedor: item.seller_id ? (nomes.get(item.seller_id) ?? `Vendedor ${item.seller_id}`) : null,
-      titulo: produto.name ?? item.item_id,
-      preco: item.price!,
-      url: `https://www.mercadolivre.com.br/p/${produto.id}`,
-      trechoOrigem: null,
-    })),
+    produtos: umPorVendedorEPreco(
+      brutos.map(({ item, produto }) => ({
+        idExterno: item.item_id,
+        vendedor: item.seller_id ? (nomes.get(item.seller_id) ?? `Vendedor ${item.seller_id}`) : null,
+        titulo: produto.name ?? item.item_id,
+        preco: item.price!,
+        url: `https://www.mercadolivre.com.br/p/${produto.id}`,
+        trechoOrigem: null,
+      })),
+    ),
   };
 }

@@ -10,6 +10,7 @@ import {
   precoConfere,
   precoDaShopee,
   precoDoAnuncio,
+  umPorVendedorEPreco,
   TETO_ANUNCIOS,
   type ProdutoConcorrente,
 } from "./analise.ts";
@@ -96,4 +97,16 @@ test("diferença sai em proporção, que é o que o pct() do projeto espera", ()
   assert.equal(diferencaRelativa(120, 100), 0.2);
   // referência zero não vira divisão por zero
   assert.equal(diferencaRelativa(50, 0), 0);
+});
+
+test("o mesmo vendedor com o mesmo preço conta uma vez só", () => {
+  const cores = ["Rosa", "Cinza", "Azul"].map((cor) =>
+    p(120, { titulo: `Caminha ${cor}`, vendedor: "DOGCATSTORE" }),
+  );
+  const outro = p(120, { titulo: "Caminha", vendedor: "PETSHOP" });
+  assert.equal(umPorVendedorEPreco([...cores, outro]).length, 2);
+  // preço diferente do mesmo vendedor continua valendo: é oferta de verdade
+  assert.equal(umPorVendedorEPreco([cores[0], p(99, { vendedor: "DOGCATSTORE" })]).length, 2);
+  // sem vendedor não dá para agrupar, e não some ninguém
+  assert.equal(umPorVendedorEPreco([p(50), p(50)]).length, 2);
 });
