@@ -1,5 +1,5 @@
 import { createHmac } from "node:crypto";
-import { all, now, run } from "../db.ts";
+import { all, now, one, run } from "../db.ts";
 import {
   emptyDay,
   emptyMonth,
@@ -244,6 +244,89 @@ export async function atualizarPedidos(
 }
 
 /**
+ * Revalida o status dos pedidos abertos, cinquenta por chamada.
+ *
+ * Aqui está a economia que faz a rodada caber no tempo do agendamento: o
+ * status de cinquenta pedidos vem numa única chamada (get_order_detail aceita
+ * até 50 números), e só quem mudou de status paga uma chamada de valor
+ * (get_escrow_detail, que é uma por pedido).
+ *
+ * A versão anterior relistava o mês dia a dia para descobrir o status, o que
+ * custava uma chamada por página de cada dia e não cabia na fatia do cron.
+ *
+ * Os pedidos entram em ordem de leitura mais antiga: assim cada rodada avança
+ * na fila em vez de reler sempre os mesmos.
+ */
+export async function revalidarAbertos(
+  accountId: string,
+  creds: StoredCredentials,
+  refMonth: string,
+  prazo: number,
+): Promise<{ conferidos: number; mudaram: number; restantes: number }> {
+  // Só o que está velho precisa de conferência. Pedido em trânsito continua
+  // aberto por semanas: perseguir "todo pedido aberto" deixava a rodada em
+  // estado parcial para sempre, mesmo estando em dia. Três dias é o que uma
+  // rodada diária sustenta nesta loja, e o aviso em tempo real cobre o resto.
+  const velho = new Date(Date.now() - 3 * 864e5).toISOString();
+  const abertos = await all<{ order_sn: string; status: string | null; day: string }>(
+    `SELECT order_sn, status, day FROM shopee_order_escrow
+      WHERE client_marketplace_id = ? AND day LIKE ? AND final = 0
+        AND (status IS NULL OR status NOT IN ('CANCELLED','UNPAID'))
+        AND (updated_at IS NULL OR updated_at < ?)
+      ORDER BY updated_at ASC NULLS FIRST`,
+    accountId,
+    `${refMonth}-%`,
+    velho,
+  );
+  if (!abertos.length) return { conferidos: 0, mudaram: 0, restantes: 0 };
+
+  const guardado = new Map(abertos.map((a) => [a.order_sn, a]));
+  const LOTE = 50;
+  let conferidos = 0;
+  const mudaram: { orderSn: string; status: string; dia: string }[] = [];
+
+  for (let i = 0; i < abertos.length; i += LOTE) {
+    if (Date.now() > prazo) break;
+    const lote = abertos.slice(i, i + LOTE);
+    const detalhe = await call<{
+      response?: { order_list?: { order_sn: string; order_status?: string }[] };
+    }>(
+      "/api/v2/order/get_order_detail",
+      { order_sn_list: lote.map((l) => l.order_sn).join(","), response_optional_fields: "order_status" },
+      creds,
+    );
+
+    const confirmados: string[] = [];
+    for (const pedido of detalhe.response?.order_list ?? []) {
+      const antes = guardado.get(pedido.order_sn);
+      if (!antes) continue;
+      conferidos += 1;
+      confirmados.push(pedido.order_sn);
+      const agora = pedido.order_status ?? "";
+      if (!agora || agora === antes.status) continue;
+      mudaram.push({ orderSn: pedido.order_sn, status: agora, dia: antes.day });
+    }
+
+    // Quem não mudou também foi conferido agora. Sem esta marca o pedido
+    // parado voltaria à fila todo dia e a rodada nunca diria "em dia".
+    if (confirmados.length) {
+      await run(
+        `UPDATE shopee_order_escrow SET updated_at = ?
+          WHERE client_marketplace_id = ? AND order_sn IN (${confirmados.map(() => "?").join(",")})`,
+        now(),
+        accountId,
+        ...confirmados,
+      );
+    }
+  }
+
+  // só quem mudou de status precisa do valor novo
+  if (mudaram.length) await atualizarPedidos(accountId, creds, mudaram, prazo);
+
+  return { conferidos, mudaram: mudaram.length, restantes: Math.max(0, abertos.length - conferidos) };
+}
+
+/**
  * Fechamento do mês calculado a partir dos pedidos guardados.
  *
  * Usado pela rodada diária e pelo aviso em tempo real, para os dois darem
@@ -381,16 +464,29 @@ export const shopee: MarketplaceAdapter = {
   /**
    * Fechamento do mês da Shopee.
    *
-   * Lista todos os pedidos do mês, dia a dia e em qualquer status, e atualiza
-   * só os que são novos ou mudaram de status. O número vem da tabela de
-   * pedidos, a mesma que o aviso em tempo real alimenta. Esta rodada virou a
-   * rede de segurança para algum aviso que se perdeu.
+   * Duas tarefas, nesta ordem:
+   *
+   *   1. listar os dias que podem ter pedido novo (hoje e ontem) e os dias que
+   *      nunca foram varridos, marcando cada varredura;
+   *   2. com o tempo que sobrar, revalidar o status dos pedidos abertos em
+   *      lotes de cinquenta, buscando valor só de quem mudou.
+   *
+   * Dia passado já varrido não é listado de novo: o conjunto de pedidos de um
+   * dia que passou não muda, só o estado de cada pedido — e isso a revalidação
+   * cobre por muito menos chamadas.
+   *
+   * A versão anterior listava o mês inteiro antes de buscar um único valor e
+   * jogava o trabalho fora quando o tempo acabava. No agendamento de 17/09 ela
+   * leu "0 de 2480 pedidos": a Shopee, que é 99% do faturamento, ficou dias
+   * sem atualizar.
    */
   async fetchMonth(ctx: AdapterContext, refMonth: string): Promise<MonthlyResult> {
     const creds = await refreshIfNeeded(ctx);
     if (!ctx.accountId) throw new IntegrationError("Sincronização da Shopee precisa do id da conta.", "config");
     const accountId = ctx.accountId;
-    const prazo = (ctx.deadline ?? syncDeadline()) - 8000;
+    const orcamento = (ctx.deadline ?? syncDeadline()) - Date.now();
+    // a reserva é proporcional: 8s fixos comiam metade da fatia do cron
+    const prazo = Date.now() + orcamento - Math.min(8000, Math.max(2000, orcamento * 0.2));
 
     const { start, end } = monthRange(refMonth);
     const DIA = 86400;
@@ -401,8 +497,49 @@ export const shopee: MarketplaceAdapter = {
       janelas.push({ dia: diaDoPedido(from), from, to: Math.min(from + DIA - 1, ultimo) });
     }
 
-    const pedidos = new Map<string, { orderSn: string; status: string; dia: string }>();
-    const listagem = await mapLimit(janelas, 4, prazo, async (j) => {
+    const varridos = await all<{ dia: string }>(
+      "SELECT day AS dia FROM shopee_day_sweeps WHERE client_marketplace_id = ? AND day LIKE ?",
+      accountId,
+      `${refMonth}-%`,
+    );
+    const varredura = new Set(varridos.map((v) => v.dia));
+
+    // Dia que já tem pedido guardado foi listado em alguma rodada anterior,
+    // antes de esta memória existir. Marcar isso aqui evita varrer de novo o
+    // mês que já está no banco.
+    const comPedido = await all<{ dia: string; pedidos: number; ultima: string | null }>(
+      `SELECT day AS dia, COUNT(*) AS pedidos, MAX(updated_at) AS ultima FROM shopee_order_escrow
+        WHERE client_marketplace_id = ? AND day LIKE ? GROUP BY day`,
+      accountId,
+      `${refMonth}-%`,
+    );
+    for (const c of comPedido) {
+      if (varredura.has(c.dia)) continue;
+      await run(
+        `INSERT INTO shopee_day_sweeps (client_marketplace_id, day, swept_at, orders, open_orders)
+         VALUES (?,?,?,?,0) ON CONFLICT (client_marketplace_id, day) DO NOTHING`,
+        accountId,
+        c.dia,
+        c.ultima ?? now(),
+        c.pedidos,
+      );
+      varredura.add(c.dia);
+    }
+
+    // hoje e ontem sempre, mais qualquer dia que nunca foi varrido
+    const recente = diaDoPedido(Math.floor(Date.now() / 1000) - DIA);
+    const aListar = janelas
+      .filter((j) => j.dia >= recente || !varredura.has(j.dia))
+      .sort((a, b) => b.dia.localeCompare(a.dia));
+
+    let diasFeitos = 0;
+    let lidos = 0;
+    let pendentes = 0;
+
+    for (const j of aListar) {
+      if (Date.now() > prazo) break;
+
+      const doDia = new Map<string, { orderSn: string; status: string; dia: string }>();
       let cursor = "";
       do {
         const page = await call<{
@@ -424,24 +561,53 @@ export const shopee: MarketplaceAdapter = {
           creds,
         );
         for (const o of page.response?.order_list ?? []) {
-          pedidos.set(o.order_sn, { orderSn: o.order_sn, status: o.order_status ?? "", dia: j.dia });
+          doDia.set(o.order_sn, { orderSn: o.order_sn, status: o.order_status ?? "", dia: j.dia });
         }
         cursor = page.response?.more ? page.response.next_cursor : "";
-      } while (cursor);
-      return j.dia;
-    });
+      } while (cursor && Date.now() <= prazo);
 
-    if (listagem.timedOut) {
-      return { ...emptyMonth(refMonth), incompleto: { feitos: 0, total: pedidos.size } };
+      const lista = [...doDia.values()];
+      const parcial = await atualizarPedidos(accountId, creds, lista, prazo);
+      lidos += parcial.lidos;
+      pendentes += parcial.pendentes;
+      diasFeitos += 1;
+
+      const abertosDoDia = await one<{ n: number }>(
+        `SELECT COUNT(*) AS n FROM shopee_order_escrow
+          WHERE client_marketplace_id = ? AND day = ? AND final = 0
+            AND (status IS NULL OR status NOT IN ('CANCELLED','UNPAID'))`,
+        accountId,
+        j.dia,
+      );
+      await run(
+        `INSERT INTO shopee_day_sweeps (client_marketplace_id, day, swept_at, orders, open_orders)
+         VALUES (?,?,?,?,?)
+         ON CONFLICT (client_marketplace_id, day) DO UPDATE SET
+           swept_at = EXCLUDED.swept_at, orders = EXCLUDED.orders, open_orders = EXCLUDED.open_orders`,
+        accountId,
+        j.dia,
+        now(),
+        lista.length,
+        abertosDoDia?.n ?? 0,
+      );
+      varredura.add(j.dia);
     }
 
-    // pedido não pago e cancelado não viram venda, mas o cancelamento de um
-    // pedido que já estava guardado precisa ser registrado para sair da conta
-    const relevantes = [...pedidos.values()];
-    const { pendentes } = await atualizarPedidos(accountId, creds, relevantes, prazo);
+    // com o tempo que sobrou, revalida os pedidos que ainda podem mudar
+    const revalidacao = await revalidarAbertos(accountId, creds, refMonth, prazo);
 
     const out = await resultadoDoMesShopee(accountId, refMonth);
-    if (pendentes > 0) out.incompleto = { feitos: relevantes.length - pendentes, total: relevantes.length };
+    const diasFaltando = aListar.length - diasFeitos;
+    const baseCompleta = janelas.every((j) => varredura.has(j.dia));
+
+    if (diasFaltando > 0 || pendentes > 0 || revalidacao.restantes > 0) {
+      out.incompleto = {
+        feitos: lidos + revalidacao.conferidos,
+        total: lidos + pendentes + revalidacao.conferidos + revalidacao.restantes,
+        dias: diasFaltando,
+        listagemCompleta: baseCompleta,
+      };
+    }
     return out;
   },
 };

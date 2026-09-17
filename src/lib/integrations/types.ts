@@ -77,7 +77,18 @@ export interface MonthlyResult {
    * Não é erro: a próxima rodada continua de onde parou. Enquanto estiver
    * incompleto, o fechamento do mês não é sobrescrito com um número menor.
    */
-  incompleto?: { feitos: number; total: number };
+  incompleto?: {
+    feitos: number;
+    total: number;
+    /** dias do mês que ainda não foram listados */
+    dias?: number;
+    /**
+     * O conjunto de pedidos do mês está completo — faltou só reler o valor de
+     * alguns. Nesse caso o fechamento pode ser gravado: é o melhor retrato que
+     * existe, e não um número menor por falta de dado.
+     */
+    listagemCompleta?: boolean;
+  };
   /**
    * Parte do faturamento que ainda pode mudar: pedidos pagos que não
    * concluíram. As taxas já vêm estimadas pelo próprio marketplace.

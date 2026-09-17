@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Suspense } from "react";
 import { requireUser, visibleClientIds } from "@/lib/auth";
+import { PERMISSION_LABEL, type Permission } from "@/lib/permissions";
 import { can } from "@/lib/permissions";
 import {
   clientRows,
@@ -17,7 +18,7 @@ import {
   alertasDaCarteira,
   adsRows,
 } from "@/lib/queries";
-import { addMonths, brl, brlShort, currentMonth, dateBR, lastMonths, num, pct } from "@/lib/format";
+import { addMonths, brl, brlShort, currentMonth, dateBR, lastMonths, num, pct, variacaoMensal } from "@/lib/format";
 import {
   Avatar,
   Card,
@@ -39,15 +40,10 @@ import { ScoreChip } from "@/components/score-saude";
 import { NIVEL_TOM, NIVEL_LABEL } from "@/lib/alertas";
 import { marketplaceLabel } from "@/lib/types";
 
-function growth(current: number, previous: number): number {
-  if (!previous) return current > 0 ? 1 : 0;
-  return (current - previous) / previous;
-}
-
 export default async function DashboardPage({
   searchParams,
 }: {
-  searchParams: Promise<{ mes?: string }>;
+  searchParams: Promise<{ mes?: string; sem_acesso?: string }>;
 }) {
   const user = await requireUser();
   const params = await searchParams;
@@ -120,8 +116,22 @@ export default async function DashboardPage({
 
   const totalRevenue = byMarketplace.reduce((s, m) => s + m.revenue, 0);
 
+  // quando a pessoa cai aqui por falta de permissão, a tela diz qual foi
+  const semAcesso = params.sem_acesso
+    ? PERMISSION_LABEL[params.sem_acesso as Permission] ?? "esta área"
+    : null;
+
   return (
     <>
+      {semAcesso && (
+        <div className="mb-4 rounded-[12px] border border-warn/30 bg-warn-soft px-4 py-3 text-sm">
+          <p className="font-medium text-ink">Você não tem acesso a essa parte do sistema.</p>
+          <p className="mt-1 text-xs text-muted">
+            A permissão que falta é “{semAcesso}”. Quem libera é o admin, na tela de Equipe. Trouxemos você para o
+            Dashboard.
+          </p>
+        </div>
+      )}
       <PageHeader
         title={`Olá, ${user.name.split(" ")[0]} 👋`}
         subtitle={
@@ -148,7 +158,7 @@ export default async function DashboardPage({
         <Stat
           label="Faturamento da carteira"
           value={brl(totals.revenue)}
-          delta={growth(totals.revenue, prev.revenue)}
+          delta={variacaoMensal(totals.revenue, prev.revenue)}
           hint="vs. mês anterior"
           tone="brand"
           icon={<IconBarChart size={20} />}
@@ -298,7 +308,7 @@ export default async function DashboardPage({
                       </td>
                       <td className="num font-semibold text-ink" data-label="Faturamento">{brlShort(c.revenue)}</td>
                       <td className="num" data-label="vs. ant.">
-                        <Delta value={growth(c.revenue, c.prev_revenue)} />
+                        <Delta value={variacaoMensal(c.revenue, c.prev_revenue)} />
                       </td>
                       <td className="num text-muted" data-label="ROAS">{roasCliente ? `${roasCliente.toFixed(2)}x` : "—"}</td>
                       <td data-label="Saúde">{sc && <ScoreChip score={sc} />}</td>

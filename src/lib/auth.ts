@@ -94,14 +94,20 @@ export async function requireUser(): Promise<User> {
 
 export async function requireRole(...roles: Role[]): Promise<User> {
   const user = await requireUser();
-  if (!roles.includes(user.role)) redirect("/");
+  if (!roles.includes(user.role)) redirect("/?sem_acesso=papel");
   return user;
 }
 
-/** Guarda de página: sem a permissão, volta para o início em vez de dar erro. */
+/**
+ * Guarda de página: sem a permissão, volta para o início em vez de dar erro.
+ *
+ * O destino leva a permissão que faltou, e o Dashboard explica. Antes a pessoa
+ * clicava num endereço, caía no início e não tinha a menor ideia do motivo —
+ * parecia defeito do sistema, e o suporte virava adivinhação.
+ */
 export async function requirePermission(permission: Permission): Promise<User> {
   const user = await requireUser();
-  if (!can(user, permission)) redirect("/");
+  if (!can(user, permission)) redirect(`/?sem_acesso=${encodeURIComponent(permission)}`);
   return user;
 }
 

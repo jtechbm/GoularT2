@@ -173,7 +173,15 @@ export interface Dossie extends EntradaDossie {
     margem: number;
     ticket: number;
     metasCumpridas: number;
+    /**
+     * Penalidades que pedem ação: crítica ou atenção.
+     *
+     * O contador do menu já excluía as informativas, e a análise contava tudo:
+     * a mesma loja aparecia com 11 num canto da tela e 14 no outro.
+     */
     penalidadesAbertas: number;
+    /** as informativas, contadas à parte para o número não brigar com o menu */
+    penalidadesInformativas: number;
     /** indicadores de saúde fora do alvo, somando os canais */
     indicadoresFora: number;
   };
@@ -359,7 +367,12 @@ export function montarDossie(e: EntradaDossie): Dossie {
       margem: atual.revenue ? atual.profit / atual.revenue : 0,
       ticket: atual.orders ? atual.revenue / atual.orders : 0,
       metasCumpridas: e.metas.filter((m) => m.bom).length,
-      penalidadesAbertas: soma(e.lojas.map((l) => l.penalidades.length)),
+      penalidadesAbertas: soma(
+        e.lojas.map((l) => l.penalidades.filter((p) => p.severity !== "informativo").length),
+      ),
+      penalidadesInformativas: soma(
+        e.lojas.map((l) => l.penalidades.filter((p) => p.severity === "informativo").length),
+      ),
       indicadoresFora: soma(
         e.lojas.map((l) => l.indicadores.filter((i) => avaliarIndicador(i).fora).length),
       ),

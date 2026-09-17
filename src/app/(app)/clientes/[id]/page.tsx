@@ -26,7 +26,7 @@ import {
   tasks,
   totalsForClient,
 } from "@/lib/queries";
-import { addMonths, brl, brlShort, currentMonth, dateBR, lastMonths, num, pct } from "@/lib/format";
+import { addMonths, brl, brlShort, currentMonth, dateBR, lastMonths, num, pct, variacaoMensal } from "@/lib/format";
 import { Avatar, Card, Chip, Delta, PageHeader, Stat, StatusChip } from "@/components/ui";
 import { RevenueProfitChart, ChartLegend } from "@/components/charts";
 import { integrationStatus } from "@/lib/integrations";
@@ -52,11 +52,6 @@ const TABS = [
   { key: "equipe", label: "Equipe" },
   { key: "dados", label: "Dados cadastrais" },
 ];
-
-function growth(current: number, previous: number): number {
-  if (!previous) return current > 0 ? 1 : 0;
-  return (current - previous) / previous;
-}
 
 export default async function ClientePage({
   params,
@@ -233,7 +228,7 @@ export default async function ClientePage({
         <Stat
           label={`Faturamento · ${ref}`}
           value={brl(totals.revenue)}
-          delta={growth(totals.revenue, prev.revenue)}
+          delta={variacaoMensal(totals.revenue, prev.revenue)}
           tone="brand"
         />
         <Stat label="Lucro" value={brl(totals.profit)} hint={`margem ${pct(margin)}`} tone="accent" />

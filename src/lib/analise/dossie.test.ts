@@ -277,3 +277,23 @@ test("canal que não lê promoção não inventa anúncio sem promoção", () =>
   );
   assert.match(paraTexto(comLeitura), /14 sem promoção/);
 });
+
+test("penalidade informativa não entra na conta que o menu mostra", () => {
+  const d = montarDossie(
+    entrada({
+      lojas: [
+        loja("Shopee", {
+          penalidades: [
+            { severity: "critico", kind: "anuncio", titulo: "Anúncio banido", detectadaEm: "2026-09-17" },
+            { severity: "atencao", kind: "atraso", titulo: "2 pedidos atrasados", detectadaEm: "2026-09-17" },
+            { severity: "informativo", kind: "preco", titulo: "Preço caiu", detectadaEm: "2026-09-17" },
+            { severity: "informativo", kind: "promocao", titulo: "14 sem promoção", detectadaEm: "2026-09-17" },
+          ],
+        }),
+      ],
+    }),
+  );
+  // o menu conta só o que pede ação; as informativas ficam à parte
+  assert.equal(d.derivado.penalidadesAbertas, 2);
+  assert.equal(d.derivado.penalidadesInformativas, 2);
+});

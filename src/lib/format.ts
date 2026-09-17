@@ -138,3 +138,18 @@ export function emQuantoBR(iso: string | null | undefined): string {
   if (h < 24) return `em ${h} h`;
   return `em ${Math.round(h / 24)} d`;
 }
+
+/**
+ * Variação de um mês para o outro, ou null quando não há com o que comparar.
+ *
+ * Devolver zero ou 1 aqui foi o erro antigo: sem mês anterior gravado, as
+ * telas mostravam "↑ 100%" como se a loja tivesse dobrado, quando a verdade é
+ * que não existe mês anterior. Null faz o componente Stat simplesmente não
+ * desenhar a seta.
+ *
+ * A mesma conta estava copiada em três telas; agora vive aqui.
+ */
+export function variacaoMensal(atual: number, anterior: number): number | null {
+  if (!anterior) return null;
+  return (atual - anterior) / anterior;
+}

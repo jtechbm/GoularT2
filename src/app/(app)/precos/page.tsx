@@ -42,7 +42,10 @@ export default async function PrecosPage({
   const clientes = await clientOptions(escopo);
   const podePesquisar = can(user, "precos.pesquisar");
 
-  const clienteId = sp.cliente ?? clientes[0]?.id;
+  const clienteId = clientes.some((c) => c.id === sp.cliente) ? sp.cliente! : clientes[0]?.id;
+  // mesmo cuidado da Análise: cliente inexistente no endereço não vira outro
+  // cliente em silêncio
+  const clienteTrocado = Boolean(sp.cliente && clienteId && sp.cliente !== clienteId);
   const filtro = sp.mp ?? "todos";
   const [produtos, contas, produto] = await Promise.all([
     clienteId ? produtosDoCliente(clienteId, escopo) : [],
@@ -71,6 +74,14 @@ export default async function PrecosPage({
         subtitle="Compara o anúncio da loja com os concorrentes do mesmo produto, na mesma plataforma"
       />
 
+      {clienteTrocado && (
+        <div className="mb-4 rounded-[12px] border border-warn/30 bg-warn-soft px-4 py-3 text-sm">
+          <p className="font-medium text-ink">O cliente do endereço não foi encontrado.</p>
+          <p className="mt-1 text-xs text-muted">
+            Ele pode ter sido removido ou não estar na sua carteira. Abrimos o primeiro da lista no lugar.
+          </p>
+        </div>
+      )}
       {sp.erro && (
         <div className="mb-4 rounded-[12px] border border-warn/30 bg-warn-soft px-4 py-3 text-sm">
           <p className="font-medium text-ink">Não deu para importar agora.</p>

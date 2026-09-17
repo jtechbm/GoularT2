@@ -1,5 +1,6 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
+import { variacaoMensal } from "../format.ts";
 import {
   analisarPrecos,
   dedupe,
@@ -109,4 +110,12 @@ test("o mesmo vendedor com o mesmo preço conta uma vez só", () => {
   assert.equal(umPorVendedorEPreco([cores[0], p(99, { vendedor: "DOGCATSTORE" })]).length, 2);
   // sem vendedor não dá para agrupar, e não some ninguém
   assert.equal(umPorVendedorEPreco([p(50), p(50)]).length, 2);
+});
+
+test("variação mensal devolve null quando não existe mês anterior", () => {
+  // sem mês anterior, as telas mostravam "↑ 100%" como se tivesse dobrado
+  assert.equal(variacaoMensal(1000, 0), null);
+  assert.equal(variacaoMensal(0, 0), null);
+  assert.equal(variacaoMensal(1200, 1000), 0.2);
+  assert.equal(variacaoMensal(800, 1000), -0.2);
 });

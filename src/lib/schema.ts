@@ -697,6 +697,25 @@ CREATE TABLE IF NOT EXISTS shop_metrics (
 
 CREATE INDEX IF NOT EXISTS idx_shop_metrics_conta ON shop_metrics(client_marketplace_id, captured_at DESC);
 
+-- Qual dia da Shopee já foi varrido, e quando.
+--
+-- Sem esta memória cada rodada recomeçava pelos dias mais recentes: com a
+-- fatia de tempo do agendamento, os dias antigos nunca chegavam a ser lidos e
+-- a mensagem dizia "16 dias sem varrer" para sempre. Guardando a varredura, a
+-- rodada seguinte pega o dia lido há mais tempo e o mês fecha em poucas
+-- rodadas.
+--
+-- Também é o que diferencia "dia sem venda" de "dia que ninguém leu" — a
+-- diferença entre poder e não poder gravar o fechamento do mês.
+CREATE TABLE IF NOT EXISTS shopee_day_sweeps (
+  client_marketplace_id text NOT NULL REFERENCES client_marketplaces(id) ON DELETE CASCADE,
+  day                   text NOT NULL,
+  swept_at              text NOT NULL,
+  orders                integer NOT NULL DEFAULT 0,
+  open_orders           integer NOT NULL DEFAULT 0,
+  PRIMARY KEY (client_marketplace_id, day)
+);
+
 -- Histórico de preço de cada anúncio.
 --
 -- A importação sobrescreve o preço atual, e sem isto não existe como dizer
@@ -773,6 +792,7 @@ CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
 
 /** Tabelas na ordem segura para limpeza (filhas antes das pais). */
 export const TABLES = [
+  "shopee_day_sweeps",
   "client_product_prices",
   "shop_metrics",
   "store_analyses",

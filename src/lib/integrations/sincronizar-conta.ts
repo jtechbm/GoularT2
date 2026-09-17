@@ -328,8 +328,23 @@ export async function syncAccount(
     // fechamento do mês não é tocado, senão um número parcial menor
     // apareceria como se fosse o faturamento real.
     if (result.incompleto) {
-      const { feitos, total } = result.incompleto;
-      const msg = `Carga em andamento: ${feitos} de ${total} pedidos lidos. A próxima rodada continua de onde parou.`;
+      const { feitos, total, dias, listagemCompleta } = result.incompleto;
+      const faltaDia = dias ? ` · ${dias} ${dias === 1 ? "dia" : "dias"} sem varrer` : "";
+      const msg = `Carga em andamento: ${feitos} de ${total} pedidos conferidos${faltaDia}. A próxima rodada continua de onde parou.`;
+
+      // Quando a listagem do mês fechou, o conjunto de pedidos está completo e
+      // só faltou reler o valor de alguns: o total é o melhor retrato que
+      // existe, e gravá-lo é melhor do que deixar o fechamento de ontem na
+      // tela. Sem a listagem completa o número seria menor por falta de dado,
+      // e aí o fechamento antigo continua valendo.
+      if (listagemCompleta) {
+        const { ads, diasGravados } = await gravarResultado(row, refMonth, result, userId);
+        const parcial = `${result.orders} pedidos · faturamento ${result.revenue.toFixed(2)}${ads ? ` · ads ${ads.toFixed(2)}` : ""}${diasGravados ? ` · ${diasGravados} dias` : ""} · ${feitos} de ${total} pedidos conferidos, o resto na próxima rodada`;
+        await log(row.id, row.marketplace, refMonth, "parcial", parcial);
+        await fecharRodada(runId, "parcial", parcial, diasGravados);
+        return { ok: true, status: "parcial", message: parcial, result };
+      }
+
       await run(
         "UPDATE client_marketplaces SET last_sync_at = ?, last_error = NULL, status = 'conectado' WHERE id = ?",
         now(),

@@ -45,7 +45,8 @@ export async function GET(req: NextRequest) {
        FROM client_marketplaces cm
        JOIN clients cl ON cl.id = cm.client_id
       WHERE cm.status IN ('conectado', 'erro') AND cm.credentials IS NOT NULL
-      ORDER BY cm.last_sync_at ASC NULLS FIRST`,
+      ORDER BY CASE cm.marketplace WHEN 'mercado_livre' THEN 0 ELSE 1 END,
+               cm.last_sync_at ASC NULLS FIRST`,
   );
 
   // batimento no começo: se a Vercel matar a função, fica registrado que a
@@ -67,6 +68,9 @@ export async function GET(req: NextRequest) {
   const contasML = contas.filter((c) => c.marketplace === "mercado_livre").length;
   const fimSync = fim - contasML * 3000;
   let restantes = contas.length * meses.length;
+  /** teto por conta do Mercado Livre: elas terminam em poucos segundos */
+  const TETO_ML = 15_000;
+  let mlRestantes = contasML * meses.length;
 
   for (const conta of contas) {
     for (const mes of meses) {
@@ -74,12 +78,20 @@ export async function GET(req: NextRequest) {
         semTempo = true;
         break;
       }
-      // Cada conta ganha uma fatia do tempo que sobra. Antes a primeira da
-      // fila podia gastar o prazo inteiro, e uma loja grande deixava todas
-      // as outras sem atualizar. A Shopee guarda o progresso, então fatia
-      // curta não perde trabalho: continua na rodada seguinte.
-      const fatia = Math.max(10_000, (fimSync - Date.now()) / Math.max(1, restantes));
+      // O Mercado Livre fecha em poucos segundos; a Shopee precisa varrer
+      // milhares de pedidos. Dividir o tempo igual entre as contas dava à
+      // Shopee uma fatia que não chegava nem para listar o mês — no
+      // agendamento de 17/09 ela leu 0 de 2480 pedidos. Agora o ML vem
+      // primeiro, com teto curto, e o que sobra é da Shopee, que guarda o
+      // progresso e continua na rodada seguinte.
+      const sobra = fimSync - Date.now();
+      const lentasRestantes = Math.max(1, restantes - mlRestantes);
+      const fatia =
+        conta.marketplace === "mercado_livre"
+          ? Math.min(TETO_ML, sobra)
+          : Math.max(15_000, (sobra - mlRestantes * TETO_ML) / lentasRestantes);
       restantes -= 1;
+      if (conta.marketplace === "mercado_livre") mlRestantes -= 1;
       const saida = await syncAccount(conta.id, mes, null, "cron", Date.now() + fatia);
       resultados.push({ conta: `${conta.nome} · ${conta.marketplace}`, mes, ok: saida.ok, detalhe: saida.message });
     }
@@ -103,6 +115,11 @@ export async function GET(req: NextRequest) {
     penalidadesNovas += r.novas;
   }
 
+  // Faxina: sessão vencida não serve para nada e fica no banco para sempre.
+  // Barata (um DELETE por índice) e o único lugar do sistema que roda todo dia
+  // sem ninguém pedir.
+  const sessoesLimpas = await run("DELETE FROM sessions WHERE expires_at < ?", now());
+
   // batimento cardíaco: sem isto, um cron que nunca roda é indistinguível
   // de um cron que roda e não encontra nada para fazer
   const erros = resultados.filter((r) => !r.ok).length;
@@ -115,6 +132,7 @@ export async function GET(req: NextRequest) {
   );
 
   return NextResponse.json({
+    sessoesVencidasApagadas: sessoesLimpas,
     contas: contas.length,
     processadas: resultados.length,
     ok: resultados.filter((r) => r.ok).length,

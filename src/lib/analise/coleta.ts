@@ -29,7 +29,7 @@ import {
   type ProdutoLinha,
   type SinaisDoCatalogo,
 } from "./dossie";
-import type { Indicador } from "@/lib/penalidades/regras";
+import { nivelEfetivo, type Indicador } from "@/lib/penalidades/regras";
 
 /**
  * A coleta: lê o banco e entrega o dossiê pronto do CLIENTE.
@@ -278,6 +278,7 @@ export async function coletarDossie(cliente: ClienteAnalisavel, refMonth: string
 
       const campanhas = ordenarPorDesempenho(campanhasCruas.map((c) => analisarCampanha(c)));
       const reputacao = saude.find((s) => s.id === conta.id);
+      const cor = reputacao ? nivelEfetivo(reputacao) : null;
 
       return {
         marketplace: marketplaceLabel(conta.marketplace),
@@ -308,12 +309,15 @@ export async function coletarDossie(cliente: ClienteAnalisavel, refMonth: string
             titulo: p.title,
             detectadaEm: p.detected_at.slice(0, 10),
           })),
-        reputacao: reputacao?.real_level
+        // real_level só existe durante a proteção do Decola; fora dela a cor
+        // está em level_id. Exigir real_level fazia a reputação inteira sumir
+        // do dossiê: a análise não sabia que a loja era verde.
+        reputacao: cor
           ? {
-              nivel: reputacao.real_level,
-              reclamacoes: reputacao.claims_rate ?? 0,
-              atrasos: reputacao.delayed_rate ?? 0,
-              cancelamentos: reputacao.cancellations_rate ?? 0,
+              nivel: cor,
+              reclamacoes: reputacao?.claims_rate ?? 0,
+              atrasos: reputacao?.delayed_rate ?? 0,
+              cancelamentos: reputacao?.cancellations_rate ?? 0,
             }
           : null,
       };

@@ -33,6 +33,9 @@ export default async function AnalisePage({
 
   const clientes = await clientesAnalisaveis(escopo);
   const cliente = clientes.find((c) => c.id === sp.cliente) ?? clientes[0];
+  // cliente pedido na URL que não existe (ou não é da carteira da pessoa) não
+  // pode virar a análise de outro cliente sem avisar
+  const clienteTrocado = Boolean(sp.cliente && cliente && sp.cliente !== cliente.id);
   const refMonth = sp.mes ?? currentMonth();
 
   const [analise, historico] = await Promise.all([
@@ -59,6 +62,15 @@ export default async function AnalisePage({
         }
       />
 
+      {clienteTrocado && (
+        <div className="mb-4 rounded-[12px] border border-warn/30 bg-warn-soft px-4 py-3 text-sm">
+          <p className="font-medium text-ink">O cliente do endereço não foi encontrado.</p>
+          <p className="mt-1 text-xs text-muted">
+            Ele pode ter sido removido, não ter loja conectada ou não estar na sua carteira. Abrimos{" "}
+            {cliente?.name} no lugar.
+          </p>
+        </div>
+      )}
       {sp.erro && (
         <div className="mb-4 rounded-[12px] border border-warn/30 bg-warn-soft px-4 py-3 text-sm">
           <p className="font-medium text-ink">Não deu para analisar agora.</p>
@@ -152,7 +164,13 @@ export default async function AnalisePage({
             <Stat
               label="Penalidades abertas"
               value={String(d.derivado.penalidadesAbertas)}
-              hint={d.derivado.penalidadesAbertas ? "ver em Penalidades" : "nenhuma"}
+              hint={
+                d.derivado.penalidadesInformativas
+                  ? `+ ${d.derivado.penalidadesInformativas} informativas`
+                  : d.derivado.penalidadesAbertas
+                    ? "ver em Penalidades"
+                    : "nenhuma"
+              }
               tone={d.derivado.penalidadesAbertas ? "bad" : "ok"}
               href={d.derivado.penalidadesAbertas ? "/penalidades" : undefined}
             />

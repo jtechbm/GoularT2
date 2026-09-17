@@ -196,8 +196,9 @@ export function Stat({
   );
 }
 
-export function Delta({ value, invert = false }: { value: number; invert?: boolean }) {
-  if (!Number.isFinite(value)) return <span className="text-dim">—</span>;
+export function Delta({ value, invert = false }: { value: number | null; invert?: boolean }) {
+  // null é "não há mês anterior para comparar"; travessão diz isso sem mentir
+  if (value === null || !Number.isFinite(value)) return <span className="text-dim">—</span>;
   const up = value >= 0;
   const good = invert ? !up : up;
   const flat = Math.abs(value) < 0.001;
