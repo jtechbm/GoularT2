@@ -118,7 +118,8 @@ export const INDICADOR_LABEL: Record<string, string> = {
   cancellation_rate: "Cancelamento pela loja",
   return_refund_rate: "Devolução e reembolso",
   response_rate: "Taxa de respostas",
-  shop_rating: "Nota da loja",
+  // a nota que os compradores dão, diferente da nota de desempenho da loja
+  shop_rating: "Avaliação dos compradores",
   severe_listing_violations: "Violação grave em anúncio",
   other_listing_violations: "Outras violações em anúncio",
   prohibited_listings: "Anúncio proibido",

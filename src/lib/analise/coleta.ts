@@ -27,7 +27,9 @@ import {
   type LinhaMes,
   type LojaNoDossie,
   type ProdutoLinha,
+  type SinaisDoCatalogo,
 } from "./dossie";
+import type { Indicador } from "@/lib/penalidades/regras";
 
 /**
  * A coleta: lê o banco e entrega o dossiê pronto do CLIENTE.
@@ -50,6 +52,9 @@ export interface ContaDoCliente {
   marketplace: string;
   nickname: string | null;
   status: string;
+  items_permission: string | null;
+  comms_permission: string | null;
+  promos_permission: string | null;
 }
 
 /**
@@ -89,7 +94,8 @@ export async function clienteAnalisavel(clientId: string, escopo: Scope): Promis
 
 async function contasConectadas(clientId: string): Promise<ContaDoCliente[]> {
   return all<ContaDoCliente>(
-    `SELECT id, marketplace, nickname, status FROM client_marketplaces
+    `SELECT id, marketplace, nickname, status, items_permission, comms_permission, promos_permission
+       FROM client_marketplaces
       WHERE client_id = ? AND credentials IS NOT NULL ORDER BY marketplace`,
     clientId,
   );
@@ -135,6 +141,95 @@ async function produtosDaConta(contaId: string): Promise<ProdutoLinha[]> {
 }
 
 /**
+ * Últimos indicadores de saúde da loja, com o alvo que o marketplace publica.
+ *
+ * Hoje só a Shopee publica isso; o Mercado Livre entra pela reputação, que já
+ * vem em outro caminho. A lista fica gravada em JSON porque a Shopee mexe nela
+ * de vez em quando, e o dossiê lê o que vier.
+ */
+async function indicadoresDaConta(contaId: string): Promise<{ nota: number | null; indicadores: Indicador[] }> {
+  const foto = await one<{ rating: number | null; metrics: string | null }>(
+    `SELECT rating, metrics FROM shop_metrics WHERE client_marketplace_id = ?
+      ORDER BY captured_at DESC LIMIT 1`,
+    contaId,
+  );
+  if (!foto?.metrics) return { nota: foto?.rating ?? null, indicadores: [] };
+
+  try {
+    const bruto = JSON.parse(foto.metrics) as {
+      metric_name?: string;
+      current_period?: number | null;
+      last_period?: number | null;
+      unit?: number | null;
+      target?: { value?: number | null; comparator?: string | null } | null;
+    }[];
+    return {
+      nota: foto.rating ?? null,
+      indicadores: bruto
+        .filter((m) => m?.metric_name)
+        .map((m) => ({
+          nome: m.metric_name!,
+          atual: m.current_period ?? null,
+          anterior: m.last_period ?? null,
+          alvo: m.target?.value ?? null,
+          comparador: m.target?.comparator ?? null,
+          unidade: m.unit ?? null,
+        })),
+    };
+  } catch {
+    return { nota: foto.rating ?? null, indicadores: [] };
+  }
+}
+
+/** O que o marketplace já disse sobre os anúncios desta loja. */
+async function sinaisDaConta(conta: ContaDoCliente): Promise<SinaisDoCatalogo> {
+  const seteDias = new Date(Date.now() - 7 * 864e5).toISOString();
+  const linha = await one<{
+    sem_promocao: number;
+    rebaixados: number;
+    barrados: number;
+    preco_mudado: number;
+  }>(
+    `SELECT COUNT(*) FILTER (WHERE em_promocao = 0)                          AS sem_promocao,
+            COUNT(*) FILTER (WHERE deboost = 1)                              AS rebaixados,
+            COUNT(*) FILTER (WHERE sub_status IS NOT NULL
+                               AND sub_status <> 'out_of_stock'
+                              OR status IN ('BANNED','DELETED'))             AS barrados,
+            COUNT(*) FILTER (WHERE price_changed_at IS NOT NULL
+                               AND price_changed_at > ?)                     AS preco_mudado
+       FROM client_products WHERE client_marketplace_id = ?`,
+    seteDias,
+    conta.id,
+  );
+
+  // a Shopee entrega a lista de promoções; no Mercado Livre isso depende de
+  // permissão, e sem ela "sem promoção" seria chute com cara de número
+  const lePromocao = conta.marketplace !== "mercado_livre" || conta.promos_permission === "liberada";
+
+  return {
+    semPromocao: lePromocao ? (linha?.sem_promocao ?? 0) : null,
+    rebaixados: linha?.rebaixados ?? 0,
+    barrados: linha?.barrados ?? 0,
+    precoMudado: linha?.preco_mudado ?? 0,
+  };
+}
+
+/**
+ * O que a API recusa por falta de permissão no app.
+ *
+ * Vai para o dossiê porque o modelo precisa distinguir "está bom" de "ninguém
+ * mediu". Sem isto, silêncio viraria elogio.
+ */
+function pendenciasDaConta(conta: ContaDoCliente): string[] {
+  if (conta.marketplace !== "mercado_livre") return [];
+  return [
+    conta.items_permission === "pendente" ? "infrações de anúncio" : null,
+    conta.comms_permission === "pendente" ? "taxa de resposta e reclamações" : null,
+    conta.promos_permission === "pendente" ? "promoções ativas" : null,
+  ].filter((x): x is string => Boolean(x));
+}
+
+/**
  * Monta o dossiê do cliente, com uma seção por canal.
  *
  * As consultas de cada canal são independentes e vão em paralelo; o custo de
@@ -173,10 +268,12 @@ export async function coletarDossie(cliente: ClienteAnalisavel, refMonth: string
       );
       const inicio = primeiro?.dia && primeiro.dia > janela.inicio ? primeiro.dia : janela.inicio;
 
-      const [dias, campanhasCruas, produtos] = await Promise.all([
+      const [dias, campanhasCruas, produtos, saudeDaLoja, sinais] = await Promise.all([
         serieDiaria(inicio, janela.fim, { clientId: cliente.id, marketplace: conta.marketplace }),
         adsRows({ refMonth, clientId: cliente.id, marketplace: conta.marketplace }),
         produtosDaConta(conta.id),
+        indicadoresDaConta(conta.id),
+        sinaisDaConta(conta),
       ]);
 
       const campanhas = ordenarPorDesempenho(campanhasCruas.map((c) => analisarCampanha(c)));
@@ -186,6 +283,10 @@ export async function coletarDossie(cliente: ClienteAnalisavel, refMonth: string
         marketplace: marketplaceLabel(conta.marketplace),
         apelido: conta.nickname,
         statusConta: conta.status,
+        notaDaLoja: saudeDaLoja.nota,
+        indicadores: saudeDaLoja.indicadores,
+        sinais,
+        pendencias: pendenciasDaConta(conta),
         atual: doCanal(fechamentoAtual, conta.marketplace),
         anterior: doCanal(fechamentoAnterior, conta.marketplace),
         dias: dias.map((d) => ({ day: d.day, revenue: d.revenue, orders: d.orders })),

@@ -28,6 +28,10 @@ function loja(marketplace: string, extra: Partial<LojaNoDossie> = {}): LojaNoDos
     marketplace,
     apelido: null,
     statusConta: "conectado",
+    notaDaLoja: null,
+    indicadores: [],
+    sinais: { semPromocao: 0, rebaixados: 0, barrados: 0, precoMudado: 0 },
+    pendencias: [],
     atual: mes(1000, { orders: 20, profit: 200 }),
     anterior: mes(800, { orders: 16 }),
     dias: [],
@@ -212,4 +216,64 @@ test("evidência sem número, com número inventado e com número do dossiê", (
   // 2% de tolerância: 1.015 passa, 1.100 não
   assert.equal(evidenciaConfere("cerca de R$ 1.015,00", numeros), true);
   assert.equal(evidenciaConfere("cerca de R$ 1.100,00", numeros), false);
+});
+
+test("indicador fora do alvo entra no texto e na contagem do cliente", () => {
+  const d = montarDossie(
+    entrada({
+      lojas: [
+        loja("Shopee", {
+          notaDaLoja: 3,
+          indicadores: [
+            { nome: "late_shipment_rate", atual: 6.44, anterior: 0.6, alvo: 5, comparador: "<", unidade: 2 },
+            { nome: "response_rate", atual: 93.76, anterior: 93.5, alvo: 60, comparador: ">=", unidade: 2 },
+          ],
+          sinais: { semPromocao: 14, rebaixados: 0, barrados: 3, precoMudado: 2 },
+        }),
+      ],
+    }),
+  );
+
+  assert.equal(d.derivado.indicadoresFora, 1);
+  assert.equal(d.porLoja[0].derivado.indicadoresFora.length, 1);
+  assert.equal(d.porLoja[0].derivado.indicadoresFora[0].nome, "late_shipment_rate");
+
+  const texto = paraTexto(d);
+  assert.match(texto, /Nota que o marketplace dá à loja: 3 de 5/);
+  assert.match(texto, /INDICADORES FORA DO ALVO \(1\)/);
+  assert.match(texto, /Atraso no envio: 6,44% \(alvo < 5%\)/);
+  // o que está dentro do alvo também vai, para o modelo não chutar
+  assert.match(texto, /Indicadores dentro do alvo: Taxa de respostas 93.76%/);
+  assert.match(texto, /3 barrados pelo marketplace, 0 rebaixados na busca, 14 sem promoção, 2 com preço mexido/);
+});
+
+test("leitura bloqueada por permissão aparece como não medida", () => {
+  const d = montarDossie(
+    entrada({
+      lojas: [loja("Mercado Livre", { pendencias: ["taxa de resposta e reclamações", "promoções ativas"] })],
+    }),
+  );
+  const texto = paraTexto(d);
+  assert.match(texto, /NÃO MEDIDO neste canal, por falta de permissão no app/);
+  assert.match(texto, /ausência de alerta não é sinal de que está bom/);
+});
+
+test("canal que não lê promoção não inventa anúncio sem promoção", () => {
+  const semLeitura = montarDossie(
+    entrada({
+      lojas: [
+        loja("Mercado Livre", {
+          sinais: { semPromocao: null, rebaixados: 0, barrados: 6, precoMudado: 0 },
+        }),
+      ],
+    }),
+  );
+  assert.match(paraTexto(semLeitura), /promoção não lida neste canal/);
+
+  const comLeitura = montarDossie(
+    entrada({
+      lojas: [loja("Shopee", { sinais: { semPromocao: 14, rebaixados: 0, barrados: 0, precoMudado: 3 } })],
+    }),
+  );
+  assert.match(paraTexto(comLeitura), /14 sem promoção/);
 });

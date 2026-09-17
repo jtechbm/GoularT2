@@ -1,4 +1,5 @@
 import { diferencaRelativa, numerosDoTrecho } from "../precos/analise.ts";
+import { avaliarIndicador, INDICADOR_LABEL, type Indicador } from "../penalidades/regras.ts";
 
 /**
  * O dossiê do cliente: a parte que só faz conta.
@@ -73,12 +74,42 @@ export interface PenalidadeLinha {
   detectadaEm: string;
 }
 
+/** Sinais que o marketplace publica sobre os anúncios da loja. */
+export interface SinaisDoCatalogo {
+  /**
+   * Sem nenhuma promoção ativa.
+   *
+   * null quando o canal não deixa ler promoção — hoje o Mercado Livre, que
+   * exige uma permissão a mais. Zero e "não sei" não podem ser a mesma coisa:
+   * o dossiê diria "86 anúncios sem promoção" num canal em que ninguém olhou.
+   */
+  semPromocao: number | null;
+  /** rebaixado na busca pelo próprio marketplace (deboost) */
+  rebaixados: number;
+  /** barrado pelo marketplace: proibido, suspenso, aguardando correção */
+  barrados: number;
+  /** preço mexido nos últimos sete dias */
+  precoMudado: number;
+}
+
 /** Uma loja do cliente, já com os números dela. */
 export interface LojaNoDossie {
   /** nome do marketplace como a equipe fala: "Mercado Livre", "Shopee" */
   marketplace: string;
   apelido: string | null;
   statusConta: string;
+  /** nota geral que o marketplace dá à loja, quando existe */
+  notaDaLoja: number | null;
+  /** indicadores de saúde com o alvo do próprio marketplace */
+  indicadores: Indicador[];
+  sinais: SinaisDoCatalogo;
+  /**
+   * Leituras que a API recusa por falta de permissão no app.
+   *
+   * Entra no dossiê de propósito: o modelo precisa saber o que NÃO foi medido,
+   * senão "taxa de resposta boa" significaria "ninguém olhou".
+   */
+  pendencias: string[];
   atual: LinhaMes;
   anterior: LinhaMes;
   dias: DiaLinha[];
@@ -129,6 +160,8 @@ export interface DerivadoLoja {
   ads: { invested: number; revenue: number; roas: number | null; acos: number | null } | null;
   /** quanto esta loja representa do faturamento do cliente */
   fatiaDoFaturamento: number;
+  /** indicadores fora do alvo, já com o texto pronto */
+  indicadoresFora: { nome: string; texto: string; severidade: string }[];
 }
 
 export interface Dossie extends EntradaDossie {
@@ -141,6 +174,8 @@ export interface Dossie extends EntradaDossie {
     ticket: number;
     metasCumpridas: number;
     penalidadesAbertas: number;
+    /** indicadores de saúde fora do alvo, somando os canais */
+    indicadoresFora: number;
   };
   porLoja: (LojaNoDossie & { derivado: DerivadoLoja })[];
 }
@@ -299,6 +334,14 @@ function derivarLoja(l: LojaNoDossie, faturamentoDoCliente: number): DerivadoLoj
           }
         : null,
     fatiaDoFaturamento: faturamentoDoCliente ? l.atual.revenue / faturamentoDoCliente : 0,
+    indicadoresFora: l.indicadores
+      .map((i) => ({ indicador: i, avaliacao: avaliarIndicador(i) }))
+      .filter(({ avaliacao }) => avaliacao.fora)
+      .map(({ indicador, avaliacao }) => ({
+        nome: indicador.nome,
+        texto: avaliacao.texto,
+        severidade: avaliacao.severidade,
+      })),
   };
 }
 
@@ -317,6 +360,9 @@ export function montarDossie(e: EntradaDossie): Dossie {
       ticket: atual.orders ? atual.revenue / atual.orders : 0,
       metasCumpridas: e.metas.filter((m) => m.bom).length,
       penalidadesAbertas: soma(e.lojas.map((l) => l.penalidades.length)),
+      indicadoresFora: soma(
+        e.lojas.map((l) => l.indicadores.filter((i) => avaliarIndicador(i).fora).length),
+      ),
     },
     porLoja: e.lojas.map((l) => ({ ...l, derivado: derivarLoja(l, atual.revenue) })),
   };
@@ -428,12 +474,42 @@ export function paraTexto(d: Dossie): string {
       }
     }
 
+    if (loja.notaDaLoja !== null) l.push(`Nota que o marketplace dá à loja: ${loja.notaDaLoja} de 5.`);
+
+    if (loja.indicadores.length) {
+      const fora = ld.indicadoresFora;
+      if (fora.length) {
+        l.push(`INDICADORES FORA DO ALVO (${fora.length}):`);
+        for (const i of fora) l.push(`  - [${i.severidade}] ${i.texto}`);
+      } else {
+        l.push("Indicadores de saúde: todos dentro do alvo do marketplace.");
+      }
+      const dentro = loja.indicadores
+        .filter((i) => !avaliarIndicador(i).fora && i.atual !== null)
+        .map((i) => `${INDICADOR_LABEL[i.nome] ?? i.nome} ${i.atual}${i.unidade === 2 ? "%" : ""}`);
+      if (dentro.length) l.push(`Indicadores dentro do alvo: ${dentro.join(", ")}.`);
+    }
+
+    l.push(
+      `Sinais do catálogo: ${loja.sinais.barrados} barrados pelo marketplace, ` +
+        `${loja.sinais.rebaixados} rebaixados na busca, ` +
+        (loja.sinais.semPromocao === null ? "promoção não lida neste canal" : `${loja.sinais.semPromocao} sem promoção`) +
+        `, ${loja.sinais.precoMudado} com preço mexido nos últimos 7 dias.`,
+    );
+
     if (loja.penalidades.length) {
       for (const p of loja.penalidades) {
         l.push(`Penalidade [${p.severity}] ${p.kind}: ${p.titulo} (detectada em ${p.detectadaEm}).`);
       }
     } else {
       l.push("Penalidades: nenhuma aberta neste canal.");
+    }
+
+    if (loja.pendencias.length) {
+      l.push(
+        `NÃO MEDIDO neste canal, por falta de permissão no app: ${loja.pendencias.join(", ")}. ` +
+          "Não afirme nada sobre esses temas aqui: ausência de alerta não é sinal de que está bom.",
+      );
     }
 
     if (loja.reputacao) {

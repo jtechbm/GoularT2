@@ -114,7 +114,7 @@ export default async function AnalisePage({
         </Card>
       ) : (
         <>
-          <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+          <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
             <Stat
               label="Score do cliente"
               value={d.score ? String(d.score.valor) : "—"}
@@ -142,6 +142,12 @@ export default async function AnalisePage({
               value={String(d.porLoja.length)}
               hint={d.porLoja.map((l) => l.marketplace).join(" · ")}
               tone="brand"
+            />
+            <Stat
+              label="Indicadores fora do alvo"
+              value={String(d.derivado.indicadoresFora)}
+              hint={d.derivado.indicadoresFora ? "alvo do próprio marketplace" : "tudo dentro do alvo"}
+              tone={d.derivado.indicadoresFora ? "warn" : "ok"}
             />
             <Stat
               label="Penalidades abertas"
@@ -193,6 +199,7 @@ export default async function AnalisePage({
                     <th className="num">Margem</th>
                     <th className="num">Anúncios</th>
                     <th className="num">Preço vs. mercado</th>
+                    <th className="num">Saúde</th>
                     <th className="num">Penalidades</th>
                   </tr>
                 </thead>
@@ -230,6 +237,23 @@ export default async function AnalisePage({
                           ? `${l.derivado.posicao.acima} acima · ${l.derivado.posicao.abaixo} abaixo`
                           : `sem comparação (${l.derivado.catalogo.total} anúncios)`}
                       </td>
+                      <td data-label="Saúde" className="num">
+                        {l.notaDaLoja !== null && (
+                          <Chip tone={l.notaDaLoja >= 4 ? "ok" : l.notaDaLoja >= 3 ? "warn" : "bad"}>
+                            nota {l.notaDaLoja}
+                          </Chip>
+                        )}
+                        {l.derivado.indicadoresFora.length > 0 ? (
+                          <span className="block text-xs text-warn">
+                            {l.derivado.indicadoresFora.length}{" "}
+                            {l.derivado.indicadoresFora.length === 1 ? "indicador fora" : "indicadores fora"}
+                          </span>
+                        ) : l.indicadores.length ? (
+                          <span className="block text-xs text-ok">dentro do alvo</span>
+                        ) : (
+                          <span className="block text-xs text-dim">sem indicador</span>
+                        )}
+                      </td>
                       <td data-label="Penalidades" className="num">
                         {l.penalidades.length || "—"}
                       </td>
@@ -238,6 +262,57 @@ export default async function AnalisePage({
                 </tbody>
               </table>
             </div>
+          </Card>
+
+          <Card
+            className="mt-3"
+            title="Saúde dos canais"
+            subtitle="Indicador fora do alvo, anúncio barrado e o que o marketplace não deixa ler"
+            bodyClassName="p-0"
+          >
+            <ul className="divide-y divide-line">
+              {d.porLoja.map((l) => (
+                <li key={`saude-${l.marketplace}`} className="px-4 py-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-sm font-medium text-ink">{l.marketplace}</span>
+                    {l.reputacao && <Chip tone="info">reputação {l.reputacao.nivel}</Chip>}
+                    {l.sinais.barrados > 0 && <Chip tone="bad">{l.sinais.barrados} barrados</Chip>}
+                    {l.sinais.rebaixados > 0 && <Chip tone="warn">{l.sinais.rebaixados} rebaixados</Chip>}
+                    {l.sinais.semPromocao === null ? (
+                      <Chip tone="neutral">promoção não lida</Chip>
+                    ) : l.sinais.semPromocao > 0 ? (
+                      <Chip tone="neutral">{l.sinais.semPromocao} sem promoção</Chip>
+                    ) : null}
+                    {l.sinais.precoMudado > 0 && (
+                      <Chip tone="info">{l.sinais.precoMudado} com preço mexido em 7 dias</Chip>
+                    )}
+                  </div>
+
+                  {l.derivado.indicadoresFora.length > 0 ? (
+                    <ul className="mt-2 space-y-1">
+                      {l.derivado.indicadoresFora.map((i) => (
+                        <li key={i.nome} className="text-xs">
+                          <Chip tone={i.severidade === "critico" ? "bad" : "warn"}>{i.severidade}</Chip>{" "}
+                          <span className="text-muted">{i.texto}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="mt-1 text-xs text-muted">
+                      {l.indicadores.length
+                        ? "Todos os indicadores dentro do alvo do marketplace."
+                        : "Este canal não publica indicadores de saúde; o que existe é a reputação."}
+                    </p>
+                  )}
+
+                  {l.pendencias.length > 0 && (
+                    <p className="mt-2 text-xs text-warn">
+                      Não medido por falta de permissão no app: {l.pendencias.join(", ")}.
+                    </p>
+                  )}
+                </li>
+              ))}
+            </ul>
           </Card>
 
           {r && r.acoes.length > 0 && (
