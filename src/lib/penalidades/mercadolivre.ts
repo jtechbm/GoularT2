@@ -2,7 +2,7 @@ import { all, id, now, one, run } from "../db.ts";
 import { decryptJSON, encryptJSON } from "../crypto.ts";
 import { refreshIfNeeded } from "../integrations/mercadolivre.ts";
 import type { StoredCredentials } from "../integrations/types.ts";
-import { notificarVarios } from "../notificacoes.ts";
+import { registrarPenalidade, resolverAutomatico } from "./registro.ts";
 import {
   avisoEhAlerta,
   compararReputacao,
@@ -46,98 +46,12 @@ interface Conta {
   credentials: string | null;
 }
 
-/**
- * Quem recebe o aviso: admin e gestor, que enxergam a carteira inteira,
- * mais o responsável e a equipe do cliente. Membro de fora não é avisado
- * de cliente que ele nem consegue abrir.
- */
-async function destinatarios(conta: Conta): Promise<string[]> {
-  const gestao = await all<{ id: string }>(
-    "SELECT id FROM users WHERE active = 1 AND role IN ('admin','gestor')",
-  );
-  const equipe = await all<{ user_id: string }>(
-    `SELECT ct.user_id FROM client_team ct JOIN users u ON u.id = ct.user_id
-      WHERE ct.client_id = ? AND u.active = 1`,
-    conta.client_id,
-  );
-  return [
-    ...gestao.map((g) => g.id),
-    ...equipe.map((e) => e.user_id),
-    ...(conta.owner_id ? [conta.owner_id] : []),
-  ];
-}
-
-/**
- * Grava a penalidade se ela é nova e avisa as pessoas certas.
- *
- * O índice único (conta, tipo, chave externa) é o que garante que a mesma
- * penalidade não seja avisada de novo amanhã. Se já existe, não faz nada,
- * nem notifica.
- */
+/** O registro e a notificação moram em registro.ts, compartilhados com a Shopee. */
 async function registrar(
   conta: Conta,
-  p: {
-    kind: string;
-    severity: Severidade;
-    externalKey: string;
-    title: string;
-    detail: string;
-    data: unknown;
-  },
+  p: { kind: string; severity: Severidade; externalKey: string; title: string; detail: string; data: unknown },
 ): Promise<boolean> {
-  const existente = await one<{ id: string }>(
-    "SELECT id FROM penalties WHERE client_marketplace_id = ? AND kind = ? AND external_key = ?",
-    conta.id,
-    p.kind,
-    p.externalKey,
-  );
-  if (existente) return false;
-
-  const penaltyId = id();
-  await run(
-    `INSERT INTO penalties (id, client_id, client_marketplace_id, marketplace, kind, severity, external_key,
-                            title, detail, data, status, detected_at)
-     VALUES (?,?,?,'mercado_livre',?,?,?,?,?,?,'aberta',?)`,
-    penaltyId,
-    conta.client_id,
-    conta.id,
-    p.kind,
-    p.severity,
-    p.externalKey,
-    p.title,
-    p.detail,
-    JSON.stringify(p.data),
-    now(),
-  );
-
-  // aviso informativo fica registrado mas não interrompe ninguém
-  if (p.severity !== "informativo") {
-    const criadas = await notificarVarios(await destinatarios(conta), {
-      actorId: null,
-      type: "penalidade",
-      title: `${conta.client_name}: ${p.title}`,
-      body: p.detail.slice(0, 200),
-      href: `/penalidades?cliente=${conta.client_id}`,
-      clientId: conta.client_id,
-    });
-
-    // a entrega por canal fica anotada: o canal 'app' já está entregue pelo
-    // simples fato de a notificação existir; o WhatsApp vai entrar como outro
-    // canal lendo as pendentes daqui
-    for (const notifId of criadas) {
-      await run(
-        `INSERT INTO notification_deliveries (id, notification_id, channel, status, attempts, created_at, sent_at)
-         VALUES (?,?,'app','entregue',1,?,?)
-         ON CONFLICT (notification_id, channel) DO NOTHING`,
-        id(),
-        notifId,
-        now(),
-        now(),
-      );
-    }
-  }
-
-  return true;
+  return registrarPenalidade(conta, "mercado_livre", p);
 }
 
 async function verificarReputacao(conta: Conta, token: string, userId: string) {
@@ -363,6 +277,241 @@ async function verificarPermissaoAnuncios(conta: Conta, token: string, userId: s
   return permissao as ResultadoVerificacao["permissaoAnuncios"];
 }
 
+/**
+ * Anúncio que o Mercado Livre bloqueou, e não que o lojista pausou.
+ *
+ * A diferença está no sub_status, não no status: "paused" é escolha do
+ * vendedor, enquanto "under_review" com sub_status forbidden é o marketplace
+ * derrubando o anúncio. Na conta do Kadu havia dois proibidos e um aguardando
+ * correção — nenhum deles apareceria numa busca por anúncios ativos.
+ *
+ * Lê da tabela de anúncios, que a importação já preencheu: o dado veio de uma
+ * chamada que o comparador de preços paga, então aqui não custa nada.
+ */
+const SUB_STATUS: Record<string, { titulo: string; severidade: Severidade; texto: string }> = {
+  forbidden: {
+    titulo: "Anúncio proibido pelo Mercado Livre",
+    severidade: "critico",
+    texto:
+      "O Mercado Livre classificou o anúncio como proibido. Ele está fora do ar e não volta sozinho: " +
+      "costuma ser imagem de terceiro, marca protegida, produto restrito ou anúncio duplicado.",
+  },
+  waiting_for_patch: {
+    titulo: "Anúncio aguardando correção",
+    severidade: "atencao",
+    texto:
+      "O Mercado Livre pediu uma correção no anúncio e o deixou em revisão. Enquanto não for corrigido " +
+      "ele não aparece na busca.",
+  },
+  suspended: {
+    titulo: "Anúncio suspenso",
+    severidade: "critico",
+    texto: "O Mercado Livre suspendeu o anúncio. Enquanto durar a suspensão ele não vende.",
+  },
+  deleted: {
+    titulo: "Anúncio excluído pelo Mercado Livre",
+    severidade: "critico",
+    texto: "O anúncio foi excluído pelo marketplace, não pelo lojista.",
+  },
+  freeze: {
+    titulo: "Anúncio congelado",
+    severidade: "atencao",
+    texto: "O anúncio está congelado pelo Mercado Livre e não recebe visitas.",
+  },
+};
+
+async function verificarAnunciosBloqueados(conta: Conta) {
+  const anuncios = await all<{ external_id: string; title: string; status: string | null; sub_status: string | null }>(
+    `SELECT external_id, title, status, sub_status FROM client_products
+      WHERE client_marketplace_id = ? AND sub_status IS NOT NULL`,
+    conta.id,
+  );
+
+  let novas = 0;
+  const abertas: string[] = [];
+
+  for (const a of anuncios) {
+    for (const marca of (a.sub_status ?? "").split(",")) {
+      const regra = SUB_STATUS[marca.trim()];
+      if (!regra) continue;
+      const chave = `anuncio:${a.external_id}:${marca.trim()}`;
+      abertas.push(chave);
+      const criou = await registrar(conta, {
+        kind: "anuncio",
+        severity: regra.severidade,
+        externalKey: chave,
+        title: `${regra.titulo}: ${a.title}`,
+        detail: `${regra.texto} Anúncio ${a.external_id}, status ${a.status ?? "—"}.`,
+        data: a,
+      });
+      if (criou) novas += 1;
+    }
+  }
+
+  const resolvidas = await resolverAutomatico(
+    conta.id,
+    "anuncio",
+    abertas,
+    "O anúncio saiu da revisão ou do bloqueio.",
+  );
+  return { novas, resolvidas, bloqueados: abertas.length };
+}
+
+/**
+ * Pedidos com envio atrasado, que é o que derruba a reputação mais rápido.
+ *
+ * A janela de 21 dias não é enfeite: o filtro shipping.status=delayed do
+ * Mercado Livre devolve o histórico inteiro, e sem recorte a primeira
+ * verificação abriu 50 penalidades de pedidos de setembro do ano passado e
+ * disparou 108 notificações. Atraso velho é história, não tarefa.
+ */
+const JANELA_ATRASO_DIAS = 21;
+
+async function verificarEnviosAtrasados(conta: Conta, token: string, userId: string) {
+  const desde = new Date(Date.now() - JANELA_ATRASO_DIAS * 864e5).toISOString().slice(0, 19) + ".000-00:00";
+  const res = await fetch(
+    `${API}/orders/search?seller=${userId}&shipping.status=delayed&order.date_created.from=${desde}` +
+      "&sort=date_desc&limit=30",
+    { headers: { authorization: `Bearer ${token}`, accept: "application/json" } },
+  );
+  if (!res.ok) return { novas: 0, resolvidas: 0, atrasados: 0 };
+
+  const corpo = (await res.json()) as {
+    results?: { id: number; date_created?: string; order_items?: { item?: { title?: string } }[] }[];
+  };
+  const pedidos = corpo.results ?? [];
+  if (!pedidos.length) {
+    const resolvidas = await resolverAutomatico(conta.id, "atraso", [], "Não há mais envio atrasado na janela.");
+    return { novas: 0, resolvidas, atrasados: 0 };
+  }
+
+  // Um aviso por pedido viraria trinta notificações de uma vez, e trinta
+  // avisos ninguém lê. O aviso é um por dia, com a lista dentro: a pessoa vê
+  // "30 envios atrasados" e abre para saber quais.
+  const idade = (o: { date_created?: string }) =>
+    o.date_created ? Math.floor((Date.now() - new Date(o.date_created).getTime()) / 864e5) : 0;
+  const maisVelho = Math.max(...pedidos.map(idade));
+  const chave = `atrasos:${new Date().toISOString().slice(0, 10)}`;
+
+  const lista = pedidos
+    .slice(0, 10)
+    .map((o) => `${o.id} (${idade(o)}d · ${o.order_items?.[0]?.item?.title ?? "pedido"})`)
+    .join("; ");
+
+  const criou = await registrar(conta, {
+    kind: "atraso",
+    severity: maisVelho >= 7 || pedidos.length >= 10 ? "critico" : "atencao",
+    externalKey: chave,
+    title: `${pedidos.length} ${pedidos.length === 1 ? "envio atrasado" : "envios atrasados"} no Mercado Livre`,
+    detail:
+      `Pedidos dos últimos ${JANELA_ATRASO_DIAS} dias com envio marcado como atrasado; o mais antigo tem ` +
+      `${maisVelho} ${maisVelho === 1 ? "dia" : "dias"}. Atraso entra na taxa de atraso da reputação, que é ` +
+      `medida em 365 dias e demora a limpar. ${lista}` +
+      (pedidos.length > 10 ? ` (e mais ${pedidos.length - 10})` : ""),
+    data: { total: pedidos.length, maisVelho, pedidos: pedidos.map((o) => ({ id: o.id, date_created: o.date_created })) },
+  });
+
+  const resolvidas = await resolverAutomatico(
+    conta.id,
+    "atraso",
+    [chave],
+    "Os envios atrasados de antes saíram da janela.",
+  );
+  return { novas: criou ? 1 : 0, resolvidas, atrasados: pedidos.length };
+}
+
+/**
+ * Taxa de resposta: perguntas sem responder.
+ *
+ * Depende da permissão "Comunicações antes e pós-venda" no app. Sem ela a API
+ * responde 403, e o sistema registra a pendência em vez de dizer que está
+ * tudo respondido.
+ */
+async function verificarPerguntas(conta: Conta, token: string, userId: string) {
+  const res = await fetch(`${API}/questions/search?seller_id=${userId}&status=UNANSWERED&limit=50`, {
+    headers: { authorization: `Bearer ${token}`, accept: "application/json" },
+  });
+  if (res.status === 403 || res.status === 401) return { permissao: "pendente" as const, novas: 0, pendentes: 0 };
+  if (!res.ok) return { permissao: "desconhecida" as const, novas: 0, pendentes: 0 };
+
+  const corpo = (await res.json()) as { total?: number; questions?: { id: number; text?: string }[] };
+  const pendentes = corpo.total ?? corpo.questions?.length ?? 0;
+
+  // uma pergunta sem resposta é rotina; o aviso é sobre acumular
+  let novas = 0;
+  if (pendentes >= 5) {
+    const criou = await registrar(conta, {
+      kind: "desempenho",
+      severity: pendentes >= 20 ? "critico" : "atencao",
+      externalKey: `perguntas:${new Date().toISOString().slice(0, 10)}`,
+      title: `${pendentes} perguntas sem resposta no Mercado Livre`,
+      detail:
+        "Pergunta sem resposta derruba a taxa de resposta da loja e faz o comprador desistir. " +
+        "O Mercado Livre cobra resposta em até 24 horas.",
+      data: { pendentes },
+    });
+    if (criou) novas += 1;
+  }
+  return { permissao: "liberada" as const, novas, pendentes };
+}
+
+/** Reclamações e devoluções abertas (pós-venda). Também depende de permissão. */
+async function verificarReclamacoes(conta: Conta, token: string) {
+  const res = await fetch(`${API}/post-purchase/v1/claims/search?status=opened&limit=50`, {
+    headers: { authorization: `Bearer ${token}`, accept: "application/json" },
+  });
+  if (res.status === 403 || res.status === 401) return { permissao: "pendente" as const, novas: 0, abertas: 0 };
+  if (!res.ok) return { permissao: "desconhecida" as const, novas: 0, abertas: 0 };
+
+  const corpo = (await res.json()) as { data?: { id: number; type?: string; reason_id?: string }[] };
+  const reclamacoes = corpo.data ?? [];
+
+  let novas = 0;
+  const abertas: string[] = [];
+  for (const c of reclamacoes) {
+    const chave = `reclamacao:${c.id}`;
+    abertas.push(chave);
+    const criou = await registrar(conta, {
+      kind: "atraso",
+      severity: "atencao",
+      externalKey: chave,
+      title: `Reclamação aberta no pedido ${c.id}`,
+      detail:
+        `Tipo ${c.type ?? "—"}, motivo ${c.reason_id ?? "—"}. ` +
+        "Reclamação sem resposta vira mediação, e mediação conta na reputação.",
+      data: c,
+    });
+    if (criou) novas += 1;
+  }
+  await resolverAutomatico(conta.id, "atraso", abertas, "A reclamação foi encerrada.");
+  return { permissao: "liberada" as const, novas, abertas: reclamacoes.length };
+}
+
+/** Anúncios sem promoção, quando o app tem a permissão de promoções. */
+async function verificarPromocoesML(conta: Conta, token: string, userId: string) {
+  const res = await fetch(`${API}/seller-promotions/users/${userId}?app_version=v2`, {
+    headers: { authorization: `Bearer ${token}`, accept: "application/json" },
+  });
+  if (res.status === 403 || res.status === 401) return { permissao: "pendente" as const, novas: 0 };
+  if (!res.ok) return { permissao: "desconhecida" as const, novas: 0 };
+
+  const corpo = (await res.json()) as { results?: { id?: string; type?: string; status?: string }[] };
+  const promocoes = (corpo.results ?? []).filter((p) => (p.status ?? "").toLowerCase() !== "finished");
+  if (promocoes.length) return { permissao: "liberada" as const, novas: 0 };
+
+  const criou = await registrar(conta, {
+    kind: "promocao",
+    severity: "informativo",
+    externalKey: `sem_promocao:${new Date().toISOString().slice(0, 7)}`,
+    title: "Nenhuma promoção ativa no Mercado Livre",
+    detail:
+      "A loja não está em nenhuma campanha ou desconto do Mercado Livre neste mês. " +
+      "Anúncio sem promoção perde as vitrines de oferta da plataforma.",
+    data: corpo,
+  });
+  return { permissao: "liberada" as const, novas: criou ? 1 : 0 };
+}
+
 export async function verificarPenalidadesML(accountId: string): Promise<ResultadoVerificacao> {
   const conta = await one<Conta>(
     `SELECT cm.id, cm.client_id, c.name AS client_name, c.owner_id, cm.credentials
@@ -394,17 +543,35 @@ export async function verificarPenalidadesML(accountId: string): Promise<Resulta
     const rep = await verificarReputacao(conta, token, creds.user_id);
     const avisos = await verificarAvisos(conta, token);
     const permissao = await verificarPermissaoAnuncios(conta, token, creds.user_id);
+    const bloqueados = await verificarAnunciosBloqueados(conta);
+    const atrasos = await verificarEnviosAtrasados(conta, token, creds.user_id);
+    const perguntas = await verificarPerguntas(conta, token, creds.user_id);
+    const reclamacoes = await verificarReclamacoes(conta, token);
+    const promocoes = await verificarPromocoesML(conta, token, creds.user_id);
 
-    await run("UPDATE client_marketplaces SET penalties_checked_at = ? WHERE id = ?", now(), conta.id);
+    await run(
+      `UPDATE client_marketplaces SET penalties_checked_at = ?, comms_permission = ?, promos_permission = ?
+        WHERE id = ?`,
+      now(),
+      perguntas.permissao === "liberada" && reclamacoes.permissao === "liberada" ? "liberada" : "pendente",
+      promocoes.permissao,
+      conta.id,
+    );
 
-    const novas = rep.novas + avisos.novas;
+    const novas =
+      rep.novas + avisos.novas + bloqueados.novas + atrasos.novas + perguntas.novas + reclamacoes.novas +
+      promocoes.novas;
     return {
       ok: true,
       novas,
-      resolvidas: rep.resolvidas,
+      resolvidas: rep.resolvidas + bloqueados.resolvidas + atrasos.resolvidas,
       nivel: rep.nivel,
       permissaoAnuncios: permissao,
-      mensagem: `${novas} ${novas === 1 ? "penalidade nova" : "penalidades novas"}, reputação ${NIVEL_LABEL[rep.nivel ?? ""] ?? "sem cor"}`,
+      mensagem:
+        `${novas} ${novas === 1 ? "penalidade nova" : "penalidades novas"}, ` +
+        `reputação ${NIVEL_LABEL[rep.nivel ?? ""] ?? "sem cor"}, ` +
+        `${bloqueados.bloqueados} ${bloqueados.bloqueados === 1 ? "anúncio barrado" : "anúncios barrados"}, ` +
+        `${atrasos.atrasados} ${atrasos.atrasados === 1 ? "envio atrasado" : "envios atrasados"}`,
     };
   } catch (e) {
     return {

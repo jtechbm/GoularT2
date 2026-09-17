@@ -29,6 +29,7 @@ export default async function PrecosPage({
     mp?: string;
     produto?: string;
     importados?: string;
+    precos?: string;
     achados?: string;
     fora?: string;
     proprios?: string;
@@ -78,7 +79,10 @@ export default async function PrecosPage({
       )}
       {sp.importados !== undefined && (
         <div className="flash mb-4 rounded-lg border border-ok/30 bg-ok-soft px-4 py-2.5 text-sm font-medium text-ok">
-          {sp.importados} {sp.importados === "1" ? "anúncio importado" : "anúncios importados"}.
+          {sp.importados} {sp.importados === "1" ? "anúncio importado" : "anúncios importados"}
+          {sp.precos && sp.precos !== "0"
+            ? ` · ${sp.precos} ${sp.precos === "1" ? "mudança de preço detectada" : "mudanças de preço detectadas"}`
+            : ""}.
         </div>
       )}
       {sp.achados !== undefined && (

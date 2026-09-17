@@ -1540,6 +1540,8 @@ export async function saudeContasML(scope?: Scope, clientId?: string) {
     client_name: string;
     penalties_checked_at: string | null;
     items_permission: string | null;
+    comms_permission: string | null;
+    promos_permission: string | null;
     level_id: string | null;
     real_level: string | null;
     protection_end_date: string | null;
@@ -1549,6 +1551,7 @@ export async function saudeContasML(scope?: Scope, clientId?: string) {
     captured_at: string | null;
   }>(
     `SELECT cm.id, cm.client_id, c.name AS client_name, cm.penalties_checked_at, cm.items_permission,
+            cm.comms_permission, cm.promos_permission,
             r.level_id, r.real_level, r.protection_end_date, r.claims_rate, r.delayed_rate,
             r.cancellations_rate, r.captured_at
        FROM client_marketplaces cm
@@ -1566,6 +1569,45 @@ export async function saudeContasML(scope?: Scope, clientId?: string) {
 }
 
 /** Avisos oficiais recebidos, os mais recentes primeiro. */
+/**
+ * Últimos indicadores de saúde de cada loja Shopee.
+ *
+ * Lê a foto mais recente de shop_metrics por conta. Os indicadores em si
+ * ficam em JSON, e é a tela que decide quais mostrar: a Shopee muda a lista
+ * com alguma frequência, e nada aqui deve quebrar quando ela muda.
+ */
+export async function saudeLojasShopee(scope?: Scope, clientId?: string) {
+  const esc = scoped(scope, "cm.client_id");
+  const cli = clientId ? " AND cm.client_id = ?" : "";
+  return all<{
+    id: string;
+    client_id: string;
+    client_name: string;
+    nickname: string | null;
+    penalties_checked_at: string | null;
+    rating: number | null;
+    fulfillment_failed: number | null;
+    listing_failed: number | null;
+    service_failed: number | null;
+    metrics: string | null;
+    captured_at: string | null;
+  }>(
+    `SELECT cm.id, cm.client_id, c.name AS client_name, cm.nickname, cm.penalties_checked_at,
+            m.rating, m.fulfillment_failed, m.listing_failed, m.service_failed, m.metrics, m.captured_at
+       FROM client_marketplaces cm
+       JOIN clients c ON c.id = cm.client_id
+       LEFT JOIN LATERAL (
+         SELECT rating, fulfillment_failed, listing_failed, service_failed, metrics, captured_at
+           FROM shop_metrics sm WHERE sm.client_marketplace_id = cm.id
+          ORDER BY sm.captured_at DESC LIMIT 1
+       ) m ON true
+      WHERE cm.marketplace = 'shopee' AND cm.credentials IS NOT NULL${cli}${esc.sql}
+      ORDER BY lower(c.name)`,
+    ...(clientId ? [clientId] : []),
+    ...esc.params,
+  );
+}
+
 export async function avisosMarketplace(scope?: Scope, limit = 30) {
   const esc = scoped(scope, "cm.client_id");
   return all<{

@@ -677,6 +677,62 @@ CREATE TABLE IF NOT EXISTS store_analyses (
 CREATE INDEX IF NOT EXISTS idx_analises_loja    ON store_analyses(client_marketplace_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_analises_cliente ON store_analyses(client_id, created_at DESC);
 
+-- Foto dos indicadores de saúde da loja, um registro por verificação.
+--
+-- A Shopee publica uma dúzia de indicadores com o alvo de cada um (atraso no
+-- envio abaixo de 5%, taxa de resposta acima de 60%, violação de anúncio
+-- igual a zero). Guardar a foto inteira, e não só o que estourou, é o que
+-- permite dizer depois "isso vem piorando há três semanas".
+CREATE TABLE IF NOT EXISTS shop_metrics (
+  id                    text PRIMARY KEY,
+  client_marketplace_id text NOT NULL REFERENCES client_marketplaces(id) ON DELETE CASCADE,
+  marketplace           text NOT NULL,
+  rating                double precision,
+  fulfillment_failed    integer,
+  listing_failed         integer,
+  service_failed        integer,
+  metrics               text NOT NULL,
+  captured_at           text NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_shop_metrics_conta ON shop_metrics(client_marketplace_id, captured_at DESC);
+
+-- Histórico de preço de cada anúncio.
+--
+-- A importação sobrescreve o preço atual, e sem isto não existe como dizer
+-- que o anúncio subiu de preço — que foi exatamente o pedido do cliente.
+-- Um registro por anúncio e por dia: preço mudado duas vezes no mesmo dia
+-- guarda o último, e é o que importa para comparar com amanhã.
+CREATE TABLE IF NOT EXISTS client_product_prices (
+  product_id text NOT NULL REFERENCES client_products(id) ON DELETE CASCADE,
+  day        text NOT NULL,
+  price      double precision NOT NULL,
+  PRIMARY KEY (product_id, day)
+);
+
+-- Sinais do anúncio que o marketplace publica.
+--
+-- deboost é o nome que a Shopee dá ao anúncio rebaixado na busca: é o mais
+-- perto que existe de "perdeu relevância", porque posição de busca nenhuma
+-- API entrega.
+ALTER TABLE client_products ADD COLUMN IF NOT EXISTS deboost         integer NOT NULL DEFAULT 0;
+ALTER TABLE client_products ADD COLUMN IF NOT EXISTS em_promocao     integer NOT NULL DEFAULT 0;
+ALTER TABLE client_products ADD COLUMN IF NOT EXISTS previous_price  double precision;
+ALTER TABLE client_products ADD COLUMN IF NOT EXISTS price_changed_at text;
+
+-- O Mercado Livre não diz "banido": diz status under_review com sub_status
+-- forbidden, waiting_for_patch e afins. É o sub_status que separa "o vendedor
+-- pausou" de "o marketplace bloqueou".
+ALTER TABLE client_products ADD COLUMN IF NOT EXISTS sub_status text;
+
+-- Permissões que faltam no app do Mercado Livre, por conta.
+--
+-- Mesma ideia de items_permission: quando a API recusa por falta de
+-- permissão, a tela diz o que não está sendo lido em vez de fingir que está
+-- tudo limpo.
+ALTER TABLE client_marketplaces ADD COLUMN IF NOT EXISTS comms_permission  text;
+ALTER TABLE client_marketplaces ADD COLUMN IF NOT EXISTS promos_permission text;
+
 ALTER TABLE store_analyses ALTER COLUMN client_marketplace_id DROP NOT NULL;
 ALTER TABLE store_analyses ALTER COLUMN marketplace           DROP NOT NULL;
 
@@ -717,6 +773,8 @@ CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
 
 /** Tabelas na ordem segura para limpeza (filhas antes das pais). */
 export const TABLES = [
+  "client_product_prices",
+  "shop_metrics",
   "store_analyses",
   "market_comparisons",
   "client_products",

@@ -6,6 +6,7 @@ import { all, id, now, one, run } from "@/lib/db";
 import { assertCan, assertClientAccess, requireUser, visibleClientIds } from "@/lib/auth";
 import { str, strOrNull } from "@/lib/format";
 import { verificarPenalidadesML } from "@/lib/penalidades/mercadolivre";
+import { verificarPenalidadesShopee } from "@/lib/penalidades/shopee";
 
 function refresh(clientId?: string | null) {
   revalidatePath("/penalidades");
@@ -117,9 +118,9 @@ export async function verificarPenalidadesAgoraAction(formData: FormData) {
   if (clientId) await assertClientAccess(user, clientId);
 
   const escopo = await visibleClientIds(user);
-  const contas = await all<{ id: string; client_id: string }>(
-    `SELECT id, client_id FROM client_marketplaces
-      WHERE marketplace = 'mercado_livre' AND status = 'conectado' AND credentials IS NOT NULL
+  const contas = await all<{ id: string; client_id: string; marketplace: string }>(
+    `SELECT id, client_id, marketplace FROM client_marketplaces
+      WHERE status = 'conectado' AND credentials IS NOT NULL
         ${clientId ? "AND client_id = ?" : ""}`,
     ...(clientId ? [clientId] : []),
   );
@@ -128,7 +129,10 @@ export async function verificarPenalidadesAgoraAction(formData: FormData) {
   let erros = 0;
   for (const c of contas) {
     if (escopo && !escopo.includes(c.client_id)) continue;
-    const r = await verificarPenalidadesML(c.id);
+    const r =
+      c.marketplace === "mercado_livre"
+        ? await verificarPenalidadesML(c.id)
+        : await verificarPenalidadesShopee(c.id);
     novas += r.novas;
     if (!r.ok) erros += 1;
   }

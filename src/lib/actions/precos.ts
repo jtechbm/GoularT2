@@ -30,16 +30,18 @@ export async function importarAnunciosAction(formData: FormData) {
   // marketplace fora do ar, permissao faltando ou token vencido sao recados
   // para a pessoa, nao defeito do sistema: voltam na propria tela em vez de
   // derrubar a pagina inteira numa tela de erro
-  let total: number;
+  let resumo: { total: number; mudancasDePreco: number };
   try {
-    total = await importarAnuncios(conta);
+    resumo = await importarAnuncios(conta);
   } catch (e) {
     revalidatePath("/precos");
     redirect(`/precos?cliente=${conta.client_id}&erro=${encodeURIComponent(recado(e))}`);
   }
 
   revalidatePath("/precos");
-  redirect(`/precos?cliente=${conta.client_id}&importados=${total}`);
+  redirect(
+    `/precos?cliente=${conta.client_id}&importados=${resumo.total}&precos=${resumo.mudancasDePreco}`,
+  );
 }
 
 /**

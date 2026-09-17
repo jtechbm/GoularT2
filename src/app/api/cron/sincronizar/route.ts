@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { all, id, now, run } from "@/lib/db";
 import { syncAccount } from "@/lib/integrations";
 import { verificarPenalidadesML } from "@/lib/penalidades/mercadolivre";
+import { verificarPenalidadesShopee } from "@/lib/penalidades/shopee";
 import { addMonths, currentMonth } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
@@ -89,12 +90,15 @@ export async function GET(req: NextRequest) {
   // que a agência cobra, já foi gravado. Cada verificação são três chamadas.
   let penalidadesNovas = 0;
   let penalidadesVerificadas = 0;
-  for (const conta of contas.filter((c) => c.marketplace === "mercado_livre")) {
+  for (const conta of contas) {
     if (Date.now() > fim) {
       semTempo = true;
       break;
     }
-    const r = await verificarPenalidadesML(conta.id);
+    const r =
+      conta.marketplace === "mercado_livre"
+        ? await verificarPenalidadesML(conta.id)
+        : await verificarPenalidadesShopee(conta.id);
     penalidadesVerificadas += 1;
     penalidadesNovas += r.novas;
   }

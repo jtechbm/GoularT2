@@ -1,21 +1,25 @@
-import { all, id, now, run } from "../db.ts";
+import { all, id, now, one, run } from "../db.ts";
 import { decryptJSON, encryptJSON } from "../crypto.ts";
 import { refreshIfNeeded as tokenML } from "../integrations/mercadolivre.ts";
 import { call as chamarShopee, refreshIfNeeded as tokenShopee } from "../integrations/shopee.ts";
 import { IntegrationError, mapLimit, type StoredCredentials } from "../integrations/types.ts";
+import { avaliarPreco } from "../penalidades/regras.ts";
+import { registrarPenalidade, type ContaPenalizavel } from "../penalidades/registro.ts";
 import { precoDoAnuncio } from "./analise.ts";
 
 /**
  * Os anúncios da própria loja, importados do marketplace.
  *
- * O comparador começa num produto do cliente, e esse produto precisa ter
- * dono: é o que permite filtrar pelo cliente do usuário dentro da consulta,
- * em vez de buscar por id e conferir o dono depois.
+ * A importação faz três coisas de uma vez, porque as três saem da mesma
+ * chamada e separá-las seria pagar a API duas vezes:
+ *
+ *   1. guarda título e preço, que é o que o comparador de preços precisa;
+ *   2. guarda o histórico de preço e avisa quando o preço mudou de verdade;
+ *   3. guarda o sinal do marketplace sobre o anúncio — bloqueado, em revisão,
+ *      rebaixado na busca — que é o que a tela de Penalidades lê depois.
  */
 
-interface Conta {
-  id: string;
-  client_id: string;
+interface Conta extends ContaPenalizavel {
   marketplace: string;
   external_id: string | null;
   credentials: string | null;
@@ -27,6 +31,10 @@ interface AnuncioImportado {
   price: number;
   url: string | null;
   status: string | null;
+  /** o que o marketplace diz além do status: forbidden, out_of_stock, deboost… */
+  subStatus: string | null;
+  /** a Shopee rebaixou o anúncio na busca */
+  deboost: boolean;
 }
 
 async function contexto(conta: Conta) {
@@ -40,40 +48,59 @@ async function contexto(conta: Conta) {
   };
 }
 
-/** Anúncios ativos da conta do Mercado Livre, com título e preço atuais. */
+/**
+ * Anúncios da conta do Mercado Livre, de TODOS os status.
+ *
+ * Buscar só os ativos esconderia exatamente o que interessa para o aviso: o
+ * anúncio que o Mercado Livre bloqueou aparece com status under_review e
+ * sub_status forbidden, e nunca estaria numa lista de ativos.
+ */
 async function anunciosML(conta: Conta): Promise<AnuncioImportado[]> {
   const acesso = await tokenML(await contexto(conta));
   const vendedor = conta.external_id;
   if (!vendedor) throw new IntegrationError("Conta do Mercado Livre sem id de vendedor.", "config");
 
-  const busca = await fetch(
-    `https://api.mercadolibre.com/users/${vendedor}/items/search?status=active&limit=100`,
-    { headers: { authorization: `Bearer ${acesso}` }, cache: "no-store" },
-  );
-  if (busca.status === 403) {
-    // mesma causa da tela de penalidades: o token foi emitido antes de a
-    // permissão de anúncios existir, e o escopo fica congelado na autorização
-    throw new IntegrationError(
-      "O Mercado Livre recusou a leitura dos anúncios: o app ainda não tem a permissão de anúncios nesta conta. " +
-        "O lojista precisa autorizar de novo, em Lojas → Pedir nova autorização.",
-      "auth",
+  const ids: string[] = [];
+  for (let offset = 0; offset < 1000; offset += 100) {
+    const busca = await fetch(
+      `https://api.mercadolibre.com/users/${vendedor}/items/search?limit=100&offset=${offset}`,
+      { headers: { authorization: `Bearer ${acesso}` }, cache: "no-store" },
     );
-  }
-  if (!busca.ok) throw new IntegrationError(`Mercado Livre respondeu ${busca.status} ao listar anúncios.`);
-  const { results = [] } = (await busca.json()) as { results?: string[] };
-  if (!results.length) return [];
+    if (busca.status === 403) {
+      // mesma causa da tela de penalidades: o token foi emitido antes de a
+      // permissão de anúncios existir, e o escopo fica congelado na autorização
+      throw new IntegrationError(
+        "O Mercado Livre recusou a leitura dos anúncios: o app ainda não tem a permissão de anúncios nesta conta. " +
+          "O lojista precisa autorizar de novo, em Lojas → Pedir nova autorização.",
+        "auth",
+      );
+    }
+    if (!busca.ok) throw new IntegrationError(`Mercado Livre respondeu ${busca.status} ao listar anúncios.`);
 
-  // o multiget aceita 20 ids por vez
+    const { results = [], paging } = (await busca.json()) as { results?: string[]; paging?: { total?: number } };
+    ids.push(...results);
+    if (ids.length >= (paging?.total ?? 0) || results.length < 100) break;
+  }
+  if (!ids.length) return [];
+
   const anuncios: AnuncioImportado[] = [];
-  for (let i = 0; i < results.length; i += 20) {
-    const lote = results.slice(i, i + 20);
+  // o multiget aceita 20 ids por vez
+  for (let i = 0; i < ids.length; i += 20) {
+    const lote = ids.slice(i, i + 20);
     const res = await fetch(
-      `https://api.mercadolibre.com/items?ids=${lote.join(",")}&attributes=id,title,price,permalink,status`,
+      `https://api.mercadolibre.com/items?ids=${lote.join(",")}&attributes=id,title,price,permalink,status,sub_status`,
       { headers: { authorization: `Bearer ${acesso}` }, cache: "no-store" },
     );
     if (!res.ok) continue;
     const corpo = (await res.json()) as {
-      body?: { id: string; title?: string; price?: number; permalink?: string; status?: string };
+      body?: {
+        id: string;
+        title?: string;
+        price?: number;
+        permalink?: string;
+        status?: string;
+        sub_status?: string[];
+      };
     }[];
     for (const { body } of corpo) {
       if (!body?.id) continue;
@@ -83,6 +110,8 @@ async function anunciosML(conta: Conta): Promise<AnuncioImportado[]> {
         price: body.price ?? 0,
         url: body.permalink ?? null,
         status: body.status ?? null,
+        subStatus: body.sub_status?.length ? body.sub_status.join(",") : null,
+        deboost: false,
       });
     }
   }
@@ -100,8 +129,8 @@ async function anunciosML(conta: Conta): Promise<AnuncioImportado[]> {
 async function anunciosShopee(conta: Conta): Promise<AnuncioImportado[]> {
   const creds = await tokenShopee(await contexto(conta));
 
-  // o nome da loja é guardado na importação porque a busca precisa dele
-  // para não comparar a loja com ela mesma
+  // o nome da loja é guardado na importação porque a busca de preços precisa
+  // dele para não comparar a loja com ela mesma
   const info = await chamarShopee<{ shop_name?: string; response?: { shop_name?: string } }>(
     "/api/v2/shop/get_shop_info",
     {},
@@ -118,7 +147,14 @@ async function anunciosShopee(conta: Conta): Promise<AnuncioImportado[]> {
   const ids = (lista.response?.item ?? []).map((i) => i.item_id);
   if (!ids.length) return [];
 
-  const base: { item_id: number; item_name?: string; item_status?: string; has_model?: boolean; preco: number }[] = [];
+  const base: {
+    item_id: number;
+    item_name?: string;
+    item_status?: string;
+    has_model?: boolean;
+    deboost?: string | boolean;
+    preco: number;
+  }[] = [];
   for (let i = 0; i < ids.length; i += 50) {
     const detalhe = await chamarShopee<{
       response?: {
@@ -127,6 +163,7 @@ async function anunciosShopee(conta: Conta): Promise<AnuncioImportado[]> {
           item_name?: string;
           item_status?: string;
           has_model?: boolean;
+          deboost?: string | boolean;
           price_info?: { current_price?: number; original_price?: number }[];
         }[];
       };
@@ -160,7 +197,34 @@ async function anunciosShopee(conta: Conta): Promise<AnuncioImportado[]> {
     price: precos.get(item.item_id) ?? item.preco,
     url: `https://shopee.com.br/product/${creds.shop_id}/${item.item_id}`,
     status: item.item_status ?? null,
+    subStatus: null,
+    deboost: item.deboost === true || String(item.deboost).toUpperCase() === "TRUE",
   }));
+}
+
+/** Preço mudou o suficiente para virar aviso? Então vira. */
+async function registrarMudancaDePreco(
+  conta: Conta,
+  anuncio: AnuncioImportado,
+  anterior: number,
+): Promise<boolean> {
+  const mudanca = avaliarPreco(anterior, anuncio.price);
+  if (!mudanca.mudou) return false;
+
+  // a chave leva o preço novo: cada mudança de preço é um aviso, e voltar ao
+  // preço antigo amanhã é outro aviso, não o mesmo
+  return registrarPenalidade(conta, conta.marketplace, {
+    kind: "preco",
+    severity: mudanca.subiu ? "atencao" : "informativo",
+    externalKey: `preco:${anuncio.external_id}:${anuncio.price.toFixed(2)}`,
+    title: `${mudanca.subiu ? "Preço subiu" : "Preço caiu"}: ${anuncio.title}`,
+    detail:
+      `${mudanca.texto} ` +
+      (mudanca.subiu
+        ? "Subir preço mexe na posição do anúncio na busca; se não foi combinado, vale conferir com o lojista."
+        : "Queda de preço sem combinar aperta a margem."),
+    data: { anterior, atual: anuncio.price, variacao: mudanca.variacao, anuncio: anuncio.external_id },
+  });
 }
 
 /**
@@ -169,18 +233,34 @@ async function anunciosShopee(conta: Conta): Promise<AnuncioImportado[]> {
  * Atualiza o que já existe em vez de duplicar: o id do anúncio no
  * marketplace é a chave, e o preço do cliente muda com frequência.
  */
-export async function importarAnuncios(conta: Conta): Promise<number> {
+export async function importarAnuncios(conta: Conta): Promise<{ total: number; mudancasDePreco: number }> {
   const anuncios =
     conta.marketplace === "mercado_livre" ? await anunciosML(conta) : await anunciosShopee(conta);
 
+  const guardados = await all<{ external_id: string; id: string; price: number }>(
+    "SELECT external_id, id, price FROM client_products WHERE client_marketplace_id = ?",
+    conta.id,
+  );
+  const antes = new Map(guardados.map((g) => [g.external_id, g]));
+  const hoje = now().slice(0, 10);
+  let mudancasDePreco = 0;
+
   for (const a of anuncios) {
+    const anterior = antes.get(a.external_id);
+    const mudouPreco = Boolean(anterior && Math.abs(anterior.price - a.price) >= 0.01);
+
     await run(
       `INSERT INTO client_products (id, client_id, client_marketplace_id, marketplace, external_id, title, price,
-                                    url, status, updated_at)
-       VALUES (?,?,?,?,?,?,?,?,?,?)
+                                    url, status, sub_status, deboost, updated_at, previous_price, price_changed_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
        ON CONFLICT (client_marketplace_id, external_id) DO UPDATE SET
          title = EXCLUDED.title, price = EXCLUDED.price, url = EXCLUDED.url,
-         status = EXCLUDED.status, updated_at = EXCLUDED.updated_at`,
+         status = EXCLUDED.status, sub_status = EXCLUDED.sub_status, deboost = EXCLUDED.deboost,
+         updated_at = EXCLUDED.updated_at,
+         previous_price = CASE WHEN EXCLUDED.price <> client_products.price
+                               THEN client_products.price ELSE client_products.previous_price END,
+         price_changed_at = CASE WHEN EXCLUDED.price <> client_products.price
+                                 THEN EXCLUDED.updated_at ELSE client_products.price_changed_at END`,
       id(),
       conta.client_id,
       conta.id,
@@ -190,16 +270,41 @@ export async function importarAnuncios(conta: Conta): Promise<number> {
       a.price,
       a.url,
       a.status,
+      a.subStatus,
+      a.deboost ? 1 : 0,
       now(),
+      null,
+      mudouPreco ? now() : null,
     );
+
+    const linha = await one<{ id: string }>(
+      "SELECT id FROM client_products WHERE client_marketplace_id = ? AND external_id = ?",
+      conta.id,
+      a.external_id,
+    );
+    if (linha) {
+      // um registro por anúncio e por dia: preço mexido duas vezes no mesmo
+      // dia guarda o último, que é o que vale para comparar com amanhã
+      await run(
+        `INSERT INTO client_product_prices (product_id, day, price) VALUES (?,?,?)
+         ON CONFLICT (product_id, day) DO UPDATE SET price = EXCLUDED.price`,
+        linha.id,
+        hoje,
+        a.price,
+      );
+    }
+
+    if (anterior && (await registrarMudancaDePreco(conta, a, anterior.price))) mudancasDePreco += 1;
   }
-  return anuncios.length;
+
+  return { total: anuncios.length, mudancasDePreco };
 }
 
 export async function contaConectada(accountId: string): Promise<Conta | null> {
   const [conta] = await all<Conta>(
-    `SELECT id, client_id, marketplace, external_id, credentials
-       FROM client_marketplaces WHERE id = ? AND credentials IS NOT NULL`,
+    `SELECT cm.id, cm.client_id, c.name AS client_name, c.owner_id, cm.marketplace, cm.external_id, cm.credentials
+       FROM client_marketplaces cm JOIN clients c ON c.id = cm.client_id
+      WHERE cm.id = ? AND cm.credentials IS NOT NULL`,
     accountId,
   );
   return conta ?? null;

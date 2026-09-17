@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { requireUser, visibleClientIds } from "@/lib/auth";
 import { can } from "@/lib/permissions";
-import { avisosMarketplace, clientOptions, penalidades, saudeContasML } from "@/lib/queries";
+import { avisosMarketplace, clientOptions, penalidades, saudeContasML, saudeLojasShopee } from "@/lib/queries";
 import { dateBR, dateTimeBR, pct, relativeBR } from "@/lib/format";
 import { Card, Chip, Empty, Field, PageHeader, Stat } from "@/components/ui";
 import { SubmitButton } from "@/components/submit";
@@ -11,18 +11,52 @@ import {
   tarefaDaPenalidadeAction,
   verificarPenalidadesAgoraAction,
 } from "@/lib/actions/penalidades";
-import { NIVEL_LABEL, posicaoNivel } from "@/lib/penalidades/regras";
+import {
+  avaliarIndicador,
+  INDICADOR_LABEL,
+  KIND_LABEL,
+  NIVEL_LABEL,
+  posicaoNivel,
+  type Indicador,
+} from "@/lib/penalidades/regras";
 
 export const maxDuration = 60;
 
-const TIPOS: Record<string, string> = {
-  reputacao: "Reputação",
-  aviso: "Aviso oficial",
-  infracao: "Infração em anúncio",
-  punicao: "Punição",
-};
+// o rótulo de cada tipo mora em regras.ts, junto das regras que os criam
+const TIPOS = KIND_LABEL;
 
 const TOM_NIVEL: Record<number, "bad" | "warn" | "ok"> = { 1: "bad", 2: "bad", 3: "warn", 4: "ok", 5: "ok" };
+
+/**
+ * Os indicadores da Shopee ficam gravados como JSON cru.
+ *
+ * A Shopee mexe nessa lista de vez em quando, então a tela lê o que vier e
+ * ignora o que não entende, em vez de quebrar quando aparecer indicador novo.
+ */
+function lerIndicadores(json: string | null): Indicador[] {
+  if (!json) return [];
+  try {
+    const bruto = JSON.parse(json) as {
+      metric_name?: string;
+      current_period?: number | null;
+      last_period?: number | null;
+      unit?: number | null;
+      target?: { value?: number | null; comparator?: string | null } | null;
+    }[];
+    return bruto
+      .filter((m) => m?.metric_name)
+      .map((m) => ({
+        nome: m.metric_name!,
+        atual: m.current_period ?? null,
+        anterior: m.last_period ?? null,
+        alvo: m.target?.value ?? null,
+        comparador: m.target?.comparator ?? null,
+        unidade: m.unit ?? null,
+      }));
+  } catch {
+    return [];
+  }
+}
 
 export default async function PenalidadesPage({
   searchParams,
@@ -42,12 +76,21 @@ export default async function PenalidadesPage({
     kind: sp.tipo,
   });
   const contas = await saudeContasML(escopo, sp.cliente);
+  const lojasShopee = await saudeLojasShopee(escopo, sp.cliente);
   const avisos = await avisosMarketplace(escopo, 15);
   const clientes = await clientOptions(escopo);
 
   const abertas = await penalidades({ scope: escopo, status: "aberta" });
   const criticas = abertas.filter((p) => p.severity === "critico").length;
   const semPermissao = contas.filter((c) => c.items_permission === "pendente").length;
+  // as duas permissões novas: comunicações (taxa de resposta e reclamações) e
+  // promoções. A tela diz o que não está sendo lido em vez de fingir que está
+  // tudo limpo — mesmo critério do bloqueio de anúncios.
+  const faltamPermissoes = [
+    contas.some((c) => c.comms_permission === "pendente") ? "Comunicações antes e pós-venda" : null,
+    contas.some((c) => c.promos_permission === "pendente") ? "Promoções, cupons e descontos" : null,
+  ].filter((x): x is string => Boolean(x));
+
   const ultimaVerificacao = contas
     .map((c) => c.penalties_checked_at)
     .filter(Boolean)
@@ -84,6 +127,17 @@ export default async function PenalidadesPage({
         <div className="flash mb-4 rounded-lg border border-ok/30 bg-ok-soft px-4 py-2.5 text-sm font-medium text-ok">
           Verificação concluída: {sp.verificado} {sp.verificado === "1" ? "penalidade nova" : "penalidades novas"}
           {sp.erros && sp.erros !== "0" ? ` · ${sp.erros} contas não responderam` : ""}.
+        </div>
+      )}
+
+      {faltamPermissoes.length > 0 && (
+        <div className="mb-4 rounded-[12px] border border-warn/30 bg-warn-soft px-4 py-3 text-sm">
+          <p className="font-medium text-ink">Duas leituras do Mercado Livre ainda estão bloqueadas.</p>
+          <p className="mt-1 text-xs text-muted">
+            Falta liberar {faltamPermissoes.join(" e ")} no app, e o lojista autorizar de novo. Sem isso, a taxa de
+            resposta, as reclamações e as promoções do Mercado Livre não são lidas — e a tela não tem como avisar de
+            algo que não vê.
+          </p>
         </div>
       )}
 
@@ -163,6 +217,70 @@ export default async function PenalidadesPage({
                       </td>
                       <td className="text-xs text-dim" data-label="Lido">
                         {c.captured_at ? relativeBR(c.captured_at) : "nunca"}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      )}
+
+      {lojasShopee.length > 0 && (
+        <Card
+          className="mt-3"
+          title="Saúde das lojas na Shopee"
+          subtitle="Os alvos são os da própria Shopee: o que estoura vira penalidade aberta"
+          bodyClassName="p-0"
+        >
+          <div className="table-wrap">
+            <table className="data responsiva">
+              <thead>
+                <tr>
+                  <th>Loja</th>
+                  <th className="num">Nota</th>
+                  <th>Indicadores fora do alvo</th>
+                  <th>Lido</th>
+                </tr>
+              </thead>
+              <tbody>
+                {lojasShopee.map((l) => {
+                  const metricas = lerIndicadores(l.metrics);
+                  const fora = metricas.filter((m) => avaliarIndicador(m).fora);
+                  return (
+                    <tr key={l.id}>
+                      <td data-label="Loja">
+                        <Link href={`/clientes/${l.client_id}`} className="font-medium text-ink hover:text-brand">
+                          {l.client_name}
+                        </Link>
+                        {l.nickname && <span className="block text-xs text-muted">{l.nickname}</span>}
+                      </td>
+                      <td className="num" data-label="Nota">
+                        {l.rating === null ? (
+                          "—"
+                        ) : (
+                          <Chip tone={l.rating >= 4 ? "ok" : l.rating >= 3 ? "warn" : "bad"}>{l.rating} de 5</Chip>
+                        )}
+                      </td>
+                      <td data-label="Indicadores fora do alvo">
+                        {!l.captured_at ? (
+                          <span className="text-xs text-dim">ainda não verificada</span>
+                        ) : fora.length === 0 ? (
+                          <span className="text-xs text-ok">tudo dentro do alvo</span>
+                        ) : (
+                          <span className="flex flex-wrap gap-1">
+                            {fora.map((m) => (
+                              <Chip key={m.nome} tone={avaliarIndicador(m).severidade === "critico" ? "bad" : "warn"}>
+                                {INDICADOR_LABEL[m.nome] ?? m.nome} {m.atual}
+                                {m.unidade === 2 ? "%" : ""}
+                              </Chip>
+                            ))}
+                          </span>
+                        )}
+                      </td>
+                      <td className="text-xs text-dim" data-label="Lido">
+                        {l.captured_at ? relativeBR(l.captured_at) : "nunca"}
                       </td>
                     </tr>
                   );
