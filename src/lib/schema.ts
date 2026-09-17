@@ -658,8 +658,12 @@ CREATE INDEX IF NOT EXISTS idx_comparacoes_produto ON market_comparisons(product
 CREATE TABLE IF NOT EXISTS store_analyses (
   id                    text PRIMARY KEY,
   client_id             text NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
-  client_marketplace_id text NOT NULL REFERENCES client_marketplaces(id) ON DELETE CASCADE,
-  marketplace           text NOT NULL,
+  -- a análise é do CLIENTE inteiro, com uma seção por canal: o cliente vende
+  -- no Mercado Livre e na Shopee ao mesmo tempo, e separar as duas analises
+  -- esconderia justamente o que interessa. As colunas de loja ficaram para
+  -- as análises antigas, feitas canal por canal.
+  client_marketplace_id text REFERENCES client_marketplaces(id) ON DELETE CASCADE,
+  marketplace           text,
   ref_month             text NOT NULL,
   status                text NOT NULL,
   dossier               text NOT NULL,
@@ -670,7 +674,11 @@ CREATE TABLE IF NOT EXISTS store_analyses (
   created_at            text NOT NULL
 );
 
-CREATE INDEX IF NOT EXISTS idx_analises_loja ON store_analyses(client_marketplace_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_analises_loja    ON store_analyses(client_marketplace_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_analises_cliente ON store_analyses(client_id, created_at DESC);
+
+ALTER TABLE store_analyses ALTER COLUMN client_marketplace_id DROP NOT NULL;
+ALTER TABLE store_analyses ALTER COLUMN marketplace           DROP NOT NULL;
 
 CREATE INDEX IF NOT EXISTS idx_charges_month  ON agency_charges(ref_month, status);
 CREATE INDEX IF NOT EXISTS idx_expenses_month ON agency_expenses(ref_month);

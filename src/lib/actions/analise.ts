@@ -4,19 +4,19 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { assertCan, assertClientAccess, requireUser, visibleClientIds } from "@/lib/auth";
 import { currentMonth, str } from "@/lib/format";
-import { coletarDossie, lojaVisivel } from "@/lib/analise/coleta";
-import { analisarLoja } from "@/lib/analise/llm";
+import { clienteAnalisavel, coletarDossie } from "@/lib/analise/coleta";
+import { analisarCliente } from "@/lib/analise/llm";
 import { gravarAnalise } from "@/lib/analise/repositorio";
 
 /** O teto combinado: a ação inteira cabe em 30 segundos. */
 const TETO_MS = 30_000;
 
 function recado(e: unknown): string {
-  return e instanceof Error ? e.message : "Não consegui analisar a loja agora.";
+  return e instanceof Error ? e.message : "Não consegui analisar agora.";
 }
 
 /**
- * Manda a IA analisar uma loja.
+ * Manda a IA analisar um cliente, com todos os canais dele de uma vez.
  *
  * A permissão é conferida aqui, e não só na tela: a ação gasta dinheiro a cada
  * execução, e ação de servidor pode ser chamada direto, sem passar pelo botão
@@ -26,28 +26,27 @@ function recado(e: unknown): string {
  * coleta é o que o modelo tem para pensar. Assim a conta fecha mesmo quando o
  * banco está lento, em vez de somar 3 + 25 e estourar.
  */
-export async function analisarLojaAction(formData: FormData) {
+export async function analisarClienteAction(formData: FormData) {
   const user = await requireUser();
-  assertCan(user, "analise.rodar", "Somente o admin dispara a análise da loja.");
+  assertCan(user, "analise.rodar", "Somente o admin dispara a análise.");
 
   const escopo = await visibleClientIds(user);
-  const loja = await lojaVisivel(str(formData.get("loja_id")), escopo);
-  if (!loja) throw new Error("Loja não encontrada ou ainda não conectada.");
-  await assertClientAccess(user, loja.client_id);
+  const cliente = await clienteAnalisavel(str(formData.get("cliente_id")), escopo);
+  if (!cliente) throw new Error("Cliente não encontrado.");
+  if (!cliente.lojas) throw new Error("Este cliente não tem loja conectada para analisar.");
+  await assertClientAccess(user, cliente.id);
 
   const refMonth = str(formData.get("mes")) || currentMonth();
-  const volta = `/analise?loja=${loja.id}&mes=${refMonth}`;
+  const volta = `/analise?cliente=${cliente.id}&mes=${refMonth}`;
   const comecou = Date.now();
 
   let analiseId: string;
   try {
-    const dossie = await coletarDossie(loja, refMonth);
+    const dossie = await coletarDossie(cliente, refMonth);
     const sobrou = TETO_MS - (Date.now() - comecou) - 3000;
-    const resultado = await analisarLoja(dossie, Math.max(8000, sobrou));
+    const resultado = await analisarCliente(dossie, Math.max(8000, sobrou));
     analiseId = await gravarAnalise({
-      clientId: loja.client_id,
-      lojaId: loja.id,
-      marketplace: loja.marketplace,
+      clientId: cliente.id,
       refMonth,
       dossie,
       resultado,

@@ -3,13 +3,13 @@ import { Suspense } from "react";
 import { requireUser, visibleClientIds } from "@/lib/auth";
 import { can } from "@/lib/permissions";
 import { brl, currentMonth, dateTimeBR, lastMonths, monthLabel, pct, relativeBR } from "@/lib/format";
-import { marketplaceLabel } from "@/lib/types";
 import { Card, Chip, Empty, Field, PageHeader, Stat, type Tone } from "@/components/ui";
 import { SubmitButton } from "@/components/submit";
 import { MonthPicker } from "@/components/month-picker";
-import { analisarLojaAction } from "@/lib/actions/analise";
-import { lojasVisiveis } from "@/lib/analise/coleta";
-import { analisePorId, historicoDaLoja, ultimaAnalise } from "@/lib/analise/repositorio";
+import { ClientePicker } from "@/components/cliente-picker";
+import { analisarClienteAction } from "@/lib/actions/analise";
+import { clientesAnalisaveis } from "@/lib/analise/coleta";
+import { analisePorId, historicoDoCliente, ultimaAnalise } from "@/lib/analise/repositorio";
 
 /**
  * A análise tem teto próprio de 30 segundos, bem abaixo dos 60 da plataforma.
@@ -24,20 +24,20 @@ const TOM_IMPACTO: Record<string, Tone> = { alto: "ok", medio: "info", baixo: "n
 export default async function AnalisePage({
   searchParams,
 }: {
-  searchParams: Promise<{ loja?: string; mes?: string; a?: string; pronta?: string; erro?: string }>;
+  searchParams: Promise<{ cliente?: string; mes?: string; a?: string; pronta?: string; erro?: string }>;
 }) {
   const user = await requireUser();
   const sp = await searchParams;
   const escopo = await visibleClientIds(user);
   const podeRodar = can(user, "analise.rodar");
 
-  const lojas = await lojasVisiveis(escopo);
-  const loja = lojas.find((l) => l.id === sp.loja) ?? lojas[0];
+  const clientes = await clientesAnalisaveis(escopo);
+  const cliente = clientes.find((c) => c.id === sp.cliente) ?? clientes[0];
   const refMonth = sp.mes ?? currentMonth();
 
   const [analise, historico] = await Promise.all([
-    loja ? (sp.a ? analisePorId(sp.a, escopo) : ultimaAnalise(loja.id, escopo)) : null,
-    loja ? historicoDaLoja(loja.id, escopo) : [],
+    cliente ? (sp.a ? analisePorId(sp.a, escopo) : ultimaAnalise(cliente.id, escopo)) : null,
+    cliente ? historicoDoCliente(cliente.id, escopo) : [],
   ]);
 
   const d = analise?.dossie;
@@ -46,12 +46,12 @@ export default async function AnalisePage({
   return (
     <>
       <PageHeader
-        title="Análise da loja"
-        subtitle="A IA lê os números da loja e diz o que fazer. Leva uns 30 segundos e custa por execução."
+        title="Análise do cliente"
+        subtitle="A IA lê os números de todos os canais do cliente e diz o que fazer. Leva uns 30 segundos e custa por execução."
         actions={
-          loja && podeRodar ? (
-            <form action={analisarLojaAction}>
-              <input type="hidden" name="loja_id" value={loja.id} />
+          cliente && podeRodar ? (
+            <form action={analisarClienteAction}>
+              <input type="hidden" name="cliente_id" value={cliente.id} />
               <input type="hidden" name="mes" value={refMonth} />
               <SubmitButton pendingLabel="Analisando… (~30s)">Analisar agora</SubmitButton>
             </form>
@@ -71,43 +71,40 @@ export default async function AnalisePage({
         </div>
       )}
 
-      <Card title="Loja" subtitle="Só lojas conectadas: a análise se apoia nos números que a integração trouxe">
+      <Card
+        title="Cliente"
+        subtitle="A análise cobre todos os canais conectados do cliente de uma vez, e compara um com o outro"
+      >
         <div className="flex flex-wrap items-end gap-3">
-          {/* trocar de loja é formulário GET; o mês vai escondido para não se
-              perder na troca. O seletor de mês navega sozinho e preserva a loja. */}
-          <form className="flex flex-wrap items-end gap-3">
-            <input type="hidden" name="mes" value={refMonth} />
-            <Field label="Loja">
-              <select name="loja" defaultValue={loja?.id} className="input">
-                {lojas.map((l) => (
-                  <option key={l.id} value={l.id}>
-                    {l.client_name} — {marketplaceLabel(l.marketplace)}
-                    {l.nickname ? ` (${l.nickname})` : ""}
-                  </option>
-                ))}
-              </select>
-            </Field>
-            <SubmitButton size="sm" variant="ghost" pendingLabel="Abrindo…">
-              Abrir
-            </SubmitButton>
-          </form>
+          <Field label="Cliente">
+            <Suspense fallback={null}>
+              <ClientePicker
+                clientes={clientes.map((c) => ({
+                  id: c.id,
+                  name: c.name,
+                  hint: `${c.lojas} ${c.lojas === 1 ? "canal" : "canais"}`,
+                }))}
+                value={cliente?.id ?? ""}
+              />
+            </Suspense>
+          </Field>
           <Suspense fallback={null}>
             <MonthPicker months={lastMonths(6, refMonth)} value={refMonth} />
           </Suspense>
         </div>
       </Card>
 
-      {!loja ? (
+      {!cliente ? (
         <Card className="mt-3">
           <Empty
-            title="Nenhuma loja conectada"
-            hint="A análise precisa de uma loja com integração ativa para ter número de onde partir."
+            title="Nenhum cliente com loja conectada"
+            hint="A análise precisa de integração ativa para ter número de onde partir."
           />
         </Card>
       ) : !analise || !d ? (
         <Card className="mt-3">
           <Empty
-            title="Esta loja ainda não foi analisada"
+            title="Este cliente ainda não foi analisado"
             hint={
               podeRodar
                 ? "Clique em Analisar agora. Leva uns 30 segundos e o resultado fica guardado, então abrir a tela depois não gasta nada."
@@ -126,43 +123,39 @@ export default async function AnalisePage({
             />
             <Stat
               label={`Faturamento · ${monthLabel(d.mes)}`}
-              value={brl(d.atual.revenue)}
-              hint={d.derivado.temAnterior ? `${d.atual.orders} pedidos` : `${d.atual.orders} pedidos · sem mês anterior`}
+              value={brl(d.total.atual.revenue)}
+              hint={
+                d.derivado.temAnterior
+                  ? `${d.total.atual.orders} pedidos`
+                  : `${d.total.atual.orders} pedidos · sem mês anterior`
+              }
               delta={d.derivado.temAnterior ? d.derivado.variacaoFaturamento * 100 : null}
             />
             <Stat
               label="Margem"
               value={pct(d.derivado.margem)}
-              hint={`lucro ${brl(d.atual.profit)}`}
+              hint={`lucro ${brl(d.total.atual.profit)}`}
               tone={d.derivado.margem <= 0 ? "bad" : d.derivado.margem < 0.05 ? "warn" : "ok"}
             />
             <Stat
-              label="Anúncios pagos"
-              value={d.derivado.ads ? brl(d.derivado.ads.invested) : "—"}
-              hint={
-                d.derivado.ads
-                  ? d.derivado.ads.roas === null
-                    ? "gastou e não vendeu"
-                    : `ROAS ${d.derivado.ads.roas.toFixed(2)}`
-                  : "sem investimento"
-              }
-              tone={d.derivado.ads && d.derivado.ads.roas !== null && d.derivado.ads.roas < 3 ? "warn" : "brand"}
+              label="Canais"
+              value={String(d.porLoja.length)}
+              hint={d.porLoja.map((l) => l.marketplace).join(" · ")}
+              tone="brand"
             />
             <Stat
               label="Penalidades abertas"
-              value={String(d.penalidades.length)}
-              hint={d.penalidades.length ? "ver em Penalidades" : "nenhuma"}
-              tone={d.penalidades.length ? "bad" : "ok"}
-              href={d.penalidades.length ? "/penalidades" : undefined}
+              value={String(d.derivado.penalidadesAbertas)}
+              hint={d.derivado.penalidadesAbertas ? "ver em Penalidades" : "nenhuma"}
+              tone={d.derivado.penalidadesAbertas ? "bad" : "ok"}
+              href={d.derivado.penalidadesAbertas ? "/penalidades" : undefined}
             />
           </div>
 
           <Card
             className="mt-3"
             title="Diagnóstico"
-            subtitle={`${marketplaceLabel(loja.marketplace)} · escrita em ${dateTimeBR(analise.created_at)}${
-              analise.autor ? ` por ${analise.autor}` : ""
-            }`}
+            subtitle={`Escrita em ${dateTimeBR(analise.created_at)}${analise.autor ? ` por ${analise.autor}` : ""}`}
             actions={
               <div className="flex items-center gap-2">
                 {analise.status === "parcial" && <Chip tone="warn">incompleta</Chip>}
@@ -182,6 +175,71 @@ export default async function AnalisePage({
             )}
           </Card>
 
+          <Card
+            className="mt-3"
+            title="Os canais lado a lado"
+            subtitle="É aqui que aparece o canal que carrega o cliente e o que só dá trabalho"
+            bodyClassName="p-0"
+          >
+            <div className="table-wrap">
+              <table className="data responsiva">
+                <thead>
+                  <tr>
+                    <th>Canal</th>
+                    <th className="num">Faturamento</th>
+                    <th className="num">Fatia</th>
+                    <th className="num">Pedidos</th>
+                    <th className="num">Ticket</th>
+                    <th className="num">Margem</th>
+                    <th className="num">Anúncios</th>
+                    <th className="num">Preço vs. mercado</th>
+                    <th className="num">Penalidades</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {d.porLoja.map((l) => (
+                    <tr key={l.marketplace}>
+                      <td data-label="Canal">
+                        <span className="text-ink">{l.marketplace}</span>
+                        {l.apelido && <span className="block text-xs text-muted">{l.apelido}</span>}
+                      </td>
+                      <td data-label="Faturamento" className="num">
+                        {brl(l.atual.revenue)}
+                      </td>
+                      <td data-label="Fatia" className="num">
+                        {pct(l.derivado.fatiaDoFaturamento)}
+                      </td>
+                      <td data-label="Pedidos" className="num">
+                        {l.atual.orders}
+                      </td>
+                      <td data-label="Ticket" className="num">
+                        {brl(l.derivado.ticket)}
+                      </td>
+                      <td data-label="Margem" className="num">
+                        {pct(l.derivado.margem)}
+                      </td>
+                      <td data-label="Anúncios" className="num">
+                        {l.derivado.ads
+                          ? `${brl(l.derivado.ads.invested)} · ROAS ${
+                              l.derivado.ads.roas === null ? "—" : l.derivado.ads.roas.toFixed(2)
+                            }`
+                          : "—"}
+                      </td>
+                      <td data-label="Preço vs. mercado" className="num">
+                        {l.derivado.catalogo.comComparacao
+                          ? `${l.derivado.posicao.acima} acima · ${l.derivado.posicao.abaixo} abaixo`
+                          : `sem comparação (${l.derivado.catalogo.total} anúncios)`}
+                      </td>
+                      <td data-label="Penalidades" className="num">
+                        {l.penalidades.length || "—"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+
           {r && r.acoes.length > 0 && (
             <Card className="mt-3" title="O que fazer" subtitle="Em ordem de importância, segundo a análise">
               <ol className="space-y-3">
@@ -191,6 +249,7 @@ export default async function AnalisePage({
                       <span className="text-sm font-medium text-ink">
                         {i + 1}. {a.titulo}
                       </span>
+                      {a.onde && <Chip tone="brand">{a.onde}</Chip>}
                       <Chip tone={TOM_IMPACTO[a.impacto] ?? "neutral"}>impacto {a.impacto}</Chip>
                       <Chip tone="neutral">esforço {a.esforco}</Chip>
                       <Chip tone="info">{a.prazo}</Chip>
@@ -212,6 +271,7 @@ export default async function AnalisePage({
                     <li key={`${p.titulo}-${i}`} className="px-4 py-3">
                       <div className="flex flex-wrap items-center gap-2">
                         <span className="text-sm text-ink">{p.titulo}</span>
+                        {p.onde && <Chip tone="brand">{p.onde}</Chip>}
                         <Chip tone={TOM_GRAVIDADE[p.gravidade ?? ""] ?? "neutral"}>{p.gravidade}</Chip>
                         {!p.conferido && <Chip tone="warn">número não confere</Chip>}
                       </div>
@@ -231,6 +291,7 @@ export default async function AnalisePage({
                     <li key={`${p.titulo}-${i}`} className="px-4 py-3">
                       <div className="flex flex-wrap items-center gap-2">
                         <span className="text-sm text-ink">{p.titulo}</span>
+                        {p.onde && <Chip tone="brand">{p.onde}</Chip>}
                         {!p.conferido && <Chip tone="warn">número não confere</Chip>}
                       </div>
                       <p className="mt-1 text-xs text-muted">{p.evidencia}</p>
@@ -254,68 +315,55 @@ export default async function AnalisePage({
           <Card
             className="mt-3"
             title="Números que a análise usou"
-            subtitle={`Origem: ${d.procedencia} · ${d.dias.length} dias de histórico`}
+            subtitle={`Origem: ${d.procedencia} · metas: ${
+              d.metas.length ? `${d.derivado.metasCumpridas} de ${d.metas.length} cumpridas` : "nenhuma cadastrada"
+            } · alertas abertos: ${d.alertas.length || "nenhum"}`}
             bodyClassName="p-0"
           >
             <div className="table-wrap">
               <table className="data responsiva">
                 <tbody>
                   <tr>
-                    <td data-label="Faturamento">Faturamento do mês</td>
+                    <td data-label="Total">Faturamento do cliente</td>
                     <td data-label="Valor" className="num">
-                      {brl(d.atual.revenue)}
+                      {brl(d.total.atual.revenue)}
                       {d.derivado.temAnterior
-                        ? ` · anterior ${brl(d.anterior.revenue)} (${pct(d.derivado.variacaoFaturamento)})`
+                        ? ` · anterior ${brl(d.total.anterior.revenue)} (${pct(d.derivado.variacaoFaturamento)})`
                         : " · sem mês anterior gravado"}
                     </td>
                   </tr>
                   <tr>
                     <td data-label="Pedidos">Pedidos e ticket</td>
                     <td data-label="Valor" className="num">
-                      {d.atual.orders} pedidos · ticket {brl(d.derivado.ticket)}
+                      {d.total.atual.orders} pedidos · ticket {brl(d.derivado.ticket)}
                     </td>
                   </tr>
                   <tr>
                     <td data-label="Custos">Custos do mês</td>
                     <td data-label="Valor" className="num">
-                      taxas {brl(d.atual.fees)} · frete {brl(d.atual.shipping)} · produto {brl(d.atual.cogs)}
+                      taxas {brl(d.total.atual.fees)} · frete {brl(d.total.atual.shipping)} · produto{" "}
+                      {brl(d.total.atual.cogs)} · anúncios {brl(d.total.atual.ads)}
                     </td>
                   </tr>
-                  <tr>
-                    <td data-label="Ritmo">Ritmo de venda</td>
-                    <td data-label="Valor" className="num">
-                      {d.derivado.diasSemVenda} dias sem venda · maior sequência {d.derivado.maiorSequenciaSeca} ·
-                      top 5 dias {pct(d.derivado.concentracaoTopDias)}
-                    </td>
-                  </tr>
-                  <tr>
-                    <td data-label="Catálogo">Catálogo</td>
-                    <td data-label="Valor" className="num">
-                      {d.derivado.catalogo.total} anúncios · de {brl(d.derivado.catalogo.precoMin)} a{" "}
-                      {brl(d.derivado.catalogo.precoMax)} · mediano {brl(d.derivado.catalogo.precoMediano)}
-                    </td>
-                  </tr>
-                  <tr>
-                    <td data-label="Preço">Posição de preço</td>
-                    <td data-label="Valor" className="num">
-                      {d.derivado.posicao.acima} acima · {d.derivado.posicao.dentro} no mercado ·{" "}
-                      {d.derivado.posicao.abaixo} abaixo · {d.derivado.posicao.semComparacao} sem comparação
-                    </td>
-                  </tr>
-                  <tr>
-                    <td data-label="Metas">Metas do mês</td>
-                    <td data-label="Valor" className="num">
-                      {d.metas.length
-                        ? `${d.derivado.metasCumpridas} de ${d.metas.length} cumpridas`
-                        : "nenhuma meta cadastrada"}
-                    </td>
-                  </tr>
-                  <tr>
-                    <td data-label="Alertas">Alertas abertos</td>
-                    <td data-label="Valor" className="num">
-                      {d.alertas.length || "nenhum"}
-                    </td>
-                  </tr>
+                  {d.porLoja.map((l) => (
+                    <tr key={`ritmo-${l.marketplace}`}>
+                      <td data-label="Canal">Ritmo · {l.marketplace}</td>
+                      <td data-label="Valor" className="num">
+                        {l.dias.length} dias com dado · {l.derivado.diasSemVenda} sem venda · maior sequência{" "}
+                        {l.derivado.maiorSequenciaSeca} · top 5 dias {pct(l.derivado.concentracaoTopDias)}
+                      </td>
+                    </tr>
+                  ))}
+                  {d.porLoja.map((l) => (
+                    <tr key={`catalogo-${l.marketplace}`}>
+                      <td data-label="Canal">Catálogo · {l.marketplace}</td>
+                      <td data-label="Valor" className="num">
+                        {l.derivado.catalogo.total} anúncios · de {brl(l.derivado.catalogo.precoMin)} a{" "}
+                        {brl(l.derivado.catalogo.precoMax)} · mediano {brl(l.derivado.catalogo.precoMediano)} ·{" "}
+                        {l.derivado.catalogo.comComparacao} comparados
+                      </td>
+                    </tr>
+                  ))}
                 </tbody>
               </table>
             </div>
@@ -327,7 +375,7 @@ export default async function AnalisePage({
                 {historico.map((h) => (
                   <li key={h.id}>
                     <Link
-                      href={`/analise?loja=${loja.id}&mes=${h.ref_month}&a=${h.id}`}
+                      href={`/analise?cliente=${cliente.id}&mes=${h.ref_month}&a=${h.id}`}
                       className={`flex flex-wrap items-center justify-between gap-2 px-4 py-3 text-sm transition-colors hover:bg-surface-2 ${
                         h.id === analise.id ? "bg-surface-2" : ""
                       }`}

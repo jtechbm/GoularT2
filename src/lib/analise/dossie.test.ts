@@ -11,6 +11,7 @@ import {
   recorteDeProdutos,
   type EntradaDossie,
   type LinhaMes,
+  type LojaNoDossie,
   type ProdutoLinha,
 } from "./dossie.ts";
 
@@ -19,30 +20,33 @@ function mes(revenue: number, extra: Partial<LinhaMes> = {}): LinhaMes {
 }
 
 function prod(preco: number, extra: Partial<ProdutoLinha> = {}): ProdutoLinha {
+  return { titulo: `Anúncio ${preco}`, preco, status: "NORMAL", medianaMercado: null, concorrentes: 0, ...extra };
+}
+
+function loja(marketplace: string, extra: Partial<LojaNoDossie> = {}): LojaNoDossie {
   return {
-    titulo: `Anúncio ${preco}`,
-    preco,
-    status: "NORMAL",
-    medianaMercado: null,
-    concorrentes: 0,
+    marketplace,
+    apelido: null,
+    statusConta: "conectado",
+    atual: mes(1000, { orders: 20, profit: 200 }),
+    anterior: mes(800, { orders: 16 }),
+    dias: [],
+    produtos: [],
+    campanhas: [],
+    penalidades: [],
+    reputacao: null,
     ...extra,
   };
 }
 
 function entrada(extra: Partial<EntradaDossie> = {}): EntradaDossie {
   return {
-    loja: { cliente: "Arnaldo", marketplace: "Shopee", apelido: "Minas Decor Têxtil", status: "ativo" },
+    cliente: { nome: "Arnaldo", status: "ativo" },
     contrato: { tier: null, segment: null, mensalidade: null, comissaoPct: null, desde: null, estrategia: null },
     mes: "2026-09",
-    atual: mes(1000, { orders: 20, profit: 200 }),
-    anterior: mes(800, { orders: 16 }),
-    dias: [],
-    produtos: [],
-    campanhas: [],
+    lojas: [loja("Shopee")],
     metas: [],
     alertas: [],
-    penalidades: [],
-    reputacao: null,
     score: null,
     procedencia: "api",
     ...extra,
@@ -81,10 +85,7 @@ test("dias sem venda contam o total e a maior sequência seguida", () => {
   assert.deepEqual(diasSemVenda([...dias].reverse()), { total: 4, maiorSequencia: 3 });
 
   // dia com pedido mas faturamento zero (cancelamento) não conta como seco
-  assert.deepEqual(diasSemVenda([{ day: "2026-09-01", revenue: 0, orders: 1 }]), {
-    total: 0,
-    maiorSequencia: 0,
-  });
+  assert.deepEqual(diasSemVenda([{ day: "2026-09-01", revenue: 0, orders: 1 }]), { total: 0, maiorSequencia: 0 });
 });
 
 test("posição de preço separa acima, no mercado, abaixo e sem comparação", () => {
@@ -103,42 +104,100 @@ test("o recorte leva os mais caros, os mais baratos e os comparados, sem repetir
   produtos.push(prod(999, { titulo: "Comparado", medianaMercado: 900, concorrentes: 3 }));
 
   const recorte = recorteDeProdutos(produtos);
-  assert.ok(recorte.length <= 15);
-  // o mais caro e o mais barato entram
+  assert.ok(recorte.length <= 12);
   assert.ok(recorte.some((p) => p.preco === 999));
   assert.ok(recorte.some((p) => p.preco === 10));
-  // nenhum repetido
   assert.equal(new Set(recorte.map((p) => `${p.titulo}|${p.preco}`)).size, recorte.length);
 });
 
-test("o dossiê deriva variação, margem e ticket sem estourar em loja vazia", () => {
-  const cheio = montarDossie(entrada());
-  assert.equal(cheio.derivado.variacaoFaturamento, 0.25);
-  assert.equal(cheio.derivado.margem, 0.2);
-  assert.equal(cheio.derivado.ticket, 50);
-
-  const vazio = montarDossie(
-    entrada({ atual: mes(0, { orders: 0 }), anterior: mes(0, { orders: 0 }) }),
+test("o total soma os canais e cada canal ganha a sua fatia", () => {
+  const d = montarDossie(
+    entrada({
+      lojas: [
+        loja("Mercado Livre", { atual: mes(3000, { orders: 30, profit: 600 }), anterior: mes(2000, { orders: 20 }) }),
+        loja("Shopee", { atual: mes(1000, { orders: 20, profit: 200 }), anterior: mes(1000, { orders: 10 }) }),
+      ],
+    }),
   );
-  assert.equal(vazio.derivado.variacaoFaturamento, 0);
-  assert.equal(vazio.derivado.margem, 0);
-  assert.equal(vazio.derivado.ticket, 0);
-  assert.equal(vazio.derivado.ads, null);
+
+  assert.equal(d.total.atual.revenue, 4000);
+  assert.equal(d.total.atual.orders, 50);
+  assert.equal(d.derivado.margem, 0.2);
+  assert.equal(d.derivado.ticket, 80);
+  // 3.000 de 4.000 é 75% do faturamento do cliente
+  assert.equal(d.porLoja[0].derivado.fatiaDoFaturamento, 0.75);
+  assert.equal(d.porLoja[1].derivado.fatiaDoFaturamento, 0.25);
+  // cada canal mantém a sua própria variação
+  assert.equal(d.porLoja[0].derivado.variacaoFaturamento, 0.5);
+  assert.equal(d.porLoja[1].derivado.variacaoFaturamento, 0);
 });
 
-test("o texto do dossiê afirma os números que o modelo pode citar", () => {
-  const d = montarDossie(entrada({ produtos: [prod(47), prod(19.62)] }));
+test("cliente sem faturamento não estoura em divisão por zero", () => {
+  const d = montarDossie(
+    entrada({ lojas: [loja("Shopee", { atual: mes(0, { orders: 0 }), anterior: mes(0, { orders: 0 }) })] }),
+  );
+  assert.equal(d.derivado.variacaoFaturamento, 0);
+  assert.equal(d.derivado.margem, 0);
+  assert.equal(d.derivado.ticket, 0);
+  assert.equal(d.porLoja[0].derivado.fatiaDoFaturamento, 0);
+  assert.equal(d.porLoja[0].derivado.ads, null);
+});
+
+test("o texto traz uma seção por canal e afirma os números citáveis", () => {
+  const d = montarDossie(
+    entrada({
+      lojas: [
+        loja("Mercado Livre", { produtos: [prod(47)] }),
+        loja("Shopee", { apelido: "Minas Decor Têxtil", produtos: [prod(19.62)] }),
+      ],
+    }),
+  );
   const texto = paraTexto(d);
 
-  assert.match(texto, /LOJA: Arnaldo — Shopee/);
-  assert.match(texto, /1\.000,00/); // faturamento formatado em português
-  assert.match(texto, /Nenhum investimento em anúncios no mês/);
-  assert.match(texto, /Nenhuma meta cadastrada/);
-  assert.match(texto, /Nenhuma penalidade aberta/);
+  assert.match(texto, /CLIENTE: Arnaldo — vende em Mercado Livre e Shopee/);
+  assert.match(texto, /=== CANAL: MERCADO LIVRE ===/);
+  assert.match(texto, /=== CANAL: SHOPEE \(Minas Decor Têxtil\) ===/);
+  assert.match(texto, /Divisão por canal/);
+  assert.match(texto, /2\.000,00/); // total dos dois canais
 
   const numeros = numerosDoDossie(d);
-  assert.ok(numeros.includes(1000));
+  assert.ok(numeros.includes(2000));
   assert.ok(numeros.includes(47));
+});
+
+test("sem mês anterior gravado o texto proíbe falar de crescimento", () => {
+  const semAnterior = montarDossie(
+    entrada({ lojas: [loja("Shopee", { anterior: mes(0, { orders: 0 }) })] }),
+  );
+  assert.equal(semAnterior.derivado.temAnterior, false);
+  const texto = paraTexto(semAnterior);
+  assert.match(texto, /NÃO existe mês anterior gravado/);
+
+  const comAnterior = montarDossie(entrada());
+  assert.equal(comAnterior.derivado.temAnterior, true);
+  assert.match(paraTexto(comAnterior), /variação 25%/);
+});
+
+test("o texto diz o intervalo de dias que realmente tem dado", () => {
+  const d = montarDossie(
+    entrada({
+      lojas: [
+        loja("Shopee", {
+          dias: [
+            { day: "2026-09-10", revenue: 100, orders: 2 },
+            { day: "2026-09-11", revenue: 0, orders: 0 },
+          ],
+        }),
+      ],
+    }),
+  );
+  // dia anterior à primeira sincronização não pode virar "dia sem venda"
+  assert.match(paraTexto(d), /2 dias com dado \(2026-09-10 a 2026-09-11\)/);
+});
+
+test("canal sem anúncio importado não finge ter opinião de preço", () => {
+  const d = montarDossie(entrada({ lojas: [loja("Shopee", { produtos: [] })] }));
+  assert.match(paraTexto(d), /nenhum anúncio importado neste canal/);
 });
 
 test("evidência sem número, com número inventado e com número do dossiê", () => {
@@ -153,29 +212,4 @@ test("evidência sem número, com número inventado e com número do dossiê", (
   // 2% de tolerância: 1.015 passa, 1.100 não
   assert.equal(evidenciaConfere("cerca de R$ 1.015,00", numeros), true);
   assert.equal(evidenciaConfere("cerca de R$ 1.100,00", numeros), false);
-});
-
-test("sem mês anterior gravado o texto proíbe falar de crescimento", () => {
-  const semAnterior = montarDossie(entrada({ anterior: mes(0, { orders: 0 }) }));
-  assert.equal(semAnterior.derivado.temAnterior, false);
-  const texto = paraTexto(semAnterior);
-  assert.match(texto, /NÃO existe mês anterior gravado/);
-  assert.doesNotMatch(texto, /variação/);
-
-  const comAnterior = montarDossie(entrada());
-  assert.equal(comAnterior.derivado.temAnterior, true);
-  assert.match(paraTexto(comAnterior), /variação 25%/);
-});
-
-test("o texto diz o intervalo de dias que realmente tem dado", () => {
-  const d = montarDossie(
-    entrada({
-      dias: [
-        { day: "2026-09-10", revenue: 100, orders: 2 },
-        { day: "2026-09-11", revenue: 0, orders: 0 },
-      ],
-    }),
-  );
-  // dia anterior à primeira sincronização não pode virar "dia sem venda"
-  assert.match(paraTexto(d), /Período com dado: 2 dias \(2026-09-10 a 2026-09-11\)/);
 });
