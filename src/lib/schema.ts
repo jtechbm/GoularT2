@@ -647,6 +647,31 @@ CREATE TABLE IF NOT EXISTS market_comparisons (
 
 CREATE INDEX IF NOT EXISTS idx_comparacoes_produto ON market_comparisons(product_id);
 
+-- Análise de uma loja escrita por modelo de linguagem.
+--
+-- O dossiê fica gravado junto do resultado de proposito: analise de tres meses
+-- atrás sem os números que a geraram é opinião solta, e ninguem consegue dizer
+-- depois se a recomendacao fazia sentido na epoca.
+--
+-- status 'parcial' é a análise em que o modelo estourou o tempo. Os números
+-- do dossiê continuam valendo, porque são nossos e não dependem dele.
+CREATE TABLE IF NOT EXISTS store_analyses (
+  id                    text PRIMARY KEY,
+  client_id             text NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+  client_marketplace_id text NOT NULL REFERENCES client_marketplaces(id) ON DELETE CASCADE,
+  marketplace           text NOT NULL,
+  ref_month             text NOT NULL,
+  status                text NOT NULL,
+  dossier               text NOT NULL,
+  result                text,
+  model                 text,
+  duration_ms           integer,
+  created_by            text REFERENCES users(id),
+  created_at            text NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_analises_loja ON store_analyses(client_marketplace_id, created_at DESC);
+
 CREATE INDEX IF NOT EXISTS idx_charges_month  ON agency_charges(ref_month, status);
 CREATE INDEX IF NOT EXISTS idx_expenses_month ON agency_expenses(ref_month);
 
@@ -684,6 +709,7 @@ CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
 
 /** Tabelas na ordem segura para limpeza (filhas antes das pais). */
 export const TABLES = [
+  "store_analyses",
   "market_comparisons",
   "client_products",
   "webhook_events",

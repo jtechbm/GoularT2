@@ -33,7 +33,9 @@ export type Permission =
   /** marcar penalidade como resolvida; ver continua limitado à carteira da pessoa */
   | "penalidades.resolver"
   /** disparar a busca de preços de concorrentes, que custa dinheiro por execução */
-  | "precos.pesquisar";
+  | "precos.pesquisar"
+  /** mandar a IA analisar uma loja inteira; cada execução custa dinheiro */
+  | "analise.rodar";
 
 const TODAS: Permission[] = [
   "equipe.gerenciar",
@@ -47,6 +49,7 @@ const TODAS: Permission[] = [
   "chat.gerenciar",
   "penalidades.resolver",
   "precos.pesquisar",
+  "analise.rodar",
 ];
 
 const POR_PAPEL: Record<Role, Permission[]> = {
@@ -96,6 +99,7 @@ export const PERMISSION_LABEL: Record<Permission, string> = {
   "chat.gerenciar": "Criar e remover canais",
   "penalidades.resolver": "Resolver penalidades",
   "precos.pesquisar": "Pesquisar preços de concorrentes",
+  "analise.rodar": "Rodar a análise da loja pela IA",
 };
 
 /** Ordem em que as permissões aparecem na tabela. */
