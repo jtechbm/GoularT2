@@ -494,6 +494,76 @@ export async function buscarAdsShopee(
   }
 }
 
+/** Prefixo do external_id da linha de Ads montada a partir das recargas. */
+export const ID_RECARGAS = "recargas-shopee-ads";
+
+/**
+ * Recargas de crédito de Shopee Ads no mês, lidas do extrato da carteira.
+ *
+ * A API de Ads é só para parceiros oficiais da Shopee, e o app da agência
+ * não é um. O extrato da carteira é: cada compra de crédito de anúncio com o
+ * saldo da loja aparece como SPM_DEDUCT, "Recarga por compra de ADS". Não é
+ * o gasto exato (recarga do dia 30 é gasta no mês seguinte, e recarga paga
+ * por cartão não passa pela carteira), mas no mês fica muito perto, e é
+ * dado da Shopee, não digitado.
+ *
+ * O extrato aceita no máximo 15 dias por consulta; vai em janelas de 14.
+ * Devolve null quando a leitura falha, para não zerar o que estava gravado.
+ */
+export async function buscarRecargasAds(
+  creds: StoredCredentials,
+  refMonth: string,
+  prazo: number,
+): Promise<{ total: number; recargas: number } | null> {
+  const { start, end } = monthRange(refMonth);
+  const DIA = 86400;
+  // o mês em horário de Brasília, como o resto do fechamento
+  const inicio = Math.floor(start.getTime() / 1000) + 3 * 3600;
+  const fim = Math.min(Math.floor(end.getTime() / 1000) + 3 * 3600, Math.floor(Date.now() / 1000));
+  if (fim <= inicio) return null;
+
+  let total = 0;
+  let recargas = 0;
+  try {
+    for (let de = inicio; de < fim; de += 14 * DIA) {
+      const ate = Math.min(de + 14 * DIA - 1, fim);
+      for (let pagina = 1; pagina <= 20; pagina++) {
+        if (Date.now() > prazo) return null;
+        const pedir = () =>
+          call<{
+            response?: { transaction_list?: { transaction_type?: string; amount?: number }[]; more?: boolean };
+          }>(
+            "/api/v2/payment/get_wallet_transaction_list",
+            {
+              page_no: pagina,
+              page_size: 100,
+              create_time_from: de,
+              create_time_to: ate,
+              transaction_type: "SPM_DEDUCT",
+            },
+            creds,
+          );
+        // uma segunda tentativa: na sincronização de 12 meses, dois meses
+        // falharam de passagem e ficaram com Ads zerado
+        const r = await pedir().catch(async () => {
+          await new Promise((ok) => setTimeout(ok, 1500));
+          return pedir();
+        });
+        for (const t of r.response?.transaction_list ?? []) {
+          // o filtro por tipo nem sempre é respeitado: confere de novo
+          if (t.transaction_type !== "SPM_DEDUCT") continue;
+          total += -Number(t.amount ?? 0);
+          recargas += 1;
+        }
+        if (!r.response?.more) break;
+      }
+    }
+  } catch {
+    return null;
+  }
+  return { total: Math.round(total * 100) / 100, recargas };
+}
+
 export const shopee: MarketplaceAdapter = {
   marketplace: "shopee",
   label: "Shopee",
@@ -581,6 +651,12 @@ export const shopee: MarketplaceAdapter = {
     const orcamento = (ctx.deadline ?? syncDeadline()) - Date.now();
     // a reserva é proporcional: 8s fixos comiam metade da fatia do cron
     const prazo = Date.now() + orcamento - Math.min(8000, Math.max(2000, orcamento * 0.2));
+
+    // Ads primeiro: são duas ou três chamadas, e a revalidação dos pedidos
+    // lá embaixo usa o tempo que sobrar inteiro. No fim da rodada, as
+    // recargas quase nunca chegavam a ser lidas.
+    const ads = await buscarAdsShopee(creds, refMonth);
+    const recargas = ads?.permissao === "pendente" ? await buscarRecargasAds(creds, refMonth, prazo) : null;
 
     const { start, end } = monthRange(refMonth);
     const DIA = 86400;
@@ -692,9 +768,29 @@ export const shopee: MarketplaceAdapter = {
 
     const out = await resultadoDoMesShopee(accountId, refMonth);
 
-    // Ads é complemento: uma chamada só, e nunca derruba o faturamento
-    const ads = await buscarAdsShopee(creds, refMonth);
+    // Ads é complemento: nunca derruba o faturamento
     if (ads) out.adsPermissao = ads.permissao;
+
+    // sem a API de Ads, o investimento sai das recargas de crédito na carteira
+    if (ads?.permissao === "pendente") {
+      if (recargas) {
+        out.adsPermissao = "recargas";
+        out.ads = recargas.total;
+        out.adsCampaigns = recargas.total
+          ? [
+              {
+                external_id: ID_RECARGAS,
+                name: `Shopee Ads · ${recargas.recargas} ${recargas.recargas === 1 ? "recarga" : "recargas"} de crédito`,
+                invested: recargas.total,
+                revenue: 0,
+                clicks: 0,
+                orders: 0,
+              },
+            ]
+          : [];
+        out.profit = out.revenue - out.fees - out.shipping - out.tax - out.ads - out.cogs;
+      }
+    }
     if (ads?.permissao === "liberada") {
       const porDia = new Map(out.days?.map((d) => [d.day, d]));
       for (const l of ads.dias) {

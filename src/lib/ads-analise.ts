@@ -16,8 +16,21 @@ import type { AdsEntry } from "./types.ts";
  * punha "não vendeu" na tela, alerta crítico de dinheiro sem retorno e a IA
  * dizendo que a campanha fracassou. A linha que vem da API sempre é conhecida.
  */
-export function receitaInformada(e: { source?: string | null; revenue: number; orders: number }): boolean {
-  return e.source === "api" || e.revenue > 0 || e.orders > 0;
+export function receitaInformada(e: {
+  source?: string | null;
+  external_id?: string | null;
+  revenue: number;
+  orders: number;
+}): boolean {
+  if (e.revenue > 0 || e.orders > 0) return true;
+  // recarga de crédito lida da carteira: sabe-se o gasto, não o retorno
+  if (eRecarga(e)) return false;
+  return e.source === "api";
+}
+
+/** Linha montada a partir das recargas de crédito de Shopee Ads na carteira. */
+export function eRecarga(e: { external_id?: string | null }): boolean {
+  return (e.external_id ?? "").startsWith("recargas-");
 }
 
 export interface CampanhaAnalisada {
@@ -29,6 +42,8 @@ export interface CampanhaAnalisada {
   automatica: boolean;
   /** false: lançado à mão sem o retorno; ROAS e ACOS ficam indefinidos */
   receitaInformada: boolean;
+  /** investimento lido das recargas de crédito na carteira da Shopee */
+  recarga: boolean;
   invested: number;
   revenue: number;
   clicks: number;
@@ -57,6 +72,7 @@ export function analisarCampanha(
     clientName: e.client_name ?? "",
     automatica: e.source === "api",
     receitaInformada: informada,
+    recarga: eRecarga(e),
     invested: e.invested,
     revenue: e.revenue,
     clicks: e.clicks,

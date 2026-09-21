@@ -172,7 +172,7 @@ export default async function AdsPage({
           value={brl(resumo.revenue)}
           hint={
             resumo.semRetorno
-              ? `sem o retorno de ${brl(resumo.semRetorno)} lançados à mão`
+              ? `sem o retorno de ${brl(resumo.semRetorno)} (recargas ou lançado à mão)`
               : resumo.orders
                 ? `${num(resumo.orders)} vendas vindas de anúncio`
                 : "vendas atribuídas ao anúncio"
@@ -187,7 +187,7 @@ export default async function AdsPage({
               ? resumo.semRetorno
                 ? "retorno não informado"
                 : "sem investimento no mês"
-              : `cada R$ 1 investido virou ${brl(resumo.roas)} em vendas${resumo.semRetorno ? " (sem o lançado à mão)" : ""}`
+              : `cada R$ 1 investido virou ${brl(resumo.roas)} em vendas${resumo.semRetorno ? " (só o que tem retorno)" : ""}`
           }
           tone={resumo.roas === null ? "neutral" : resumo.roas >= 4 ? "ok" : resumo.roas >= 2 ? "warn" : "bad"}
         />
@@ -293,6 +293,11 @@ export default async function AdsPage({
                       <span className="flex flex-wrap items-center gap-1.5">
                         <span className="text-sm text-ink">{c.nome}</span>
                         {!c.automatica && <Chip tone="neutral">lançado à mão</Chip>}
+                        {c.recarga && (
+                          <span title="Lido do extrato da carteira da Shopee: é o crédito comprado no mês, muito perto do gasto, mas sem o retorno em vendas">
+                            <Chip tone="info">recarga de crédito</Chip>
+                          </span>
+                        )}
                       </span>
                       <span className="mt-0.5 flex items-center gap-1.5 text-[0.7rem] text-dim">
                         {c.clientName} · <MarketplaceChip value={c.marketplace} />

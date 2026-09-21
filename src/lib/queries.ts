@@ -204,7 +204,8 @@ export async function indicadoresDosClientes(
     all<{ client_id: string; revenue: number; manual: number; com_retorno: number }>(
       `SELECT client_id, COALESCE(SUM(revenue),0) AS revenue,
               COALESCE(SUM(invested) FILTER (WHERE source <> 'api'),0) AS manual,
-              COALESCE(SUM(invested) FILTER (WHERE source = 'api' OR revenue > 0 OR orders > 0),0) AS com_retorno
+              COALESCE(SUM(invested) FILTER (WHERE revenue > 0 OR orders > 0
+                   OR (source = 'api' AND COALESCE(external_id,'') NOT LIKE 'recargas-%')),0) AS com_retorno
          FROM ads_entries
         WHERE substr(period_start,1,7) <= ? AND substr(period_end,1,7) >= ?${s.sql}
         GROUP BY client_id`,

@@ -474,6 +474,7 @@ const ROTULO_ORIGEM: Record<string, string> = {
   misto: "integração + lançado à mão",
   vazio: "sem dado no mês",
   nao_medido: "o marketplace não deixa ler",
+  recargas: "recargas de crédito lidas do extrato da carteira",
 };
 
 function dataCurta(iso: string | null | undefined): string {
@@ -604,7 +605,7 @@ export function linhasDoDossie(d: Dossie): LinhaDoDossie[] {
       );
       if (ld.ads.semRetorno) {
         l.push(
-          `Destes, R$ ${real(ld.ads.semRetorno)} foram lançados à mão pela equipe SEM o retorno em vendas: não é "não vendeu", é "não informado". Não conclua desempenho sobre esse valor; o ROAS acima não o inclui.`,
+          `Destes, R$ ${real(ld.ads.semRetorno)} não têm o retorno em vendas conhecido (recarga de crédito lida da carteira ou lançamento à mão): não é "não vendeu", é "não informado". Use esse valor para falar de quanto investe e do % do faturamento, não de desempenho; o ROAS acima não o inclui.`,
         );
       }
       if (ld.ads.variacaoInvestido !== null && loja.adsAnterior) {
@@ -618,7 +619,7 @@ export function linhasDoDossie(d: Dossie): LinhaDoDossie[] {
       for (const c of loja.campanhas.slice(0, 8)) {
         l.push(
           c.receitaInformada === false
-            ? `  - ${c.nome}: investido R$ ${real(c.invested)}, lançado à mão sem o retorno (receita não informada).`
+            ? `  - ${c.nome}: investido R$ ${real(c.invested)}, sem o retorno em vendas informado.`
             : `  - ${c.nome}: investido R$ ${real(c.invested)}, receita R$ ${real(c.revenue)}, ${c.clicks} cliques, ${c.orders} vendas, ROAS ${multiplo(c.roas)}.`,
         );
       }

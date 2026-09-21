@@ -25,3 +25,13 @@ test("ROAS e custo por clique ignoram o investido sem retorno nem clique", () =>
   assert.equal(r.roas!.toFixed(2), "5.21");
   assert.equal(r.cpc!.toFixed(2), "0.11");
 });
+
+test("recarga de crédito da carteira conta no investido e fica fora do ROAS", () => {
+  const recarga = analisarCampanha(linha({ invested: 7900, source: "api", external_id: "recargas-shopee-ads" }));
+  assert.equal(recarga.recarga, true);
+  assert.equal(recarga.receitaInformada, false);
+  assert.equal(recarga.roas, null);
+  const r = resumirAds([recarga, analisarCampanha(linha({ invested: 31.82, revenue: 165.89, clicks: 300, source: "api" }))]);
+  assert.equal(r.invested, 7931.82);
+  assert.equal(r.roas!.toFixed(2), "5.21");
+});

@@ -289,10 +289,12 @@ export async function coletarDossie(cliente: ClienteAnalisavel, refMonth: string
       // de onde veio o Ads: a API, a mão da equipe, os dois, ou ninguém
       // conseguiu ler. "Não medido" precisa chegar ao modelo: senão o canal
       // que o marketplace esconde vira "não investiu nada".
-      const daApi = campanhasCruas.some((c) => c.source === "api");
+      const recargas = campanhasCruas.some((c) => (c.external_id ?? "").startsWith("recargas-"));
+      const daApi = campanhasCruas.some((c) => c.source === "api" && !(c.external_id ?? "").startsWith("recargas-"));
       const aMao = campanhasCruas.some((c) => c.source !== "api" && c.invested > 0);
-      const origemAds =
-        conta.ads_permission === "pendente" && !aMao
+      const origemAds = recargas
+        ? "recargas"
+        : conta.ads_permission === "pendente" && !aMao
           ? "nao_medido"
           : daApi && aMao
             ? "misto"
