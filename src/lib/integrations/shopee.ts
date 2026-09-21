@@ -86,6 +86,8 @@ export async function call<T>(
   path: string,
   params: Record<string, string | number>,
   creds?: StoredCredentials,
+  /** corpo JSON: com ele a chamada vira POST, como pedem as rotas em lote */
+  body?: unknown,
 ): Promise<T> {
   const { partnerId, host } = env();
   const timestamp = Math.floor(Date.now() / 1000);
@@ -98,7 +100,12 @@ export async function call<T>(
     ...Object.fromEntries(Object.entries(params).map(([k, v]) => [k, String(v)])),
   });
 
-  const res = await fetch(`${host}${path}?${qs}`, { headers: { accept: "application/json" } });
+  const res = await fetch(
+    `${host}${path}?${qs}`,
+    body === undefined
+      ? { headers: { accept: "application/json" } }
+      : { method: "POST", headers: { accept: "application/json", "content-type": "application/json" }, body: JSON.stringify(body) },
+  );
   // o corpo do erro diz o motivo (error_api_permission, error_auth…); o
   // status sozinho não separa "app sem permissão" de "token vencido"
   const json = (await res.json().catch(() => ({}))) as T & { error?: string; message?: string };
@@ -210,15 +217,31 @@ export async function atualizarPedidos(
   }
   const comValor = precisam.filter((p) => !STATUS_FORA_DA_VENDA.has(p.status));
 
-  const BLOCO = 40;
+  // A rota em lote aceita 50 pedidos por chamada e devolve o mesmo
+  // order_income da rota unitária (conferido em 50 pedidos reais, zero
+  // diferença). A unitária custava uma chamada por pedido, e um mês de 2.600
+  // pedidos não cabia numa rodada; buscar 12 meses de histórico era inviável.
+  const LOTE = 50;
+  const lotes: (typeof comValor)[] = [];
+  for (let i = 0; i < comValor.length; i += LOTE) lotes.push(comValor.slice(i, i + LOTE));
+
   let lidos = semValor.length;
-  for (let i = 0; i < comValor.length; i += BLOCO) {
+  for (let i = 0; i < lotes.length; i += 4) {
     if (Date.now() > prazo) break;
-    const bloco = comValor.slice(i, i + BLOCO);
-    const { results } = await mapLimit(bloco, 8, prazo, async (p) => ({
-      p,
-      detail: await call<EscrowDetail>("/api/v2/payment/get_escrow_detail", { order_sn: p.orderSn }, creds),
-    }));
+    const { results: respostas } = await mapLimit(lotes.slice(i, i + 4), 4, prazo, async (lote) => {
+      const corpo = await call<{ response?: { escrow_detail?: EscrowDetail["response"] & { order_sn?: string } }[] }>(
+        "/api/v2/payment/get_escrow_detail_batch",
+        {},
+        creds,
+        { order_sn_list: lote.map((p) => p.orderSn) },
+      );
+      const porPedido = new Map(lote.map((p) => [p.orderSn, p]));
+      return (corpo.response ?? []).flatMap((item) => {
+        const p = porPedido.get(item.escrow_detail?.order_sn ?? "");
+        return p ? [{ p, detail: { response: item.escrow_detail } as EscrowDetail }] : [];
+      });
+    });
+    const results = respostas.flat();
     if (!results.length) break;
 
     const linhas = results.map(({ p, detail }) => {

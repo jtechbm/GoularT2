@@ -757,6 +757,10 @@ ALTER TABLE client_marketplaces ADD COLUMN IF NOT EXISTS promos_permission text;
 -- Arnaldo investiu R$ 2,5k no mês e a tela mostrou só os R$ 30 do Mercado Livre.
 ALTER TABLE client_marketplaces ADD COLUMN IF NOT EXISTS ads_permission text;
 
+-- Histórico: o mês mais antigo já fechado por completo. A busca anda um mês
+-- por vez para trás até 12 meses, retomando daqui na rodada seguinte.
+ALTER TABLE client_marketplaces ADD COLUMN IF NOT EXISTS history_from text;
+
 ALTER TABLE store_analyses ALTER COLUMN client_marketplace_id DROP NOT NULL;
 ALTER TABLE store_analyses ALTER COLUMN marketplace           DROP NOT NULL;
 

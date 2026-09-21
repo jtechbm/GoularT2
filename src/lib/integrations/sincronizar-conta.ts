@@ -266,7 +266,7 @@ export async function gravarResultado(
   await run(
     `UPDATE client_marketplaces
         SET last_sync_at = ?, last_success_at = ?, last_error = NULL, status = 'conectado',
-            daily_synced_until = COALESCE(?, daily_synced_until),
+            daily_synced_until = GREATEST(daily_synced_until, ?), -- mês antigo não recua o marcador
             ads_permission = COALESCE(?, ads_permission)
       WHERE id = ?`,
     now(),

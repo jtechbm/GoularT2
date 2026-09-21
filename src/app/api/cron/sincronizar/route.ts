@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { all, id, now, run } from "@/lib/db";
 import { syncAccount } from "@/lib/integrations";
+import { avancarHistorico, contasComHistoricoPendente } from "@/lib/integrations/historico";
 import { verificarPenalidadesML } from "@/lib/penalidades/mercadolivre";
 import { verificarPenalidadesShopee } from "@/lib/penalidades/shopee";
 import { addMonths, currentMonth } from "@/lib/format";
@@ -115,6 +116,19 @@ export async function GET(req: NextRequest) {
     penalidadesNovas += r.novas;
   }
 
+  // Histórico por último, com o que sobrar: o mês corrente e as penalidades
+  // valem mais que um mês de um ano atrás. Carga inicial grande é com
+  // `npm run historico`; isto aqui cobre conta nova e o que ficou para trás.
+  const historico: string[] = [];
+  if (!semTempo && fim - Date.now() > 12_000) {
+    for (const conta of await contasComHistoricoPendente()) {
+      if (fim - Date.now() < 12_000) break;
+      const r = await avancarHistorico(conta.id, fim, "cron");
+      historico.push(...r.meses.map((m) => `${conta.nome} · ${conta.marketplace} · ${m}`));
+      if (!r.completo && !r.erro) break; // parou por tempo
+    }
+  }
+
   // Faxina: sessão vencida não serve para nada e fica no banco para sempre.
   // Barata (um DELETE por índice) e o único lugar do sistema que roda todo dia
   // sem ninguém pedir.
@@ -126,7 +140,7 @@ export async function GET(req: NextRequest) {
   await run(
     "UPDATE sync_logs SET status = ?, message = ?, created_at = ? WHERE id = ?",
     erros ? "parcial" : "ok",
-    `${resultados.length} sincronizações · ${erros} com erro · ${penalidadesVerificadas} contas verificadas, ${penalidadesNovas} penalidades novas${semTempo ? " · fila incompleta" : ""}`,
+    `${resultados.length} sincronizações · ${erros} com erro · ${penalidadesVerificadas} contas verificadas, ${penalidadesNovas} penalidades novas${historico.length ? ` · ${historico.length} meses de histórico` : ""}${semTempo ? " · fila incompleta" : ""}`,
     now(),
     batimentoId,
   );
@@ -139,6 +153,7 @@ export async function GET(req: NextRequest) {
     erros,
     incompleto: semTempo,
     penalidades: { verificadas: penalidadesVerificadas, novas: penalidadesNovas },
+    historico,
     resultados,
   });
 }

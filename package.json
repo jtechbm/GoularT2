@@ -14,6 +14,7 @@
     "testar-shopee": "node --experimental-strip-types --env-file-if-exists=.env scripts/testar-shopee.ts",
     "testar-ml": "node --experimental-strip-types --env-file-if-exists=.env scripts/testar-ml.ts",
     "sincronizar": "node --experimental-strip-types --env-file-if-exists=.env scripts/sincronizar.ts",
+    "historico": "node --experimental-strip-types --env-file-if-exists=.env scripts/historico.ts",
     "penalidades": "node --experimental-strip-types --env-file-if-exists=.env scripts/penalidades.ts"
   },
   "dependencies": {
