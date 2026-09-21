@@ -752,6 +752,11 @@ ALTER TABLE client_products ADD COLUMN IF NOT EXISTS sub_status text;
 ALTER TABLE client_marketplaces ADD COLUMN IF NOT EXISTS comms_permission  text;
 ALTER TABLE client_marketplaces ADD COLUMN IF NOT EXISTS promos_permission text;
 
+-- A API de Ads da Shopee depende do tipo de app no Open Platform. Sem ela o
+-- investimento aparecia como R$ 0 e ninguém sabia que faltava: a loja do
+-- Arnaldo investiu R$ 2,5k no mês e a tela mostrou só os R$ 30 do Mercado Livre.
+ALTER TABLE client_marketplaces ADD COLUMN IF NOT EXISTS ads_permission text;
+
 ALTER TABLE store_analyses ALTER COLUMN client_marketplace_id DROP NOT NULL;
 ALTER TABLE store_analyses ALTER COLUMN marketplace           DROP NOT NULL;
 

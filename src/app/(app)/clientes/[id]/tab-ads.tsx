@@ -2,7 +2,7 @@ import { Card, Chip, Empty, Field, MarketplaceChip, Stat } from "@/components/ui
 import { SaveBar, SubmitButton } from "@/components/submit";
 import { createAdsAction, deleteAdsAction } from "@/lib/actions/ads";
 import { brl, currentMonth, dateBR, num, origemLabel, pct } from "@/lib/format";
-import { MARKETPLACES, type AdsEntry, type Client, type ClientMarketplace } from "@/lib/types";
+import { MARKETPLACES, marketplaceLabel, type AdsEntry, type Client, type ClientMarketplace } from "@/lib/types";
 
 export function TabAds({
   client,
@@ -34,8 +34,20 @@ export function TabAds({
   const today = new Date().toISOString().slice(0, 10);
   const firstOfMonth = `${currentMonth()}-01`;
 
+  const semLeitura = accounts.filter((a) => a.ads_permission === "pendente");
+
   return (
     <div className="space-y-3">
+      {semLeitura.length > 0 && (
+        <div className="rounded-[12px] border border-warn/30 bg-warn-soft px-4 py-3 text-xs">
+          <span className="font-semibold">
+            O Ads de {semLeitura.map((a) => marketplaceLabel(a.marketplace)).join(" e ")} não entra nestes números.
+          </span>{" "}
+          O marketplace ainda não liberou a leitura de anúncios para o app da agência. Até liberar, lance o
+          investimento desse canal à mão no formulário abaixo.
+        </div>
+      )}
+
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <Stat
           label="Investido (histórico)"

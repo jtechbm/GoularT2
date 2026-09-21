@@ -76,6 +76,8 @@ export interface ClientMarketplace {
   authorized_at: string | null;
   authorized_ip: string | null;
   auth_created_by: string | null;
+  /** 'liberada' | 'pendente' | null (nunca consultado) — leitura do Ads pela API */
+  ads_permission: string | null;
 }
 
 export interface FinanceSnapshot {

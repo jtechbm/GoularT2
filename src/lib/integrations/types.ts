@@ -68,6 +68,11 @@ export interface MonthlyResult {
    */
   adsCampaigns?: AdsCampaign[];
   /**
+   * Se o marketplace deixa ler o Ads desta conta. undefined = não consultou
+   * nesta rodada, e a marca gravada antes continua valendo.
+   */
+  adsPermissao?: "liberada" | "pendente";
+  /**
    * Fechamento dia a dia. undefined = o adaptador não sabe abrir por dia,
    * e o histórico diário simplesmente não é gravado para essa loja.
    */

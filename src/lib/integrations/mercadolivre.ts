@@ -413,6 +413,8 @@ export const mercadoLivre: MarketplaceAdapter = {
       // a busca de campanhas devolve o mês inteiro somado; o detalhe por
       // dia vem de outra rota e só existe se a conta anunciar
       const diario = await buscarAdsDiario(token, refMonth, prazo);
+      // sem o diário, os dias gravados preservam o Ads que já tinham
+      if (diario) out.adsPermissao = "liberada";
       for (const linha of diario ?? []) {
         const alvo = noDia(linha.day);
         alvo.ads += linha.ads;

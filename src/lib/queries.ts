@@ -90,6 +90,8 @@ export interface ClientRow extends Client {
   prev_revenue: number;
   prev_profit: number;
   marketplaces: string;
+  /** canais cujo Ads o marketplace não deixa ler: o valor de Ads está incompleto */
+  ads_pendente: string;
   team_size: number;
   open_tasks: number;
   last_note_at: string | null;
@@ -115,6 +117,7 @@ export async function clientRows(
             COALESCE(p.revenue,0)  AS prev_revenue,
             COALESCE(p.profit,0)   AS prev_profit,
             COALESCE(m.list,'')    AS marketplaces,
+            COALESCE(m.ads_pendente,'') AS ads_pendente,
             COALESCE(t.n,0)        AS team_size,
             COALESCE(k.n,0)        AS open_tasks,
             n.last_note_at
@@ -125,7 +128,8 @@ export async function clientRows(
                     FROM finance_snapshots WHERE ref_month = ? GROUP BY client_id) f ON f.client_id = c.id
        LEFT JOIN (SELECT client_id, SUM(revenue) revenue, SUM(profit) profit
                     FROM finance_snapshots WHERE ref_month = ? GROUP BY client_id) p ON p.client_id = c.id
-       LEFT JOIN (SELECT client_id, string_agg(DISTINCT marketplace, ',') list
+       LEFT JOIN (SELECT client_id, string_agg(DISTINCT marketplace, ',') list,
+                         string_agg(DISTINCT marketplace, ',') FILTER (WHERE ads_permission = 'pendente') ads_pendente
                     FROM client_marketplaces WHERE status <> 'desativado' GROUP BY client_id) m ON m.client_id = c.id
        LEFT JOIN (SELECT client_id, COUNT(*) n FROM client_team GROUP BY client_id) t ON t.client_id = c.id
        LEFT JOIN (SELECT client_id, COUNT(*) n FROM tasks

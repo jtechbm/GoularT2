@@ -7,7 +7,7 @@ import { ScoreChip } from "@/components/score-saude";
 import { brlShort, currentMonth, dateBR, lastMonths, num, pct, variacaoMensal } from "@/lib/format";
 import { Avatar, Card, Chip, Delta, Empty, MarketplaceChip, PageHeader, Stat, StatusChip } from "@/components/ui";
 import { MonthPicker } from "@/components/month-picker";
-import { CLIENT_STATUS } from "@/lib/types";
+import { CLIENT_STATUS, marketplaceLabel } from "@/lib/types";
 
 export default async function ClientesPage({
   searchParams,
@@ -183,7 +183,17 @@ export default async function ClientesPage({
                     </td>
                     <td className="num font-semibold text-ink" data-label="Faturamento">{brlShort(c.revenue)}</td>
                     <td className="num" data-label="Lucro">{brlShort(c.profit)}</td>
-                    <td className="num text-muted" data-label="Ads">{brlShort(c.ads)}</td>
+                    <td className="num text-muted" data-label="Ads">
+                      {brlShort(c.ads)}
+                      {c.ads_pendente && (
+                        <span
+                          className="ml-1 text-warn"
+                          title={`Sem o Ads de ${c.ads_pendente.split(",").map(marketplaceLabel).join(" e ")}: o marketplace ainda não liberou a leitura`}
+                        >
+                          ⚠
+                        </span>
+                      )}
+                    </td>
                     <td className="num" data-label="vs. ant.">
                       <Delta value={variacaoMensal(c.revenue, c.prev_revenue)} />
                     </td>

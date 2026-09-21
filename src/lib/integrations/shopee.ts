@@ -99,10 +99,11 @@ export async function call<T>(
   });
 
   const res = await fetch(`${host}${path}?${qs}`, { headers: { accept: "application/json" } });
-  if (!res.ok) throw new IntegrationError(`Shopee respondeu ${res.status} em ${path}.`);
-
-  const json = (await res.json()) as T & { error?: string; message?: string };
+  // o corpo do erro diz o motivo (error_api_permission, error_auth…); o
+  // status sozinho não separa "app sem permissão" de "token vencido"
+  const json = (await res.json().catch(() => ({}))) as T & { error?: string; message?: string };
   if (json.error) throw new IntegrationError(`Shopee: ${json.error} — ${json.message ?? ""}`);
+  if (!res.ok) throw new IntegrationError(`Shopee respondeu ${res.status} em ${path}.`);
   return json;
 }
 
@@ -400,6 +401,76 @@ export async function processarPedidoShopee(
   return { dia };
 }
 
+/** A API de Ads da Shopee usa DD-MM-YYYY, diferente do resto da plataforma. */
+function dataAds(iso: string): string {
+  const [a, m, d] = iso.split("-");
+  return `${d}-${m}-${a}`;
+}
+
+/**
+ * Investimento em Shopee Ads (CPC) no mês, dia a dia.
+ *
+ * Usa a performance diária da loja inteira, e não campanha por campanha: é
+ * uma chamada só, e o número que importa para ROAS e para o lucro é o gasto
+ * total. A receita é a broad_gmv (venda direta + indireta atribuída ao
+ * anúncio), o mesmo critério do total_amount do Mercado Livre.
+ *
+ * Devolve permissao 'pendente' quando o app não tem acesso à API de Ads: a
+ * permissão depende do tipo de app no Open Platform, não da loja. Qualquer
+ * outra falha devolve null e preserva o que estava gravado.
+ */
+export async function buscarAdsShopee(
+  creds: StoredCredentials,
+  refMonth: string,
+): Promise<
+  | { permissao: "pendente" }
+  | {
+      permissao: "liberada";
+      dias: { day: string; ads: number; ads_revenue: number; clicks: number; prints: number; orders: number }[];
+    }
+  | null
+> {
+  const { start, end } = monthRange(refMonth);
+  const hoje = diaDoPedido(Math.floor(Date.now() / 1000));
+  const primeiro = start.toISOString().slice(0, 10);
+  const ultimoDoMes = new Date(end.getTime() - 864e5).toISOString().slice(0, 10);
+  const ultimo = ultimoDoMes < hoje ? ultimoDoMes : hoje;
+  if (ultimo < primeiro) return null;
+
+  try {
+    const corpo = await call<{
+      response?: {
+        date: string;
+        impression?: number;
+        clicks?: number;
+        expense?: number;
+        broad_gmv?: number;
+        broad_order?: number;
+      }[];
+    }>(
+      "/api/v2/ads/get_all_cpc_ads_daily_performance",
+      { start_date: dataAds(primeiro), end_date: dataAds(ultimo) },
+      creds,
+    );
+
+    const dias = (corpo.response ?? []).map((l) => {
+      const [d, m, a] = l.date.split("-");
+      return {
+        day: `${a}-${m}-${d}`,
+        ads: l.expense ?? 0,
+        ads_revenue: l.broad_gmv ?? 0,
+        clicks: l.clicks ?? 0,
+        prints: l.impression ?? 0,
+        orders: l.broad_order ?? 0,
+      };
+    });
+    return { permissao: "liberada", dias };
+  } catch (e) {
+    if (e instanceof IntegrationError && e.message.includes("error_api_permission")) return { permissao: "pendente" };
+    return null;
+  }
+}
+
 export const shopee: MarketplaceAdapter = {
   marketplace: "shopee",
   label: "Shopee",
@@ -597,6 +668,41 @@ export const shopee: MarketplaceAdapter = {
     const revalidacao = await revalidarAbertos(accountId, creds, refMonth, prazo);
 
     const out = await resultadoDoMesShopee(accountId, refMonth);
+
+    // Ads é complemento: uma chamada só, e nunca derruba o faturamento
+    const ads = await buscarAdsShopee(creds, refMonth);
+    if (ads) out.adsPermissao = ads.permissao;
+    if (ads?.permissao === "liberada") {
+      const porDia = new Map(out.days?.map((d) => [d.day, d]));
+      for (const l of ads.dias) {
+        const alvo = porDia.get(l.day) ?? emptyDay(l.day);
+        alvo.ads += l.ads;
+        alvo.ads_revenue += l.ads_revenue;
+        alvo.clicks += l.clicks;
+        alvo.prints += l.prints;
+        porDia.set(l.day, alvo);
+      }
+      out.days = [...porDia.values()].sort((a, b) => a.day.localeCompare(b.day));
+      out.ads = ads.dias.reduce((s, l) => s + l.ads, 0);
+      const receita = ads.dias.reduce((s, l) => s + l.ads_revenue, 0);
+      // gastou zero e não vendeu nada por Ads = a loja não anuncia; lista vazia
+      // limpa o que a sincronização tinha gravado antes
+      out.adsCampaigns =
+        out.ads || receita
+          ? [
+              {
+                external_id: "shopee-cpc",
+                name: "Shopee Ads (todas as campanhas)",
+                invested: out.ads,
+                revenue: receita,
+                clicks: ads.dias.reduce((s, l) => s + l.clicks, 0),
+                orders: ads.dias.reduce((s, l) => s + l.orders, 0),
+              },
+            ]
+          : [];
+      out.profit = out.revenue - out.fees - out.shipping - out.tax - out.ads - out.cogs;
+    }
+
     const diasFaltando = aListar.length - diasFeitos;
     const baseCompleta = janelas.every((j) => varredura.has(j.dia));
 

@@ -127,12 +127,21 @@ async function saveAdsCampaigns(
  *
  * Dias que a API não devolveu não são apagados. Uma falha parcial da loja
  * nunca pode zerar histórico já apurado.
+ *
+ * Sem `comAds` as colunas de anúncio ficam como estão: o aviso em tempo real
+ * da Shopee regrava o dia só com pedidos, e sobrescrever ali zerava o Ads
+ * que a rodada completa tinha lido.
  */
 async function saveDailyHistory(
   clientId: string,
   marketplace: string,
   dias: DailyResult[],
+  comAds: boolean,
 ): Promise<number> {
+  const colunasAds = comAds
+    ? `ads = EXCLUDED.ads, ads_revenue = EXCLUDED.ads_revenue, clicks = EXCLUDED.clicks,
+         prints = EXCLUDED.prints, `
+    : "";
   let gravados = 0;
   for (const d of dias) {
     await run(
@@ -142,8 +151,7 @@ async function saveDailyHistory(
        ON CONFLICT (client_id, marketplace, day) DO UPDATE SET
          revenue = EXCLUDED.revenue, orders = EXCLUDED.orders, units = EXCLUDED.units,
          fees = EXCLUDED.fees, shipping = EXCLUDED.shipping, tax = EXCLUDED.tax,
-         ads = EXCLUDED.ads, ads_revenue = EXCLUDED.ads_revenue, clicks = EXCLUDED.clicks,
-         prints = EXCLUDED.prints, updated_at = EXCLUDED.updated_at`,
+         ${colunasAds}updated_at = EXCLUDED.updated_at`,
       id(), clientId, marketplace, d.day, d.revenue, d.orders, d.units, d.fees, d.shipping,
       d.tax, d.ads, d.ads_revenue, d.clicks, d.prints, now(),
     );
@@ -249,17 +257,22 @@ export async function gravarResultado(
     await saveAdsCampaigns(row.client_id, row.marketplace, refMonth, result.adsCampaigns, userId);
   }
 
-  const diasGravados = result.days?.length ? await saveDailyHistory(row.client_id, row.marketplace, result.days) : 0;
+  const leuAds = result.adsPermissao === "liberada";
+  const diasGravados = result.days?.length
+    ? await saveDailyHistory(row.client_id, row.marketplace, result.days, leuAds)
+    : 0;
   const ultimoDia = result.days?.length ? result.days[result.days.length - 1].day : null;
 
   await run(
     `UPDATE client_marketplaces
         SET last_sync_at = ?, last_success_at = ?, last_error = NULL, status = 'conectado',
-            daily_synced_until = COALESCE(?, daily_synced_until)
+            daily_synced_until = COALESCE(?, daily_synced_until),
+            ads_permission = COALESCE(?, ads_permission)
       WHERE id = ?`,
     now(),
     now(),
     ultimoDia,
+    result.adsPermissao ?? null,
     row.id,
   );
 
