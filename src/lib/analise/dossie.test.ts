@@ -4,6 +4,8 @@ import {
   concentracaoTopDias,
   diasSemVenda,
   evidenciaConfere,
+  evidenciaConfereNasLinhas,
+  linhasDoDossie,
   montarDossie,
   numerosDoDossie,
   paraTexto,
@@ -296,4 +298,81 @@ test("penalidade informativa não entra na conta que o menu mostra", () => {
   // o menu conta só o que pede ação; as informativas ficam à parte
   assert.equal(d.derivado.penalidadesAbertas, 2);
   assert.equal(d.derivado.penalidadesInformativas, 2);
+});
+
+const campanha = (invested: number, revenue: number) => ({
+  nome: "Campanha",
+  invested,
+  revenue,
+  clicks: 100,
+  orders: 5,
+  roas: revenue / invested,
+  acos: invested / revenue,
+});
+
+test("cada linha com número ganha um id e uma fonte; título de seção não", () => {
+  const d = montarDossie(
+    entrada({ lojas: [loja("Shopee", { origem: { fechamento: "api", atualizadoEm: null, ads: "api" } })] }),
+  );
+  const linhas = linhasDoDossie(d);
+  const canal = linhas.find((l) => l.texto.startsWith("=== CANAL"))!;
+  assert.equal(canal.id, null);
+  const doCanal = linhas.slice(linhas.indexOf(canal));
+  const faturamento = doCanal.find((l) => l.texto.startsWith("Faturamento R$ 1.000,00"))!;
+  assert.match(faturamento.id!, /^F\d+$/);
+  assert.match(faturamento.fonte!, /Shopee · pedidos de 09\/2026 · lido pela integração/);
+  assert.ok(paraTexto(d).includes(`[${faturamento.id}] Faturamento R$ 1.000,00`));
+});
+
+test("os ids das linhas não viram número citável", () => {
+  const d = montarDossie(entrada());
+  // F12 não é o número 12
+  assert.equal(numerosDoDossie(d).includes(12), false);
+  assert.equal(evidenciaConfere("ver [F12]", numerosDoDossie(d)), false);
+});
+
+test("Ads que o marketplace não deixa ler aparece como NÃO MEDIDO, não como zero", () => {
+  const d = montarDossie(
+    entrada({ lojas: [loja("Shopee", { origem: { fechamento: "api", atualizadoEm: null, ads: "nao_medido" } })] }),
+  );
+  const texto = paraTexto(d);
+  assert.match(texto, /Anúncios pagos: NÃO MEDIDO neste canal/);
+  assert.doesNotMatch(texto, /nenhum investimento no mês neste canal/);
+  assert.equal(d.porLoja[0].derivado.adsNaoMedido, true);
+});
+
+test("ROAS, % do faturamento e comparação com o mês anterior", () => {
+  const d = montarDossie(
+    entrada({
+      lojas: [
+        loja("Mercado Livre", {
+          atual: mes(10000),
+          campanhas: [campanha(500, 2500)],
+          adsAnterior: { invested: 400, revenue: 1600 },
+        }),
+        loja("Shopee", { atual: mes(10000), origem: { fechamento: "api", atualizadoEm: null, ads: "nao_medido" } }),
+      ],
+    }),
+  );
+  const ads = d.porLoja[0].derivado.ads!;
+  assert.equal(ads.pctFaturamento, 0.05);
+  assert.equal(ads.roas, 5);
+  assert.equal(ads.roasAnterior, 4);
+  assert.equal(ads.variacaoInvestido, 0.25);
+  // total: 500 sobre 20.000, e avisa que falta a Shopee
+  assert.equal(d.derivado.ads!.pctFaturamento, 0.025);
+  assert.equal(d.derivado.ads!.incompleto, true);
+  assert.match(paraTexto(d), /investido R\$ 500,00 \(5% do faturamento do canal\)/);
+  assert.match(paraTexto(d), /o investimento variou 25%/);
+});
+
+test("a evidência precisa bater com a linha citada, não com qualquer linha", () => {
+  const d = montarDossie(entrada({ lojas: [loja("Shopee", { campanhas: [campanha(300, 900)] })] }));
+  const linhas = linhasDoDossie(d);
+  const ads = linhas.filter((l) => l.texto.startsWith("Anúncios pagos"));
+  const fat = linhas.filter((l) => l.texto.startsWith("Faturamento R$"));
+  assert.equal(evidenciaConfereNasLinhas("investiu R$ 300,00", ads), true);
+  // R$ 300 existe no dossiê, mas não na linha de faturamento
+  assert.equal(evidenciaConfereNasLinhas("investiu R$ 300,00", fat), false);
+  assert.equal(evidenciaConfereNasLinhas("investiu R$ 300,00", []), false);
 });

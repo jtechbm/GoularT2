@@ -1,5 +1,13 @@
 import OpenAI from "openai";
-import { evidenciaConfere, numerosDoDossie, paraTexto, type Dossie } from "./dossie.ts";
+import {
+  evidenciaConfere,
+  evidenciaConfereNasLinhas,
+  linhasDoDossie,
+  numerosDoDossie,
+  paraTexto,
+  type Dossie,
+  type LinhaDoDossie,
+} from "./dossie.ts";
 
 /**
  * A análise do cliente escrita por modelo de linguagem.
@@ -17,14 +25,20 @@ import { evidenciaConfere, numerosDoDossie, paraTexto, type Dossie } from "./dos
 const MODELO = "gpt-5.6-terra";
 
 /**
- * Esforço baixo. O teto combinado é de 30 segundos para a ação inteira, e o
+ * Esforço baixo. O teto é de 50 segundos para a ação inteira, e o
  * dossiê já chega pronto: o modelo interpreta número, não precisa procurar
  * nada. Esforço médio dobraria o tempo sem mudar o diagnóstico.
  */
 const ESFORCO = "low" as const;
 
-/** 25s para o modelo, deixando 5 para coletar, gravar e desenhar a tela. */
-export const ORCAMENTO_MS = 25_000;
+/**
+ * 45s para o modelo, deixando 5 para coletar, gravar e desenhar a tela.
+ *
+ * Eram 25s, e as análises já levavam de 18 a 25. Com as fontes citadas e a
+ * leitura de anúncios a resposta cresceu e passou dos 30: com o teto antigo
+ * toda análise sairia incompleta.
+ */
+export const ORCAMENTO_MS = 45_000;
 
 const ESQUEMA = {
   type: "object",
@@ -38,8 +52,9 @@ const ESQUEMA = {
           titulo: { type: "string" },
           evidencia: { type: "string" },
           onde: { type: "string" },
+          fontes: { type: "array", items: { type: "string" } },
         },
-        required: ["titulo", "evidencia", "onde"],
+        required: ["titulo", "evidencia", "onde", "fontes"],
         additionalProperties: false,
       },
     },
@@ -52,8 +67,9 @@ const ESQUEMA = {
           evidencia: { type: "string" },
           gravidade: { type: "string", enum: ["alta", "media", "baixa"] },
           onde: { type: "string" },
+          fontes: { type: "array", items: { type: "string" } },
         },
-        required: ["titulo", "evidencia", "gravidade", "onde"],
+        required: ["titulo", "evidencia", "gravidade", "onde", "fontes"],
         additionalProperties: false,
       },
     },
@@ -68,23 +84,41 @@ const ESQUEMA = {
           esforco: { type: "string", enum: ["alto", "medio", "baixo"] },
           prazo: { type: "string" },
           onde: { type: "string" },
+          fontes: { type: "array", items: { type: "string" } },
         },
-        required: ["titulo", "por_que", "impacto", "esforco", "prazo", "onde"],
+        required: ["titulo", "por_que", "impacto", "esforco", "prazo", "onde", "fontes"],
         additionalProperties: false,
       },
     },
+    anuncios: { type: "string" },
     sem_resposta: { type: "array", items: { type: "string" } },
   },
-  required: ["diagnostico", "pontos_fortes", "problemas", "acoes", "sem_resposta"],
+  required: ["diagnostico", "anuncios", "pontos_fortes", "problemas", "acoes", "sem_resposta"],
   additionalProperties: false,
 };
 
 interface RespostaCrua {
   diagnostico: string;
-  pontos_fortes: { titulo: string; evidencia: string; onde: string }[];
-  problemas: { titulo: string; evidencia: string; gravidade: string; onde: string }[];
-  acoes: { titulo: string; por_que: string; impacto: string; esforco: string; prazo: string; onde: string }[];
+  anuncios?: string;
+  pontos_fortes: { titulo: string; evidencia: string; onde: string; fontes?: string[] }[];
+  problemas: { titulo: string; evidencia: string; gravidade: string; onde: string; fontes?: string[] }[];
+  acoes: {
+    titulo: string;
+    por_que: string;
+    impacto: string;
+    esforco: string;
+    prazo: string;
+    onde: string;
+    fontes?: string[];
+  }[];
   sem_resposta: string[];
+}
+
+/** Uma linha do dossiê citada pela análise, guardada junto do resultado. */
+export interface FonteCitada {
+  id: string;
+  texto: string;
+  fonte: string;
 }
 
 export interface ItemComEvidencia {
@@ -93,8 +127,10 @@ export interface ItemComEvidencia {
   gravidade?: string;
   /** a que canal isso se refere: o nome do canal, ou ambos */
   onde: string;
-  /** a evidência cita um número que o dossiê afirma */
+  /** a evidência cita um número que o dossiê afirma (nas linhas citadas, quando há) */
   conferido: boolean;
+  /** as linhas do dossiê de onde saiu; ausente em análise antiga */
+  fontes?: FonteCitada[];
 }
 
 export interface AcaoSugerida {
@@ -104,11 +140,14 @@ export interface AcaoSugerida {
   esforco: string;
   prazo: string;
   onde: string;
+  fontes?: FonteCitada[];
 }
 
 export interface ResultadoAnalise {
   status: "ok" | "parcial";
   diagnostico: string;
+  /** leitura de ROAS, ACOS e % do faturamento investido; ausente em análise antiga */
+  anuncios?: string;
   pontosFortes: ItemComEvidencia[];
   problemas: ItemComEvidencia[];
   acoes: AcaoSugerida[];
@@ -154,6 +193,16 @@ function instrucoes(): string {
     "   está no dossiê.",
     "9. Onde o dossiê disser NÃO MEDIDO, não conclua nada: aquilo não foi",
     "   lido por falta de permissão. Registre em sem_resposta.",
+    "10. Cada linha do dossiê com número começa com um id entre colchetes,",
+    "   como [F12]. Em fontes, liste de 1 a 3 ids das linhas de onde tirou o",
+    "   que afirma (só o id, sem colchetes). O número citado na evidência tem",
+    "   de estar numa das linhas listadas. Ninguém confia em afirmação sem fonte.",
+    "11. Em anuncios, escreva um parágrafo curto (até 5 frases) só sobre anúncios pagos: quanto do",
+    "   faturamento vai para anúncio em cada canal (o % já vem calculado), o",
+    "   ROAS e o ACOS, a campanha que mais rende e a que mais desperdiça, e",
+    "   como isso mudou contra o mês anterior quando houver. Se o investimento",
+    "   de um canal for NÃO MEDIDO, diga isso com todas as letras em vez de",
+    "   tratar o canal como sem anúncio. Cite os números como estão no dossiê.",
     "",
     "O diagnóstico é um parágrafo: como o cliente está, qual canal puxa o",
     "resultado e o que mais pesa agora.",
@@ -177,6 +226,7 @@ function vazio(status: "ok" | "parcial", aviso: string): ResultadoAnalise {
   return {
     status,
     diagnostico: "",
+    anuncios: "",
     pontosFortes: [],
     problemas: [],
     acoes: [],
@@ -222,14 +272,38 @@ export async function analisarCliente(dossie: Dossie, orcamentoMs = ORCAMENTO_MS
   if (!lido) return vazio("parcial", "O modelo não devolveu um resultado legível.");
 
   const numeros = numerosDoDossie(dossie);
+  const porId = new Map(
+    linhasDoDossie(dossie)
+      .filter((l): l is LinhaDoDossie & { id: string; fonte: string } => Boolean(l.id && l.fonte))
+      .map((l) => [l.id, l]),
+  );
+  // o modelo às vezes devolve "[F12]" ou "f12"; id que não existe é descartado
+  const resolver = (ids: string[] | undefined): FonteCitada[] => {
+    const vistas = new Set<string>();
+    return (ids ?? [])
+      .map((i) => porId.get(i.replace(/[[\]\s]/g, "").toUpperCase()))
+      .filter((l): l is NonNullable<typeof l> => {
+        if (!l || vistas.has(l.id)) return false;
+        vistas.add(l.id);
+        return true;
+      })
+      .map((l) => ({ id: l.id, texto: l.texto, fonte: l.fonte }));
+  };
+
   let naoConferidos = 0;
   const conferir = (item: {
     titulo: string;
     evidencia: string;
     gravidade?: string;
     onde?: string;
+    fontes?: string[];
   }): ItemComEvidencia => {
-    const conferido = evidenciaConfere(item.evidencia, numeros);
+    const fontes = resolver(item.fontes);
+    // com fonte citada, o número tem de estar NELA; sem fonte, vale a
+    // conferência antiga contra o dossiê inteiro
+    const conferido = fontes.length
+      ? evidenciaConfereNasLinhas(item.evidencia, fontes)
+      : evidenciaConfere(item.evidencia, numeros);
     if (!conferido) naoConferidos += 1;
     return {
       titulo: item.titulo,
@@ -237,12 +311,14 @@ export async function analisarCliente(dossie: Dossie, orcamentoMs = ORCAMENTO_MS
       gravidade: item.gravidade,
       onde: item.onde ?? "",
       conferido,
+      fontes,
     };
   };
 
   return {
     status: "ok",
     diagnostico: lido.diagnostico ?? "",
+    anuncios: lido.anuncios ?? "",
     pontosFortes: (lido.pontos_fortes ?? []).map(conferir),
     problemas: (lido.problemas ?? []).map(conferir),
     acoes: (lido.acoes ?? []).slice(0, 6).map((a) => ({
@@ -252,6 +328,7 @@ export async function analisarCliente(dossie: Dossie, orcamentoMs = ORCAMENTO_MS
       esforco: a.esforco,
       prazo: a.prazo,
       onde: a.onde ?? "",
+      fontes: resolver(a.fontes),
     })),
     semResposta: lido.sem_resposta ?? [],
     naoConferidos,

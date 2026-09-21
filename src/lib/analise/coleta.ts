@@ -55,6 +55,7 @@ export interface ContaDoCliente {
   items_permission: string | null;
   comms_permission: string | null;
   promos_permission: string | null;
+  ads_permission: string | null;
 }
 
 /**
@@ -94,7 +95,8 @@ export async function clienteAnalisavel(clientId: string, escopo: Scope): Promis
 
 async function contasConectadas(clientId: string): Promise<ContaDoCliente[]> {
   return all<ContaDoCliente>(
-    `SELECT id, marketplace, nickname, status, items_permission, comms_permission, promos_permission
+    `SELECT id, marketplace, nickname, status, items_permission, comms_permission, promos_permission,
+            ads_permission
        FROM client_marketplaces
       WHERE client_id = ? AND credentials IS NOT NULL ORDER BY marketplace`,
     clientId,
@@ -268,13 +270,37 @@ export async function coletarDossie(cliente: ClienteAnalisavel, refMonth: string
       );
       const inicio = primeiro?.dia && primeiro.dia > janela.inicio ? primeiro.dia : janela.inicio;
 
-      const [dias, campanhasCruas, produtos, saudeDaLoja, sinais] = await Promise.all([
+      const [dias, campanhasCruas, campanhasAntes, produtos, saudeDaLoja, sinais, fechamento] = await Promise.all([
         serieDiaria(inicio, janela.fim, { clientId: cliente.id, marketplace: conta.marketplace }),
         adsRows({ refMonth, clientId: cliente.id, marketplace: conta.marketplace }),
+        adsRows({ refMonth: anterior, clientId: cliente.id, marketplace: conta.marketplace }),
         produtosDaConta(conta.id),
         indicadoresDaConta(conta.id),
         sinaisDaConta(conta),
+        one<{ source: string | null; updated_at: string | null }>(
+          `SELECT source, updated_at FROM finance_snapshots
+            WHERE client_id = ? AND marketplace = ? AND ref_month = ?`,
+          cliente.id,
+          conta.marketplace,
+          refMonth,
+        ),
       ]);
+
+      // de onde veio o Ads: a API, a mão da equipe, os dois, ou ninguém
+      // conseguiu ler. "Não medido" precisa chegar ao modelo: senão o canal
+      // que o marketplace esconde vira "não investiu nada".
+      const daApi = campanhasCruas.some((c) => c.source === "api");
+      const aMao = campanhasCruas.some((c) => c.source !== "api" && c.invested > 0);
+      const origemAds =
+        conta.ads_permission === "pendente" && !aMao
+          ? "nao_medido"
+          : daApi && aMao
+            ? "misto"
+            : aMao
+              ? "manual"
+              : daApi
+                ? "api"
+                : "vazio";
 
       const campanhas = ordenarPorDesempenho(campanhasCruas.map((c) => analisarCampanha(c)));
       const reputacao = saude.find((s) => s.id === conta.id);
@@ -301,6 +327,17 @@ export async function coletarDossie(cliente: ClienteAnalisavel, refMonth: string
           roas: c.roas,
           acos: c.acos,
         })),
+        origem: {
+          fechamento: fechamento?.source ?? "vazio",
+          atualizadoEm: fechamento?.updated_at ?? null,
+          ads: origemAds,
+        },
+        adsAnterior: campanhasAntes.length
+          ? {
+              invested: campanhasAntes.reduce((t, c) => t + c.invested, 0),
+              revenue: campanhasAntes.reduce((t, c) => t + c.revenue, 0),
+            }
+          : null,
         penalidades: abertas
           .filter((p) => p.client_marketplace_id === conta.id)
           .map((p) => ({

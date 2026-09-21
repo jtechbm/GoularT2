@@ -1,6 +1,6 @@
 import { all, id, now, one, run } from "@/lib/db";
 import type { Scope } from "@/lib/queries";
-import type { Dossie } from "./dossie";
+import { montarDossie, type Dossie } from "./dossie";
 import type { ResultadoAnalise } from "./llm";
 
 /**
@@ -55,8 +55,12 @@ function limite(escopo: Scope): string {
  */
 function ler(linha: LinhaAnalise | null): AnaliseLida | null {
   if (!linha) return null;
-  const dossie = JSON.parse(linha.dossier) as Dossie;
-  if (!Array.isArray(dossie?.porLoja)) return null;
+  const gravado = JSON.parse(linha.dossier) as Dossie;
+  if (!Array.isArray(gravado?.porLoja) || !Array.isArray(gravado?.lojas)) return null;
+  // As derivações são refeitas a partir dos dados de entrada gravados: são
+  // só contas, e assim a análise antiga ganha os campos novos (% do
+  // faturamento em Ads, por exemplo) em vez de mostrar buraco.
+  const dossie = montarDossie(gravado);
   return {
     id: linha.id,
     client_id: linha.client_id,

@@ -92,6 +92,24 @@ export interface SinaisDoCatalogo {
   precoMudado: number;
 }
 
+/**
+ * De onde vieram os números de uma loja.
+ *
+ * Opcional porque análises gravadas antes disto não têm: a tela mostra a
+ * fonte genérica para elas em vez de quebrar.
+ */
+export interface OrigemDaLoja {
+  /** 'api' = a integração trouxe; 'manual' = alguém digitou; 'vazio' = nada no mês */
+  fechamento: string;
+  /** quando o fechamento do mês mudou pela última vez */
+  atualizadoEm: string | null;
+  /**
+   * 'api', 'manual', 'misto', 'vazio' ou 'nao_medido' (o marketplace não
+   * deixa o app ler anúncios: zero aqui NÃO quer dizer que não investiu)
+   */
+  ads: string;
+}
+
 /** Uma loja do cliente, já com os números dela. */
 export interface LojaNoDossie {
   /** nome do marketplace como a equipe fala: "Mercado Livre", "Shopee" */
@@ -117,6 +135,9 @@ export interface LojaNoDossie {
   campanhas: CampanhaLinha[];
   penalidades: PenalidadeLinha[];
   reputacao: { nivel: string; reclamacoes: number; atrasos: number; cancelamentos: number } | null;
+  origem?: OrigemDaLoja;
+  /** investimento e receita de Ads do mês anterior, para comparar */
+  adsAnterior?: { invested: number; revenue: number } | null;
 }
 
 export interface EntradaDossie {
@@ -157,7 +178,19 @@ export interface DerivadoLoja {
   maiorSequenciaSeca: number;
   catalogo: { total: number; precoMin: number; precoMax: number; precoMediano: number; comComparacao: number };
   posicao: PosicaoDePreco;
-  ads: { invested: number; revenue: number; roas: number | null; acos: number | null } | null;
+  ads: {
+    invested: number;
+    revenue: number;
+    roas: number | null;
+    acos: number | null;
+    /** investimento sobre o faturamento do canal (TACOS): quanto da venda vai para anúncio */
+    pctFaturamento: number | null;
+    /** variação do investimento contra o mês anterior; null sem mês anterior */
+    variacaoInvestido: number | null;
+    roasAnterior: number | null;
+  } | null;
+  /** o marketplace não deixa ler Ads deste canal */
+  adsNaoMedido: boolean;
   /** quanto esta loja representa do faturamento do cliente */
   fatiaDoFaturamento: number;
   /** indicadores fora do alvo, já com o texto pronto */
@@ -184,6 +217,15 @@ export interface Dossie extends EntradaDossie {
     penalidadesInformativas: number;
     /** indicadores de saúde fora do alvo, somando os canais */
     indicadoresFora: number;
+    /** Ads somando os canais; null quando nenhum canal investiu */
+    ads: {
+      invested: number;
+      revenue: number;
+      roas: number | null;
+      pctFaturamento: number | null;
+      /** algum canal não deixa ler Ads: o total está incompleto */
+      incompleto: boolean;
+    } | null;
   };
   porLoja: (LojaNoDossie & { derivado: DerivadoLoja })[];
 }
@@ -314,6 +356,7 @@ function derivarLoja(l: LojaNoDossie, faturamentoDoCliente: number): DerivadoLoj
   const seco = diasSemVenda(l.dias);
   const investido = soma(l.campanhas.map((c) => c.invested));
   const receitaAds = soma(l.campanhas.map((c) => c.revenue));
+  const antes = l.adsAnterior ?? null;
 
   return {
     temAnterior: l.anterior.revenue > 0 || l.anterior.orders > 0,
@@ -339,8 +382,12 @@ function derivarLoja(l: LojaNoDossie, faturamentoDoCliente: number): DerivadoLoj
             revenue: receitaAds,
             roas: investido ? receitaAds / investido : null,
             acos: receitaAds ? investido / receitaAds : null,
+            pctFaturamento: l.atual.revenue ? investido / l.atual.revenue : null,
+            variacaoInvestido: antes?.invested ? diferencaRelativa(investido, antes.invested) : null,
+            roasAnterior: antes?.invested ? antes.revenue / antes.invested : null,
           }
         : null,
+    adsNaoMedido: l.origem?.ads === "nao_medido",
     fatiaDoFaturamento: faturamentoDoCliente ? l.atual.revenue / faturamentoDoCliente : 0,
     indicadoresFora: l.indicadores
       .map((i) => ({ indicador: i, avaliacao: avaliarIndicador(i) }))
@@ -356,6 +403,9 @@ function derivarLoja(l: LojaNoDossie, faturamentoDoCliente: number): DerivadoLoj
 export function montarDossie(e: EntradaDossie): Dossie {
   const atual = somarLinhas(e.lojas.map((l) => l.atual));
   const anterior = somarLinhas(e.lojas.map((l) => l.anterior));
+  const porLoja = e.lojas.map((l) => ({ ...l, derivado: derivarLoja(l, atual.revenue) }));
+  const investido = soma(porLoja.map((l) => l.derivado.ads?.invested ?? 0));
+  const receitaAds = soma(porLoja.map((l) => l.derivado.ads?.revenue ?? 0));
 
   return {
     ...e,
@@ -376,8 +426,17 @@ export function montarDossie(e: EntradaDossie): Dossie {
       indicadoresFora: soma(
         e.lojas.map((l) => l.indicadores.filter((i) => avaliarIndicador(i).fora).length),
       ),
+      ads: investido
+        ? {
+            invested: investido,
+            revenue: receitaAds,
+            roas: receitaAds / investido,
+            pctFaturamento: atual.revenue ? investido / atual.revenue : null,
+            incompleto: porLoja.some((l) => l.derivado.adsNaoMedido),
+          }
+        : null,
     },
-    porLoja: e.lojas.map((l) => ({ ...l, derivado: derivarLoja(l, atual.revenue) })),
+    porLoja,
   };
 }
 
@@ -393,16 +452,54 @@ function multiplo(v: number | null): string {
   return v === null ? "indefinido" : v.toLocaleString("pt-BR", { maximumFractionDigits: 2 });
 }
 
+/** Uma linha do dossiê com a origem do que ela afirma. */
+export interface LinhaDoDossie {
+  /** F1, F2…; null em título de seção e linha em branco */
+  id: string | null;
+  texto: string;
+  /** de onde vem o número: loja, API ou lançado à mão, e quando */
+  fonte: string | null;
+}
+
+const ROTULO_ORIGEM: Record<string, string> = {
+  api: "lido pela integração",
+  manual: "lançado à mão pela equipe",
+  misto: "integração + lançado à mão",
+  vazio: "sem dado no mês",
+  nao_medido: "o marketplace não deixa ler",
+};
+
+function dataCurta(iso: string | null | undefined): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return ` · atualizado em ${d.toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" })}`;
+}
+
 /**
- * O dossiê em texto, do jeito que o modelo recebe.
+ * O dossiê linha a linha, cada uma com a sua fonte.
  *
- * Texto e não JSON de propósito: o pedido fica legível para quem for depurar
- * uma análise estranha meses depois, e é o mesmo texto que a tela guarda.
+ * É daqui que sai o texto do modelo e a tela "de onde vêm os números". O
+ * modelo cita os ids das linhas que usou, e a tela mostra a linha e a fonte
+ * ao lado de cada afirmação: o Kadu vê de onde saiu o número sem ter de
+ * confiar na IA.
  */
-export function paraTexto(d: Dossie): string {
-  const l: string[] = [];
+export function linhasDoDossie(d: Dossie): LinhaDoDossie[] {
+  const saida: LinhaDoDossie[] = [];
+  let fonte: string | null = null;
+  const l = {
+    push(...textos: string[]) {
+      for (const texto of textos) saida.push({ id: null, texto, fonte: texto.trim() ? fonte : null });
+    },
+    /** título de seção: não afirma número, não ganha id */
+    titulo(texto: string) {
+      saida.push({ id: null, texto, fonte: null });
+    },
+  };
   const dv = d.derivado;
   const canais = d.porLoja.map((x) => x.marketplace).join(" e ");
+  const mesDoDossie = d.mes.split("-").reverse().join("/");
+  fonte = "Cadastro do cliente no sistema";
 
   l.push(`CLIENTE: ${d.cliente.nome} — vende em ${canais || "nenhum canal conectado"}`);
   l.push(`Situação: ${d.cliente.status}. Mês analisado: ${d.mes}. Origem dos números: ${d.procedencia}.`);
@@ -414,7 +511,8 @@ export function paraTexto(d: Dossie): string {
   if (d.contrato.estrategia) l.push(`Estratégia registrada pela equipe: ${d.contrato.estrategia}`);
 
   l.push("");
-  l.push("TOTAL DO CLIENTE, SOMANDO OS CANAIS");
+  fonte = `Fechamento de ${mesDoDossie}, somando os canais · ${ROTULO_ORIGEM[d.procedencia] ?? d.procedencia}`;
+  l.titulo("TOTAL DO CLIENTE, SOMANDO OS CANAIS");
   if (dv.temAnterior) {
     l.push(
       `Faturamento R$ ${real(d.total.atual.revenue)} (mês anterior R$ ${real(d.total.anterior.revenue)}, variação ${porcento(dv.variacaoFaturamento)}).`,
@@ -436,10 +534,19 @@ export function paraTexto(d: Dossie): string {
     );
   }
 
+  if (dv.ads) {
+    l.push(
+      `Anúncios somando os canais: investido R$ ${real(dv.ads.invested)}${dv.ads.pctFaturamento === null ? "" : ` (${porcento(dv.ads.pctFaturamento)} do faturamento)`}, receita atribuída R$ ${real(dv.ads.revenue)}, ROAS ${multiplo(dv.ads.roas)}.${dv.ads.incompleto ? " INCOMPLETO: falta o Ads de canal que o marketplace não deixa ler." : ""}`,
+    );
+  }
+
   for (const loja of d.porLoja) {
     const ld = loja.derivado;
+    const o = loja.origem;
+    const fonteLoja = `${loja.marketplace} · pedidos de ${mesDoDossie} · ${ROTULO_ORIGEM[o?.fechamento ?? d.procedencia] ?? "fechamento do mês"}${dataCurta(o?.atualizadoEm)}`;
     l.push("");
-    l.push(`=== CANAL: ${loja.marketplace.toUpperCase()}${loja.apelido ? ` (${loja.apelido})` : ""} ===`);
+    l.titulo(`=== CANAL: ${loja.marketplace.toUpperCase()}${loja.apelido ? ` (${loja.apelido})` : ""} ===`);
+    fonte = fonteLoja;
     l.push(`Conexão: ${loja.statusConta}. Fatia do faturamento do cliente: ${porcento(ld.fatiaDoFaturamento)}.`);
 
     if (ld.temAnterior) {
@@ -453,10 +560,12 @@ export function paraTexto(d: Dossie): string {
     }
     l.push(`Lucro R$ ${real(loja.atual.profit)}, margem ${porcento(ld.margem)}, taxas R$ ${real(loja.atual.fees)}.`);
 
+    fonte = `${loja.marketplace} · vendas dia a dia dos últimos 30 dias`;
     l.push(
       `Ritmo: ${loja.dias.length} dias com dado${loja.dias.length ? ` (${loja.dias[0].day} a ${loja.dias[loja.dias.length - 1].day})` : ""}, ${ld.diasSemVenda} sem venda, maior sequência seca ${ld.maiorSequenciaSeca} dias, ${DIAS_DE_PICO} melhores dias concentram ${porcento(ld.concentracaoTopDias)}.`,
     );
 
+    fonte = `${loja.marketplace} · anúncios importados da loja, com a comparação de preço do sistema`;
     if (!ld.catalogo.total) {
       l.push("Catálogo: nenhum anúncio importado neste canal — não dá para falar de preço aqui.");
     } else {
@@ -474,12 +583,26 @@ export function paraTexto(d: Dossie): string {
       }
     }
 
-    if (!ld.ads) {
+    fonte = `${loja.marketplace} Ads · campanhas de ${mesDoDossie} · ${ROTULO_ORIGEM[o?.ads ?? "api"] ?? "campanhas do mês"}`;
+    if (ld.adsNaoMedido && !ld.ads) {
+      l.push(
+        "Anúncios pagos: NÃO MEDIDO neste canal. O marketplace não deixa o app ler o investimento em anúncios; " +
+          "zero aqui não quer dizer que não investiu. Não conclua nada sobre ROAS nem investimento deste canal.",
+      );
+    } else if (!ld.ads) {
       l.push("Anúncios pagos: nenhum investimento no mês neste canal.");
     } else {
       l.push(
-        `Anúncios pagos: investido R$ ${real(ld.ads.invested)}, receita R$ ${real(ld.ads.revenue)}, ROAS ${multiplo(ld.ads.roas)}, ACOS ${ld.ads.acos === null ? "indefinido (gastou e não vendeu)" : porcento(ld.ads.acos)}.`,
+        `Anúncios pagos: investido R$ ${real(ld.ads.invested)}${ld.ads.pctFaturamento === null ? "" : ` (${porcento(ld.ads.pctFaturamento)} do faturamento do canal)`}, receita atribuída R$ ${real(ld.ads.revenue)}, ROAS ${multiplo(ld.ads.roas)}, ACOS ${ld.ads.acos === null ? "indefinido (gastou e não vendeu)" : porcento(ld.ads.acos)}.`,
       );
+      if (ld.ads.variacaoInvestido !== null && loja.adsAnterior) {
+        l.push(
+          `Anúncios no mês anterior: investido R$ ${real(loja.adsAnterior.invested)}, receita R$ ${real(loja.adsAnterior.revenue)}, ROAS ${multiplo(ld.ads.roasAnterior)}; o investimento variou ${porcento(ld.ads.variacaoInvestido)}.`,
+        );
+      }
+      if (ld.adsNaoMedido) {
+        l.push("Parte do Ads deste canal NÃO foi lida (o marketplace não deixa): o investimento acima pode estar incompleto.");
+      }
       for (const c of loja.campanhas.slice(0, 8)) {
         l.push(
           `  - ${c.nome}: investido R$ ${real(c.invested)}, receita R$ ${real(c.revenue)}, ${c.clicks} cliques, ${c.orders} vendas, ROAS ${multiplo(c.roas)}.`,
@@ -487,6 +610,7 @@ export function paraTexto(d: Dossie): string {
       }
     }
 
+    fonte = `${loja.marketplace} · saúde da loja publicada pelo marketplace`;
     if (loja.notaDaLoja !== null) l.push(`Nota que o marketplace dá à loja: ${loja.notaDaLoja} de 5.`);
 
     if (loja.indicadores.length) {
@@ -503,6 +627,7 @@ export function paraTexto(d: Dossie): string {
       if (dentro.length) l.push(`Indicadores dentro do alvo: ${dentro.join(", ")}.`);
     }
 
+    fonte = `${loja.marketplace} · situação dos anúncios importados da loja`;
     l.push(
       `Sinais do catálogo: ${loja.sinais.barrados} barrados pelo marketplace, ` +
         `${loja.sinais.rebaixados} rebaixados na busca, ` +
@@ -510,6 +635,7 @@ export function paraTexto(d: Dossie): string {
         `, ${loja.sinais.precoMudado} com preço mexido nos últimos 7 dias.`,
     );
 
+    fonte = `${loja.marketplace} · penalidades lidas do marketplace`;
     if (loja.penalidades.length) {
       for (const p of loja.penalidades) {
         l.push(`Penalidade [${p.severity}] ${p.kind}: ${p.titulo} (detectada em ${p.detectadaEm}).`);
@@ -518,6 +644,7 @@ export function paraTexto(d: Dossie): string {
       l.push("Penalidades: nenhuma aberta neste canal.");
     }
 
+    fonte = `${loja.marketplace} · permissões do app na loja`;
     if (loja.pendencias.length) {
       l.push(
         `NÃO MEDIDO neste canal, por falta de permissão no app: ${loja.pendencias.join(", ")}. ` +
@@ -525,6 +652,7 @@ export function paraTexto(d: Dossie): string {
       );
     }
 
+    fonte = `${loja.marketplace} · reputação publicada pelo marketplace`;
     if (loja.reputacao) {
       l.push(
         `Reputação: nível ${loja.reputacao.nivel}, reclamações ${porcento(loja.reputacao.reclamacoes)}, atrasos ${porcento(loja.reputacao.atrasos)}, cancelamentos ${porcento(loja.reputacao.cancelamentos)}.`,
@@ -533,29 +661,51 @@ export function paraTexto(d: Dossie): string {
   }
 
   l.push("");
-  l.push("METAS DO MÊS (do cliente, somando os canais)");
+  fonte = "Metas cadastradas pela equipe no sistema";
+  l.titulo("METAS DO MÊS (do cliente, somando os canais)");
   if (!d.metas.length) l.push("Nenhuma meta cadastrada para este mês.");
   for (const m of d.metas) {
     l.push(`- ${m.label}: meta ${real(m.meta)}, realizado ${real(m.realizado)} — ${m.bom ? "cumprida" : "furada"}.`);
   }
 
   l.push("");
-  l.push("PONTOS DE ATENÇÃO JÁ DETECTADOS PELO SISTEMA");
+  fonte = "Alertas calculados pelo sistema";
+  l.titulo("PONTOS DE ATENÇÃO JÁ DETECTADOS PELO SISTEMA");
   if (!d.alertas.length) l.push("Nenhum alerta aberto.");
   for (const a of d.alertas) l.push(`- [${a.nivel}] ${a.titulo}: ${a.detalhe}`);
 
   if (d.score) {
     l.push("");
+    fonte = "Score de saúde calculado pelo sistema";
     l.push(`SCORE DE SAÚDE DO CLIENTE: ${d.score.valor} de 100 (${d.score.classe}).`);
     for (const m of d.score.motivos) l.push(`- ${m}`);
   }
 
-  return l.join("\n");
+  let n = 0;
+  return saida.map((linha) => (linha.fonte ? { ...linha, id: `F${++n}` } : linha));
+}
+
+/**
+ * O dossiê em texto, do jeito que o modelo recebe.
+ *
+ * Texto e não JSON de propósito: o pedido fica legível para quem for depurar
+ * uma análise estranha meses depois. Cada linha com número leva o id [F12]
+ * que o modelo cita em `fontes`.
+ */
+export function paraTexto(d: Dossie): string {
+  return linhasDoDossie(d)
+    .map((l) => (l.id ? `[${l.id}] ${l.texto}` : l.texto))
+    .join("\n");
+}
+
+/** Os ids [F12] não são números do dossiê: saem antes de conferir. */
+function semIds(texto: string): string {
+  return texto.replace(/\[?\bF\d+\b\]?/g, " ");
 }
 
 /** Todos os números que o dossiê afirma, para conferir o que o modelo cita. */
 export function numerosDoDossie(d: Dossie): number[] {
-  return numerosDoTrecho(paraTexto(d));
+  return numerosDoTrecho(linhasDoDossie(d).map((l) => l.texto).join("\n"));
 }
 
 /**
@@ -570,7 +720,19 @@ export function numerosDoDossie(d: Dossie): number[] {
  * trilho é pior do que mostrar.
  */
 export function evidenciaConfere(evidencia: string, numeros: number[]): boolean {
-  const citados = numerosDoTrecho(evidencia ?? "");
+  const citados = numerosDoTrecho(semIds(evidencia ?? ""));
   if (!citados.length) return false;
   return citados.some((c) => numeros.some((n) => Math.abs(c - n) <= Math.max(0.01, Math.abs(n) * 0.02)));
+}
+
+/**
+ * A evidência bate com as linhas que o modelo disse ter usado?
+ *
+ * Mais forte que conferir contra o dossiê inteiro: "R$ 1.000" existe em
+ * algum lugar quase sempre, mas precisa existir NA linha citada. Sem fonte
+ * citada, cai na conferência geral.
+ */
+export function evidenciaConfereNasLinhas(evidencia: string, linhas: LinhaDoDossie[]): boolean {
+  if (!linhas.length) return false;
+  return evidenciaConfere(evidencia, numerosDoTrecho(linhas.map((l) => l.texto).join("\n")));
 }

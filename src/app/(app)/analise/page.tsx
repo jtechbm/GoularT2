@@ -10,9 +10,10 @@ import { ClientePicker } from "@/components/cliente-picker";
 import { analisarClienteAction } from "@/lib/actions/analise";
 import { clientesAnalisaveis } from "@/lib/analise/coleta";
 import { analisePorId, historicoDoCliente, ultimaAnalise } from "@/lib/analise/repositorio";
+import { BlocoAnuncios, FontesCitadas, TabelaFontes } from "@/components/analise-blocos";
 
 /**
- * A análise tem teto próprio de 30 segundos, bem abaixo dos 60 da plataforma.
+ * A análise tem teto próprio de 50 segundos, abaixo dos 60 da plataforma.
  * O limite maior fica declarado porque o padrão de 10s cortaria a chamada no
  * meio, e isso só apareceria em produção.
  */
@@ -50,15 +51,22 @@ export default async function AnalisePage({
     <>
       <PageHeader
         title="Análise do cliente"
-        subtitle="A IA lê os números de todos os canais do cliente e diz o que fazer. Leva uns 30 segundos e custa por execução."
+        subtitle="A IA lê os números de todos os canais do cliente e diz o que fazer. Leva uns 40 segundos e custa por execução."
         actions={
-          cliente && podeRodar ? (
-            <form action={analisarClienteAction}>
-              <input type="hidden" name="cliente_id" value={cliente.id} />
-              <input type="hidden" name="mes" value={refMonth} />
-              <SubmitButton pendingLabel="Analisando… (~30s)">Analisar agora</SubmitButton>
-            </form>
-          ) : null
+          <div className="flex flex-wrap gap-2">
+            {analise && (
+              <Link href={`/analise/relatorio?a=${analise.id}`} className="btn btn-ghost">
+                Gerar PDF
+              </Link>
+            )}
+            {cliente && podeRodar && (
+              <form action={analisarClienteAction}>
+                <input type="hidden" name="cliente_id" value={cliente.id} />
+                <input type="hidden" name="mes" value={refMonth} />
+                <SubmitButton pendingLabel="Analisando… (~40s)">Analisar agora</SubmitButton>
+              </form>
+            )}
+          </div>
         }
       />
 
@@ -119,7 +127,7 @@ export default async function AnalisePage({
             title="Este cliente ainda não foi analisado"
             hint={
               podeRodar
-                ? "Clique em Analisar agora. Leva uns 30 segundos e o resultado fica guardado, então abrir a tela depois não gasta nada."
+                ? "Clique em Analisar agora. Leva uns 40 segundos e o resultado fica guardado, então abrir a tela depois não gasta nada."
                 : "Peça ao admin para rodar a primeira análise. Depois ela fica guardada e aparece aqui."
             }
           />
@@ -150,10 +158,20 @@ export default async function AnalisePage({
               tone={d.derivado.margem <= 0 ? "bad" : d.derivado.margem < 0.05 ? "warn" : "ok"}
             />
             <Stat
-              label="Canais"
-              value={String(d.porLoja.length)}
-              hint={d.porLoja.map((l) => l.marketplace).join(" · ")}
-              tone="brand"
+              label="Investido em Ads"
+              value={d.derivado.ads ? brl(d.derivado.ads.invested) : "—"}
+              hint={
+                d.derivado.ads
+                  ? `${d.derivado.ads.pctFaturamento === null ? "" : `${pct(d.derivado.ads.pctFaturamento)} do fat. · `}ROAS ${d.derivado.ads.roas?.toFixed(2) ?? "—"}x${d.derivado.ads.incompleto ? " · incompleto" : ""}`
+                  : d.porLoja.some((l) => l.derivado.adsNaoMedido)
+                    ? "não medido em algum canal"
+                    : "sem investimento no mês"
+              }
+              tone={
+                d.derivado.ads?.incompleto || (!d.derivado.ads && d.porLoja.some((l) => l.derivado.adsNaoMedido))
+                  ? "warn"
+                  : "brand"
+              }
             />
             <Stat
               label="Indicadores fora do alvo"
@@ -198,6 +216,8 @@ export default async function AnalisePage({
               </p>
             )}
           </Card>
+
+          <BlocoAnuncios d={d} r={r ?? null} />
 
           <Card
             className="mt-3"
@@ -348,6 +368,7 @@ export default async function AnalisePage({
                       <Chip tone="info">{a.prazo}</Chip>
                     </div>
                     <p className="mt-1.5 whitespace-pre-wrap text-xs leading-relaxed text-muted">{a.porQue}</p>
+                    <FontesCitadas fontes={a.fontes} />
                   </li>
                 ))}
               </ol>
@@ -369,6 +390,7 @@ export default async function AnalisePage({
                         {!p.conferido && <Chip tone="warn">número não confere</Chip>}
                       </div>
                       <p className="mt-1 text-xs text-muted">{p.evidencia}</p>
+                      <FontesCitadas fontes={p.fontes} />
                     </li>
                   ))}
                 </ul>
@@ -388,6 +410,7 @@ export default async function AnalisePage({
                         {!p.conferido && <Chip tone="warn">número não confere</Chip>}
                       </div>
                       <p className="mt-1 text-xs text-muted">{p.evidencia}</p>
+                      <FontesCitadas fontes={p.fontes} />
                     </li>
                   ))}
                 </ul>
@@ -405,62 +428,7 @@ export default async function AnalisePage({
             </Card>
           )}
 
-          <Card
-            className="mt-3"
-            title="Números que a análise usou"
-            subtitle={`Origem: ${d.procedencia} · metas: ${
-              d.metas.length ? `${d.derivado.metasCumpridas} de ${d.metas.length} cumpridas` : "nenhuma cadastrada"
-            } · alertas abertos: ${d.alertas.length || "nenhum"}`}
-            bodyClassName="p-0"
-          >
-            <div className="table-wrap">
-              <table className="data responsiva">
-                <tbody>
-                  <tr>
-                    <td data-label="Total">Faturamento do cliente</td>
-                    <td data-label="Valor" className="num">
-                      {brl(d.total.atual.revenue)}
-                      {d.derivado.temAnterior
-                        ? ` · anterior ${brl(d.total.anterior.revenue)} (${pct(d.derivado.variacaoFaturamento)})`
-                        : " · sem mês anterior gravado"}
-                    </td>
-                  </tr>
-                  <tr>
-                    <td data-label="Pedidos">Pedidos e ticket</td>
-                    <td data-label="Valor" className="num">
-                      {d.total.atual.orders} pedidos · ticket {brl(d.derivado.ticket)}
-                    </td>
-                  </tr>
-                  <tr>
-                    <td data-label="Custos">Custos do mês</td>
-                    <td data-label="Valor" className="num">
-                      taxas {brl(d.total.atual.fees)} · frete {brl(d.total.atual.shipping)} · produto{" "}
-                      {brl(d.total.atual.cogs)} · anúncios {brl(d.total.atual.ads)}
-                    </td>
-                  </tr>
-                  {d.porLoja.map((l) => (
-                    <tr key={`ritmo-${l.marketplace}`}>
-                      <td data-label="Canal">Ritmo · {l.marketplace}</td>
-                      <td data-label="Valor" className="num">
-                        {l.dias.length} dias com dado · {l.derivado.diasSemVenda} sem venda · maior sequência{" "}
-                        {l.derivado.maiorSequenciaSeca} · top 5 dias {pct(l.derivado.concentracaoTopDias)}
-                      </td>
-                    </tr>
-                  ))}
-                  {d.porLoja.map((l) => (
-                    <tr key={`catalogo-${l.marketplace}`}>
-                      <td data-label="Canal">Catálogo · {l.marketplace}</td>
-                      <td data-label="Valor" className="num">
-                        {l.derivado.catalogo.total} anúncios · de {brl(l.derivado.catalogo.precoMin)} a{" "}
-                        {brl(l.derivado.catalogo.precoMax)} · mediano {brl(l.derivado.catalogo.precoMediano)} ·{" "}
-                        {l.derivado.catalogo.comComparacao} comparados
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </Card>
+          <TabelaFontes d={d} />
 
           {historico.length > 1 && (
             <Card className="mt-3" title="Análises anteriores" bodyClassName="p-0">

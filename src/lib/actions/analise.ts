@@ -8,8 +8,14 @@ import { clienteAnalisavel, coletarDossie } from "@/lib/analise/coleta";
 import { analisarCliente } from "@/lib/analise/llm";
 import { gravarAnalise } from "@/lib/analise/repositorio";
 
-/** O teto combinado: a ação inteira cabe em 30 segundos. */
-const TETO_MS = 30_000;
+/**
+ * A ação inteira cabe em 50 segundos, abaixo dos 60 da plataforma.
+ *
+ * Eram 30. Com as fontes citadas e a leitura de anúncios a resposta do
+ * modelo passou dos 30 sozinha (33,6s medidos em 21/09), e o teto antigo
+ * transformaria toda análise em "incompleta".
+ */
+const TETO_MS = 50_000;
 
 function recado(e: unknown): string {
   return e instanceof Error ? e.message : "Não consegui analisar agora.";
@@ -22,7 +28,7 @@ function recado(e: unknown): string {
  * execução, e ação de servidor pode ser chamada direto, sem passar pelo botão
  * que a esconde.
  *
- * O orçamento de tempo é repartido: o que sobrar dos 30 segundos depois da
+ * O orçamento de tempo é repartido: o que sobrar dos 50 segundos depois da
  * coleta é o que o modelo tem para pensar. Assim a conta fecha mesmo quando o
  * banco está lento, em vez de somar 3 + 25 e estourar.
  */
