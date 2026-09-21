@@ -572,6 +572,50 @@ export async function adsRows(
   );
 }
 
+/**
+ * Cada canal conectado de cada cliente, com o faturamento do mês e se o Ads
+ * dele pode ser lido. É a base da tabela "por cliente" da tela de Ads: sem o
+ * faturamento não existe "% investido", e sem a permissão um canal que o
+ * marketplace esconde viraria "não investiu nada".
+ */
+export async function canaisDeAds(
+  refMonth: string,
+  filtro: { clientId?: string; marketplace?: string; scope?: Scope } = {},
+) {
+  const where: string[] = ["cm.status <> 'desativado'", "c.kind = 'cliente'"];
+  const params: unknown[] = [refMonth];
+  if (filtro.scope) {
+    where.push(filtro.scope.length ? `cm.client_id IN (${filtro.scope.map(() => "?").join(",")})` : "1 = 0");
+    params.push(...filtro.scope);
+  }
+  if (filtro.clientId) {
+    where.push("cm.client_id = ?");
+    params.push(filtro.clientId);
+  }
+  if (filtro.marketplace) {
+    where.push("cm.marketplace = ?");
+    params.push(filtro.marketplace);
+  }
+  return all<{
+    client_id: string;
+    client_name: string;
+    marketplace: string;
+    revenue: number;
+    ads_permission: string | null;
+  }>(
+    `SELECT DISTINCT ON (cm.client_id, cm.marketplace)
+            cm.client_id, c.name AS client_name, cm.marketplace,
+            COALESCE(f.revenue, 0) AS revenue, cm.ads_permission
+       FROM client_marketplaces cm
+       JOIN clients c ON c.id = cm.client_id
+       LEFT JOIN finance_snapshots f
+              ON f.client_id = cm.client_id AND f.marketplace = cm.marketplace AND f.ref_month = ?
+      WHERE ${where.join(" AND ")}
+      ORDER BY cm.client_id, cm.marketplace, (cm.ads_permission = 'pendente') DESC`,
+    ...params,
+  );
+}
+
 export async function clientOptions(scope?: Scope) {
   const s = scoped(scope, "id");
   return all<{ id: string; name: string; status: string }>(

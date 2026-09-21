@@ -1,102 +1,84 @@
 import Link from "next/link";
 import { Suspense } from "react";
 import { requireUser, visibleClientIds } from "@/lib/auth";
-import {
-  adsRows,
-  clientOptions,
-  goalsForMonth,
-  periodoDe,
-  procedenciaDoMes,
-  serieDiaria,
-} from "@/lib/queries";
-import { brl, brlShort, currentMonth, lastMonths, monthLabel, num, origemLabel, pct } from "@/lib/format";
+import { adsRows, canaisDeAds, clientOptions, procedenciaDoMes, serieDiaria } from "@/lib/queries";
+import { brl, currentMonth, lastMonths, monthLabel, num, pct } from "@/lib/format";
 import { Card, Chip, Empty, Field, MarketplaceChip, PageHeader, Stat } from "@/components/ui";
 import { SaveBar, SubmitButton } from "@/components/submit";
 import { MonthPicker } from "@/components/month-picker";
 import { Procedencia } from "@/components/procedencia";
-import { SerieDiaria } from "@/components/serie-diaria";
 import { createAdsAction, deleteAdsAction } from "@/lib/actions/ads";
-import { analisarCampanha, ordenarPorDesempenho, resumirAds } from "@/lib/ads-analise";
+import { analisarCampanha, resumirAds } from "@/lib/ads-analise";
 import { MARKETPLACES, marketplaceLabel } from "@/lib/types";
 
-function Metrica({ label, valor, hint }: { label: string; valor: string; hint?: string }) {
-  return (
-    <div className="rounded-[10px] border border-line bg-surface-2 px-3 py-2.5">
-      <div className="text-[0.65rem] uppercase tracking-wide text-dim">{label}</div>
-      <div className="text-base font-semibold text-ink">{valor}</div>
-      {hint && <div className="text-[0.65rem] text-dim">{hint}</div>}
-    </div>
-  );
-}
-
+/**
+ * Ads: quanto foi investido, quanto voltou, em qual cliente e em qual campanha.
+ *
+ * A versão anterior misturava o dia a dia da loja inteira (faturamento,
+ * taxas, frete) com anúncio, repetia a mesma campanha em "melhores",
+ * "piores" e "todas", e mostrava ROAS e ACOS (o mesmo número invertido) como
+ * dois destaques. O Kadu e a equipe não conseguiam achar a resposta. Agora a
+ * página segue a ordem das perguntas, e o que é detalhe fica embaixo.
+ */
 export default async function AdsPage({
   searchParams,
 }: {
-  searchParams: Promise<{
-    mes?: string;
-    cliente?: string;
-    canal?: string;
-    campanha?: string;
-    periodo?: string;
-    ok?: string;
-  }>;
+  searchParams: Promise<{ mes?: string; cliente?: string; canal?: string; ok?: string; erro?: string }>;
 }) {
   const user = await requireUser();
   const sp = await searchParams;
   const months = lastMonths(12);
   const ref = sp.mes && months.includes(sp.mes) ? sp.mes : currentMonth();
-
   const escopo = await visibleClientIds(user);
-  const atalho = sp.periodo ?? "mes";
-  const periodo = periodoDe(atalho, ref, undefined, undefined);
+  const filtro = { clientId: sp.cliente || undefined, marketplace: sp.canal || undefined, scope: escopo };
 
-  const linhas = await adsRows({ refMonth: ref, clientId: sp.cliente, marketplace: sp.canal, scope: escopo });
-  const clients = await clientOptions(escopo);
-  const procedencia = await procedenciaDoMes(ref, { scope: escopo });
-  const dias = await serieDiaria(periodo.inicio, periodo.fim, {
-    clientId: sp.cliente,
-    marketplace: sp.canal,
-    scope: escopo,
-  });
-  const metas = await goalsForMonth(ref, escopo);
+  const fimDoMes = new Date(Date.UTC(Number(ref.slice(0, 4)), Number(ref.slice(5, 7)), 0)).toISOString().slice(0, 10);
+  const [linhas, canais, clients, procedencia, dias] = await Promise.all([
+    adsRows({ refMonth: ref, ...filtro }),
+    canaisDeAds(ref, filtro),
+    clientOptions(escopo),
+    procedenciaDoMes(ref, { scope: escopo }),
+    serieDiaria(`${ref}-01`, fimDoMes, filtro),
+  ]);
 
-  const filtradas = sp.campanha
-    ? linhas.filter((l) => (l.campaign ?? "").toLowerCase().includes(sp.campanha!.toLowerCase()))
-    : linhas;
+  // lançamento sem valor nenhum não é campanha: só polui a lista
+  const campanhas = linhas
+    .map(analisarCampanha)
+    .filter((c) => c.invested > 0 || c.revenue > 0)
+    .sort((a, b) => b.invested - a.invested);
+  const resumo = resumirAds(campanhas);
 
-  const campanhas = filtradas.map(analisarCampanha);
-  const prints = dias.reduce((s, d) => s + d.prints, 0);
-  const resumo = resumirAds(campanhas, prints);
-  const ranking = ordenarPorDesempenho(campanhas);
-  const melhores = ranking.slice(0, 5);
-  const piores = [...ranking].reverse().slice(0, 5);
+  const naoLidos = canais.filter((c) => c.ads_permission === "pendente");
 
-  const automaticos = campanhas.filter((c) => c.automatica).length;
-  const manuais = campanhas.length - automaticos;
+  // uma linha por cliente e canal: o que investiu, o que voltou, e quanto
+  // isso pesa no faturamento daquele canal
+  const porCanal = canais
+    .map((c) => {
+      const doCanal = campanhas.filter((x) => x.clientId === c.client_id && x.marketplace === c.marketplace);
+      const investido = doCanal.reduce((s, x) => s + x.invested, 0);
+      const receita = doCanal.reduce((s, x) => s + x.revenue, 0);
+      return {
+        ...c,
+        investido,
+        receita,
+        naoLido: c.ads_permission === "pendente" && !doCanal.some((x) => !x.automatica),
+      };
+    })
+    .sort((a, b) => b.investido - a.investido || Number(a.naoLido) - Number(b.naoLido));
 
-  // orçamento e metas: quando o filtro é um cliente só, usa a meta dele;
-  // com a carteira inteira, soma os tetos de quem tem meta definida
-  const metasNoRecorte = sp.cliente ? metas.filter((m) => m.client_id === sp.cliente) : metas;
-  const tetoAds = metasNoRecorte.reduce((s, m) => s + (m.ads_budget ?? 0), 0) || null;
-  const metaRoas = sp.cliente ? (metasNoRecorte[0]?.min_roas ?? null) : null;
-  const metaAcos = sp.cliente ? (metasNoRecorte[0]?.max_acos ?? null) : null;
+  // % investido só sobre o faturamento dos canais cujo Ads foi lido: dividir
+  // pelo total punha os R$ 202 mil da Shopee (sem Ads lido) no denominador e
+  // mostrava "0% do faturamento"
+  const faturamentoLido = porCanal.filter((c) => !c.naoLido).reduce((s, c) => s + c.revenue, 0);
 
-  // vendas totais x vendas vindas de anúncio, para ver quanto do faturamento
-  // depende de mídia paga
-  const faturamentoTotal = dias.reduce((s, d) => s + d.revenue, 0);
-  const parcelaPaga = faturamentoTotal ? resumo.revenue / faturamentoTotal : null;
+  const diasComAds = dias.filter((d) => d.ads > 0);
+  const maiorDia = Math.max(...dias.map((d) => d.ads), 0);
 
-  const link = (extra: Record<string, string | undefined>) => {
-    const p = new URLSearchParams();
-    p.set("mes", ref);
+  const link = (extra: Record<string, string>) => {
+    const p = new URLSearchParams({ mes: ref });
     if (sp.cliente) p.set("cliente", sp.cliente);
     if (sp.canal) p.set("canal", sp.canal);
-    if (sp.campanha) p.set("campanha", sp.campanha);
-    p.set("periodo", atalho);
-    for (const [k, v] of Object.entries(extra)) {
-      if (v === undefined || v === "") p.delete(k);
-      else p.set(k, v);
-    }
+    for (const [k, v] of Object.entries(extra)) v ? p.set(k, v) : p.delete(k);
     return `/ads?${p}`;
   };
 
@@ -106,7 +88,7 @@ export default async function AdsPage({
         title="Ads"
         subtitle={
           <span className="flex flex-wrap items-center gap-2">
-            <span>Investimento por cliente e loja · {monthLabel(ref)}</span>
+            <span>Quanto foi investido em anúncio e quanto voltou em vendas · {monthLabel(ref)}</span>
             <Procedencia
               origem={procedencia.origem}
               atualizadoEm={procedencia.atualizadoEm}
@@ -116,151 +98,179 @@ export default async function AdsPage({
           </span>
         }
         actions={
-          <Suspense fallback={null}>
-            <MonthPicker months={months} value={ref} />
-          </Suspense>
+          <div className="flex flex-wrap items-center gap-2">
+            <form className="flex flex-wrap items-center gap-2" action="/ads">
+              <input type="hidden" name="mes" value={ref} />
+              <select name="cliente" defaultValue={sp.cliente ?? ""} className="select w-40" aria-label="Cliente">
+                <option value="">Todos os clientes</option>
+                {clients.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+              <select name="canal" defaultValue={sp.canal ?? ""} className="select w-40" aria-label="Loja">
+                <option value="">Todas as lojas</option>
+                {MARKETPLACES.map((m) => (
+                  <option key={m.value} value={m.value}>
+                    {m.label}
+                  </option>
+                ))}
+              </select>
+              <button type="submit" className="btn btn-ghost">
+                Filtrar
+              </button>
+              {(sp.cliente || sp.canal) && (
+                <Link href={`/ads?mes=${ref}`} className="text-xs text-dim hover:text-brand">
+                  limpar
+                </Link>
+              )}
+            </form>
+            <Suspense fallback={null}>
+              <MonthPicker months={months} value={ref} />
+            </Suspense>
+          </div>
         }
       />
+
+      {sp.ok && (
+        <div className="flash mb-4 rounded-lg border border-ok/30 bg-ok-soft px-4 py-2.5 text-sm font-medium text-ok">
+          Investimento lançado.
+        </div>
+      )}
+
+      {naoLidos.length > 0 && (
+        <div className="mb-3 rounded-[12px] border border-warn/30 bg-warn-soft px-4 py-3 text-sm">
+          <p className="font-medium text-ink">
+            Os números abaixo estão sem o Ads de{" "}
+            {naoLidos.map((c) => `${c.client_name} (${marketplaceLabel(c.marketplace)})`).join(", ")}.
+          </p>
+          <p className="mt-1 text-xs text-muted">
+            O marketplace ainda não liberou a leitura de anúncios para o app da agência. Até liberar, lance o valor à
+            mão no fim da página.
+          </p>
+        </div>
+      )}
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <Stat
           label="Investido"
           value={brl(resumo.invested)}
           hint={
-            tetoAds
-              ? `${pct(resumo.invested / tetoAds)} do orçamento de ${brlShort(tetoAds)}`
-              : origemLabel(automaticos, manuais)
+            faturamentoLido
+              ? `${pct(resumo.invested / faturamentoLido)} do faturamento${naoLidos.length ? " dos canais lidos" : ""}`
+              : "sem faturamento no mês"
           }
-          tone={tetoAds && resumo.invested > tetoAds ? "bad" : "warn"}
+          tone={naoLidos.length ? "warn" : "brand"}
         />
         <Stat
-          label="Receita atribuída"
+          label="Voltou em vendas"
           value={brl(resumo.revenue)}
-          hint={parcelaPaga !== null ? `${pct(parcelaPaga)} do faturamento` : "sem faturamento no período"}
-          tone="brand"
+          hint={resumo.orders ? `${num(resumo.orders)} vendas vindas de anúncio` : "vendas atribuídas ao anúncio"}
+          tone="accent"
         />
         <Stat
           label="ROAS"
           value={resumo.roas === null ? "—" : `${resumo.roas.toFixed(2)}x`}
-          hint={metaRoas ? `meta ${metaRoas.toFixed(2)}x` : resumo.roas === null ? "sem investimento" : "sem meta"}
-          tone={
+          hint={
             resumo.roas === null
-              ? "neutral"
-              : metaRoas
-                ? resumo.roas >= metaRoas
-                  ? "ok"
-                  : "bad"
-                : resumo.roas >= 3
-                  ? "ok"
-                  : "warn"
+              ? "sem investimento no mês"
+              : `cada R$ 1 investido virou ${brl(resumo.roas)} em vendas`
           }
+          tone={resumo.roas === null ? "neutral" : resumo.roas >= 4 ? "ok" : resumo.roas >= 2 ? "warn" : "bad"}
         />
         <Stat
-          label="ACOS"
-          value={resumo.acos === null ? "—" : pct(resumo.acos)}
-          hint={metaAcos ? `meta até ${pct(metaAcos)}` : resumo.acos === null ? "nenhuma venda atribuída" : "sem meta"}
-          tone={
-            resumo.acos === null
-              ? "bad"
-              : metaAcos
-                ? resumo.acos <= metaAcos
-                  ? "ok"
-                  : "bad"
-                : resumo.acos <= 0.2
-                  ? "ok"
-                  : "warn"
-          }
+          label="Cliques"
+          value={num(resumo.clicks)}
+          hint={resumo.cpc === null ? "—" : `${brl(resumo.cpc)} por clique`}
+          tone="info"
         />
       </div>
 
-      <div className="mt-3 grid gap-3 sm:grid-cols-3 xl:grid-cols-5">
-        <Metrica label="Cliques" valor={num(resumo.clicks)} />
-        <Metrica label="Impressões" valor={resumo.prints ? num(resumo.prints) : "—"} />
-        <Metrica
-          label="CTR"
-          valor={resumo.ctr === null ? "—" : pct(resumo.ctr)}
-          hint={resumo.ctr === null ? "sem impressões" : undefined}
-        />
-        <Metrica label="CPC" valor={resumo.cpc === null ? "—" : brl(resumo.cpc)} />
-        <Metrica
-          label="Conversão"
-          valor={resumo.conversao === null ? "—" : pct(resumo.conversao)}
-          hint={`${num(resumo.orders)} pedidos`}
-        />
-      </div>
-
-      <Card className="mt-3" bodyClassName="p-4">
-        <form className="grid gap-3 sm:grid-cols-5">
-          <input type="hidden" name="mes" value={ref} />
-          <input type="hidden" name="periodo" value={atalho} />
-          <Field label="Cliente">
-            <select name="cliente" defaultValue={sp.cliente ?? ""} className="select">
-              <option value="">Todos</option>
-              {clients.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
-          </Field>
-          <Field label="Loja">
-            <select name="canal" defaultValue={sp.canal ?? ""} className="select">
-              <option value="">Todas</option>
-              {MARKETPLACES.map((m) => (
-                <option key={m.value} value={m.value}>
-                  {m.label}
-                </option>
-              ))}
-            </select>
-          </Field>
-          <Field label="Campanha">
-            <input name="campanha" defaultValue={sp.campanha ?? ""} className="input" placeholder="parte do nome" />
-          </Field>
-          <div className="flex items-end gap-2 sm:col-span-2">
-            <SubmitButton variant="ghost" size="sm">
-              Filtrar
-            </SubmitButton>
-            <Link href={`/ads?mes=${ref}`} className="btn btn-ghost btn-sm">
-              Limpar
-            </Link>
+      <Card
+        className="mt-3"
+        title="Por cliente"
+        subtitle="Quem mais investe, quanto isso pesa no faturamento e quanto volta"
+        bodyClassName="p-0"
+      >
+        {porCanal.length ? (
+          <div className="table-wrap">
+            <table className="data responsiva">
+              <thead>
+                <tr>
+                  <th>Cliente</th>
+                  <th>Loja</th>
+                  <th className="num">Investido</th>
+                  <th className="num">% do faturamento</th>
+                  <th className="num">Voltou em vendas</th>
+                  <th className="num">ROAS</th>
+                </tr>
+              </thead>
+              <tbody>
+                {porCanal.map((c) => (
+                  <tr key={`${c.client_id}-${c.marketplace}`}>
+                    <td data-label="Cliente">
+                      <Link href={`/clientes/${c.client_id}?tab=ads`} className="font-medium text-ink hover:text-brand">
+                        {c.client_name}
+                      </Link>
+                    </td>
+                    <td data-label="Loja">
+                      <MarketplaceChip value={c.marketplace} />
+                    </td>
+                    {c.naoLido ? (
+                      <td colSpan={4} className="text-right" data-label="Ads">
+                        <Chip tone="warn">não lido: o marketplace não libera</Chip>
+                      </td>
+                    ) : (
+                      <>
+                        <td className="num font-semibold text-ink" data-label="Investido">
+                          {c.investido ? brl(c.investido) : <span className="font-normal text-dim">nada no mês</span>}
+                        </td>
+                        <td className="num" data-label="% do faturamento">
+                          {c.investido && c.revenue ? pct(c.investido / c.revenue) : "—"}
+                        </td>
+                        <td className="num text-muted" data-label="Voltou em vendas">
+                          {c.receita ? brl(c.receita) : "—"}
+                        </td>
+                        <td className={`num font-semibold ${roasTom(c.investido ? c.receita / c.investido : null)}`} data-label="ROAS">
+                          {c.investido ? `${(c.receita / c.investido).toFixed(2)}x` : "—"}
+                        </td>
+                      </>
+                    )}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
-        </form>
+        ) : (
+          <div className="p-5">
+            <Empty title="Nenhuma loja no filtro" hint="Ajuste o cliente ou a loja." />
+          </div>
+        )}
       </Card>
 
-      <div className="mt-3">
-        <SerieDiaria
-          dias={dias}
-          label={periodo.label}
-          atalhoAtivo={atalho}
-          hrefBase={(a) => link({ periodo: a })}
-          metaAds={tetoAds}
-        />
-      </div>
-
-      <div className="mt-3 grid gap-3 lg:grid-cols-2">
-        <Card title="Melhores campanhas" subtitle="Maior retorno por real investido" bodyClassName="p-0">
-          <TabelaCampanhas lista={melhores} vazio="Nenhuma campanha com investimento no período." />
-        </Card>
-        <Card title="Piores campanhas" subtitle="Onde o dinheiro está rendendo menos" bodyClassName="p-0">
-          <TabelaCampanhas lista={piores} vazio="Nenhuma campanha com investimento no período." />
-        </Card>
-      </div>
-
-      <Card className="mt-3" title="Todas as campanhas" bodyClassName="p-0">
+      <Card
+        className="mt-3"
+        title="Campanhas"
+        subtitle={
+          campanhas.length
+            ? `${campanhas.length} ${campanhas.length === 1 ? "campanha" : "campanhas"} no mês, da que mais investe para a que menos investe`
+            : undefined
+        }
+        bodyClassName="p-0"
+      >
         {campanhas.length ? (
           <div className="table-wrap">
             <table className="data responsiva">
               <thead>
                 <tr>
                   <th>Campanha</th>
-                  <th>Cliente</th>
-                  <th>Loja</th>
                   <th className="num">Investido</th>
-                  <th className="num">Receita</th>
+                  <th className="num">Voltou em vendas</th>
                   <th className="num">ROAS</th>
-                  <th className="num">ACOS</th>
-                  <th className="num">CPC</th>
-                  <th className="num">Conversão</th>
+                  <th className="num">Vendas</th>
+                  <th className="num">Cliques</th>
+                  <th className="num" title="Custo por clique">Custo/clique</th>
                   <th />
                 </tr>
               </thead>
@@ -268,31 +278,22 @@ export default async function AdsPage({
                 {campanhas.map((c) => (
                   <tr key={c.id}>
                     <td data-label="Campanha">
-                      <span className="text-sm text-ink">{c.nome}</span>
-                      <Chip tone={c.automatica ? "info" : "neutral"}>{c.automatica ? "da loja" : "à mão"}</Chip>
+                      <span className="flex flex-wrap items-center gap-1.5">
+                        <span className="text-sm text-ink">{c.nome}</span>
+                        {!c.automatica && <Chip tone="neutral">lançado à mão</Chip>}
+                      </span>
+                      <span className="mt-0.5 flex items-center gap-1.5 text-[0.7rem] text-dim">
+                        {c.clientName} · <MarketplaceChip value={c.marketplace} />
+                      </span>
                     </td>
-                    <td className="text-xs text-muted" data-label="Cliente">{c.clientName}</td>
-                    <td data-label="Loja">
-                      <MarketplaceChip value={c.marketplace} />
+                    <td className="num font-semibold text-ink" data-label="Investido">{brl(c.invested)}</td>
+                    <td className="num text-muted" data-label="Voltou em vendas">{c.revenue ? brl(c.revenue) : "—"}</td>
+                    <td className={`num font-semibold ${roasTom(c.roas)}`} data-label="ROAS">
+                      {c.roas === null ? "—" : c.revenue ? `${c.roas.toFixed(2)}x` : <Chip tone="bad">não vendeu</Chip>}
                     </td>
-                    <td className="num font-semibold text-ink" data-label="Investido">{brlShort(c.invested)}</td>
-                    <td className="num text-muted" data-label="Receita">{c.revenue ? brlShort(c.revenue) : "—"}</td>
-                    <td className={`num font-semibold ${roasTom(c.roas, metaRoas)}`} data-label="ROAS">
-                      {c.roas === null ? "—" : `${c.roas.toFixed(2)}x`}
-                    </td>
-                    <td className="num text-muted" data-label="ACOS">
-                      {c.acos === null ? (
-                        c.invested > 0 ? (
-                          <Chip tone="bad">sem venda</Chip>
-                        ) : (
-                          "—"
-                        )
-                      ) : (
-                        pct(c.acos)
-                      )}
-                    </td>
-                    <td className="num text-muted" data-label="CPC">{c.cpc === null ? "—" : brl(c.cpc)}</td>
-                    <td className="num text-muted" data-label="Conversão">{c.conversao === null ? "—" : pct(c.conversao)}</td>
+                    <td className="num text-muted" data-label="Vendas">{c.orders ? num(c.orders) : "—"}</td>
+                    <td className="num text-muted" data-label="Cliques">{c.clicks ? num(c.clicks) : "—"}</td>
+                    <td className="num text-muted" data-label="Custo/clique">{c.cpc === null ? "—" : brl(c.cpc)}</td>
                     <td className="num">
                       {!c.automatica && (
                         <form action={deleteAdsAction}>
@@ -300,7 +301,7 @@ export default async function AdsPage({
                           <input type="hidden" name="client_id" value={c.clientId} />
                           <input type="hidden" name="redirect_to" value={link({})} />
                           <SubmitButton variant="ghost" size="sm" confirm="Excluir este lançamento?">
-                            ✕
+                            Excluir
                           </SubmitButton>
                         </form>
                       )}
@@ -313,19 +314,54 @@ export default async function AdsPage({
         ) : (
           <div className="p-5">
             <Empty
-              title="Nenhuma campanha no período"
-              hint="Com a loja conectada, as campanhas entram sozinhas todo dia."
+              title="Nenhuma campanha no mês"
+              hint="Com a loja conectada, as campanhas entram sozinhas todo dia. Loja sem leitura de Ads: lance à mão abaixo."
             />
           </div>
         )}
       </Card>
 
-      <form action={createAdsAction} className="mt-3">
-        <Card
-          title="Lançar à mão"
-          subtitle="Para loja sem conexão ou para completar o que ela não devolve"
-          bodyClassName="p-5 pb-0"
-        >
+      <Card
+        className="mt-3"
+        title="Investimento por dia"
+        subtitle={
+          diasComAds.length
+            ? `${diasComAds.length} de ${dias.length} dias com anúncio · passe o mouse na barra para ver o dia`
+            : "Nenhum dia com investimento lido no mês"
+        }
+      >
+        {diasComAds.length ? (
+          <>
+            <div className="flex h-32 items-end gap-[3px]">
+              {dias.map((d) => (
+                <span
+                  key={d.day}
+                  className="flex-1 rounded-t-[3px]"
+                  style={{
+                    height: `${Math.max(d.ads > 0 ? 4 : 1, (d.ads / Math.max(maiorDia, 1)) * 100)}%`,
+                    background: d.ads > 0 ? "var(--primary)" : "var(--surface-3)",
+                  }}
+                  title={`${d.day.slice(8)}/${d.day.slice(5, 7)} · investido ${brl(d.ads)} · voltou ${brl(d.ads_revenue)}${d.ads ? ` · ROAS ${(d.ads_revenue / d.ads).toFixed(2)}x` : ""}`}
+                />
+              ))}
+            </div>
+            <div className="mt-1 flex justify-between text-[0.65rem] text-dim">
+              <span>{dias[0]?.day.slice(8)}/{ref.slice(5)}</span>
+              <span>maior dia: {brl(maiorDia)}</span>
+              <span>{dias[dias.length - 1]?.day.slice(8)}/{ref.slice(5)}</span>
+            </div>
+          </>
+        ) : (
+          <p className="text-sm text-dim">Quando a loja devolve o Ads dia a dia, ele aparece aqui.</p>
+        )}
+      </Card>
+
+      <details className="mt-3 rounded-[var(--radius-card)] border border-line bg-surface">
+        <summary className="cursor-pointer px-5 py-4 text-sm font-medium text-ink">
+          Lançar investimento à mão
+          <span className="ml-2 text-xs font-normal text-dim">para loja que não informa o Ads sozinha</span>
+        </summary>
+        <form action={createAdsAction} className="border-t border-line px-5 pt-4">
           <input type="hidden" name="redirect_to" value={link({})} />
           <div className="grid gap-3 sm:grid-cols-3">
             <Field label="Cliente *">
@@ -339,7 +375,7 @@ export default async function AdsPage({
               </select>
             </Field>
             <Field label="Loja">
-              <select name="marketplace" className="select" defaultValue={sp.canal ?? "mercado_livre"}>
+              <select name="marketplace" className="select" defaultValue={sp.canal || naoLidos[0]?.marketplace || "mercado_livre"}>
                 {MARKETPLACES.map((m) => (
                   <option key={m.value} value={m.value}>
                     {m.label}
@@ -348,83 +384,25 @@ export default async function AdsPage({
               </select>
             </Field>
             <Field label="Campanha">
-              <input name="campaign" className="input" placeholder="nome da campanha" />
+              <input name="campaign" className="input" placeholder="ex.: Shopee Ads do mês" />
             </Field>
-            <Field label="Início *">
-              <input name="period_start" type="date" required defaultValue={`${ref}-01`} className="input" />
+            <Field label="Investido (R$) *">
+              <input name="invested" inputMode="decimal" required className="input" placeholder="0,00" />
             </Field>
-            <Field label="Fim">
-              <input name="period_end" type="date" className="input" />
-            </Field>
-            <Field label="Investido (R$)">
-              <input name="invested" inputMode="decimal" className="input" placeholder="0,00" />
-            </Field>
-            <Field label="Receita atribuída (R$)">
+            <Field label="Voltou em vendas (R$)">
               <input name="revenue" inputMode="decimal" className="input" placeholder="0,00" />
             </Field>
-            <Field label="Cliques">
-              <input name="clicks" inputMode="numeric" className="input" />
-            </Field>
-            <Field label="Pedidos">
-              <input name="orders" inputMode="numeric" className="input" />
-            </Field>
           </div>
-          <SaveBar label="Registrar investimento" hint="" />
-        </Card>
-      </form>
+          <input type="hidden" name="period_start" value={`${ref}-01`} />
+          <input type="hidden" name="period_end" value={fimDoMes} />
+          <SaveBar label="Lançar investimento" hint={`Vale para ${monthLabel(ref)} inteiro. Para outro mês, troque o mês no topo.`} />
+        </form>
+      </details>
     </>
   );
 }
 
-function roasTom(roas: number | null, meta: number | null): string {
+function roasTom(roas: number | null): string {
   if (roas === null) return "text-dim";
-  if (meta) return roas >= meta ? "text-ok" : "text-bad";
-  return roas >= 3 ? "text-ok" : roas >= 1 ? "text-warn" : "text-bad";
-}
-
-function TabelaCampanhas({
-  lista,
-  vazio,
-}: {
-  lista: ReturnType<typeof analisarCampanha>[];
-  vazio: string;
-}) {
-  if (!lista.length) {
-    return (
-      <div className="p-5">
-        <Empty title="Nada para mostrar" hint={vazio} />
-      </div>
-    );
-  }
-  return (
-    <div className="table-wrap">
-      <table className="data responsiva">
-        <thead>
-          <tr>
-            <th>Campanha</th>
-            <th className="num">Investido</th>
-            <th className="num">ROAS</th>
-            <th className="num">ACOS</th>
-          </tr>
-        </thead>
-        <tbody>
-          {lista.map((c) => (
-            <tr key={c.id}>
-              <td data-label="Campanha">
-                <span className="block text-sm text-ink">{c.nome}</span>
-                <span className="text-[0.65rem] text-dim">{c.clientName}</span>
-              </td>
-              <td className="num text-muted" data-label="Investido">{brlShort(c.invested)}</td>
-              <td className={`num font-semibold ${roasTom(c.roas, null)}`} data-label="ROAS">
-                {c.roas === null ? "—" : `${c.roas.toFixed(2)}x`}
-              </td>
-              <td className="num text-muted" data-label="ACOS">
-                {c.acos === null ? <Chip tone="bad">sem venda</Chip> : pct(c.acos)}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
+  return roas >= 4 ? "text-ok" : roas >= 2 ? "text-warn" : "text-bad";
 }

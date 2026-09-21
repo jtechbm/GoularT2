@@ -19,6 +19,10 @@ export async function createAdsAction(formData: FormData) {
   const periodStart = str(formData.get("period_start"));
   const periodEnd = str(formData.get("period_end")) || periodStart;
   if (!clientId || !periodStart) throw new Error("Cliente e início do período são obrigatórios.");
+  // lançamento sem valor virava uma "campanha sem nome, R$ 0,00" na lista
+  if (!(toNumber(formData.get("invested")) > 0) && !(toNumber(formData.get("revenue")) > 0)) {
+    throw new Error("Informe o valor investido.");
+  }
 
   await run(
     `INSERT INTO ads_entries (id, client_id, marketplace, campaign, period_start, period_end, invested, revenue,
