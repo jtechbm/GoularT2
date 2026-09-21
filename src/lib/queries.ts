@@ -4,6 +4,7 @@ import { addMonths, currentMonth, lastMonths, monthLabel } from "./format";
 import { avaliarOnboarding } from "./onboarding";
 import { calcularScore, type Score } from "./score";
 import { alertasDoCliente, ordenarAlertas, type Alerta } from "./alertas";
+import { receitaInformada } from "./ads-analise";
 import type {
   AdsEntry,
   AgencyCharge,
@@ -160,6 +161,10 @@ export async function clientRows(
 export interface IndicadoresCliente {
   /** receita atribuída ao Ads no mês, para o ROAS */
   ads_revenue: number;
+  /** investido lançado à mão: o fechamento sincronizado não tem esse valor */
+  ads_manual: number;
+  /** investido com retorno conhecido: o denominador do ROAS */
+  ads_com_retorno: number;
   /** pedidos nos últimos 30 dias até hoje, e nos 30 anteriores */
   vendas30: number;
   vendas30_ant: number;
@@ -196,8 +201,11 @@ export async function indicadoresDosClientes(
   const ateDia = `${anterior}-${String(hoje.getDate()).padStart(2, "0")}`;
 
   const [ads, vendas, advertencias, comparavel] = await Promise.all([
-    all<{ client_id: string; revenue: number }>(
-      `SELECT client_id, COALESCE(SUM(revenue),0) AS revenue FROM ads_entries
+    all<{ client_id: string; revenue: number; manual: number; com_retorno: number }>(
+      `SELECT client_id, COALESCE(SUM(revenue),0) AS revenue,
+              COALESCE(SUM(invested) FILTER (WHERE source <> 'api'),0) AS manual,
+              COALESCE(SUM(invested) FILTER (WHERE source = 'api' OR revenue > 0 OR orders > 0),0) AS com_retorno
+         FROM ads_entries
         WHERE substr(period_start,1,7) <= ? AND substr(period_end,1,7) >= ?${s.sql}
         GROUP BY client_id`,
       refMonth,
@@ -242,6 +250,8 @@ export async function indicadoresDosClientes(
     if (!i) {
       i = {
         ads_revenue: 0,
+        ads_manual: 0,
+        ads_com_retorno: 0,
         vendas30: 0,
         vendas30_ant: 0,
         faturamento30: 0,
@@ -253,7 +263,12 @@ export async function indicadoresDosClientes(
     }
     return i;
   };
-  for (const a of ads) pegar(a.client_id).ads_revenue = Number(a.revenue);
+  for (const a of ads) {
+    const i = pegar(a.client_id);
+    i.ads_revenue = Number(a.revenue);
+    i.ads_manual = Number(a.manual);
+    i.ads_com_retorno = Number(a.com_retorno);
+  }
   for (const v of vendas) {
     const i = pegar(v.client_id);
     i.vendas30 = Number(v.vendas30);
@@ -1194,7 +1209,9 @@ export async function alertasDaCarteira(
         tarefasCriticasAtrasadas: tarefas.filter((x) => x.client_id === row.id),
         cobrancasVencidas: cobrancas.filter((x) => x.client_id === row.id),
         campanhas: campanhasMes
-          .filter((x) => x.client_id === row.id)
+          // lançado à mão sem o retorno não dá para julgar: viraria
+          // "investido sem nenhuma venda" crítico sem ser verdade
+          .filter((x) => x.client_id === row.id && receitaInformada(x))
           .map((camp) => {
             // casa pelo id da campanha no marketplace; lançamento manual
             // não tem esse id e simplesmente não ganha comparação

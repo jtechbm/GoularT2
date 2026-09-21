@@ -27,6 +27,8 @@ export interface LinhaOrdenavel {
   prev_revenue: number;
   ads: number;
   ads_revenue: number;
+  /** investido com retorno conhecido; sem ele, o ROAS usa o investido todo */
+  ads_com_retorno?: number;
   vendas30: number;
   advertencias: number;
 }
@@ -51,8 +53,10 @@ export function valorDaOrdem(l: LinhaOrdenavel, ordem: Ordem): number | string |
       return variacaoMensal(l.revenue, l.prev_revenue);
     case "investido":
       return l.ads || null;
-    case "roas":
-      return l.ads ? l.ads_revenue / l.ads : null;
+    case "roas": {
+      const base = l.ads_com_retorno ?? l.ads;
+      return base ? l.ads_revenue / base : null;
+    }
     case "pct_ads":
       return l.ads && l.revenue ? l.ads / l.revenue : null;
     case "vendas30":

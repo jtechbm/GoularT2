@@ -48,7 +48,6 @@ export default async function AdsPage({
     .sort((a, b) => b.invested - a.invested);
   const resumo = resumirAds(campanhas);
 
-  const naoLidos = canais.filter((c) => c.ads_permission === "pendente");
 
   // uma linha por cliente e canal: o que investiu, o que voltou, e quanto
   // isso pesa no faturamento daquele canal
@@ -57,14 +56,19 @@ export default async function AdsPage({
       const doCanal = campanhas.filter((x) => x.clientId === c.client_id && x.marketplace === c.marketplace);
       const investido = doCanal.reduce((s, x) => s + x.invested, 0);
       const receita = doCanal.reduce((s, x) => s + x.revenue, 0);
+      const comRetorno = doCanal.filter((x) => x.receitaInformada).reduce((s, x) => s + x.invested, 0);
       return {
         ...c,
         investido,
         receita,
+        roas: comRetorno ? receita / comRetorno : null,
+        semRetorno: investido - comRetorno,
         naoLido: c.ads_permission === "pendente" && !doCanal.some((x) => !x.automatica),
       };
     })
     .sort((a, b) => b.investido - a.investido || Number(a.naoLido) - Number(b.naoLido));
+  // canal sem leitura que já tem valor lançado à mão não está mais faltando
+  const naoLidos = porCanal.filter((c) => c.naoLido);
 
   // % investido só sobre o faturamento dos canais cujo Ads foi lido: dividir
   // pelo total punha os R$ 202 mil da Shopee (sem Ads lido) no denominador e
@@ -166,7 +170,13 @@ export default async function AdsPage({
         <Stat
           label="Voltou em vendas"
           value={brl(resumo.revenue)}
-          hint={resumo.orders ? `${num(resumo.orders)} vendas vindas de anúncio` : "vendas atribuídas ao anúncio"}
+          hint={
+            resumo.semRetorno
+              ? `sem o retorno de ${brl(resumo.semRetorno)} lançados à mão`
+              : resumo.orders
+                ? `${num(resumo.orders)} vendas vindas de anúncio`
+                : "vendas atribuídas ao anúncio"
+          }
           tone="accent"
         />
         <Stat
@@ -174,8 +184,10 @@ export default async function AdsPage({
           value={resumo.roas === null ? "—" : `${resumo.roas.toFixed(2)}x`}
           hint={
             resumo.roas === null
-              ? "sem investimento no mês"
-              : `cada R$ 1 investido virou ${brl(resumo.roas)} em vendas`
+              ? resumo.semRetorno
+                ? "retorno não informado"
+                : "sem investimento no mês"
+              : `cada R$ 1 investido virou ${brl(resumo.roas)} em vendas${resumo.semRetorno ? " (sem o lançado à mão)" : ""}`
           }
           tone={resumo.roas === null ? "neutral" : resumo.roas >= 4 ? "ok" : resumo.roas >= 2 ? "warn" : "bad"}
         />
@@ -230,10 +242,10 @@ export default async function AdsPage({
                           {c.investido && c.revenue ? pct(c.investido / c.revenue) : "—"}
                         </td>
                         <td className="num text-muted" data-label="Voltou em vendas">
-                          {c.receita ? brl(c.receita) : "—"}
+                          {c.receita ? brl(c.receita) : c.semRetorno ? "não informado" : "—"}
                         </td>
-                        <td className={`num font-semibold ${roasTom(c.investido ? c.receita / c.investido : null)}`} data-label="ROAS">
-                          {c.investido ? `${(c.receita / c.investido).toFixed(2)}x` : "—"}
+                        <td className={`num font-semibold ${roasTom(c.roas)}`} data-label="ROAS">
+                          {c.roas === null ? "—" : `${c.roas.toFixed(2)}x`}
                         </td>
                       </>
                     )}
@@ -287,9 +299,19 @@ export default async function AdsPage({
                       </span>
                     </td>
                     <td className="num font-semibold text-ink" data-label="Investido">{brl(c.invested)}</td>
-                    <td className="num text-muted" data-label="Voltou em vendas">{c.revenue ? brl(c.revenue) : "—"}</td>
+                    <td className="num text-muted" data-label="Voltou em vendas">
+                      {c.revenue ? brl(c.revenue) : c.receitaInformada ? "—" : "não informado"}
+                    </td>
                     <td className={`num font-semibold ${roasTom(c.roas)}`} data-label="ROAS">
-                      {c.roas === null ? "—" : c.revenue ? `${c.roas.toFixed(2)}x` : <Chip tone="bad">não vendeu</Chip>}
+                      {!c.receitaInformada ? (
+                        "—"
+                      ) : c.roas === null ? (
+                        "—"
+                      ) : c.revenue ? (
+                        `${c.roas.toFixed(2)}x`
+                      ) : (
+                        <Chip tone="bad">não vendeu</Chip>
+                      )}
                     </td>
                     <td className="num text-muted" data-label="Vendas">{c.orders ? num(c.orders) : "—"}</td>
                     <td className="num text-muted" data-label="Cliques">{c.clicks ? num(c.clicks) : "—"}</td>

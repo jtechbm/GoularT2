@@ -25,7 +25,12 @@ export function montarLinhas(
     const i = indicadores.get(r.id);
     return {
       ...r,
+      // o fechamento sincronizado só tem o Ads que a API leu; o lançado à
+      // mão (canal que o marketplace não deixa ler) entra somado aqui
+      ads: r.ads + (i?.ads_manual ?? 0),
       ads_revenue: i?.ads_revenue ?? 0,
+      ads_manual: i?.ads_manual ?? 0,
+      ads_com_retorno: i?.ads_com_retorno ?? 0,
       vendas30: i?.vendas30 ?? 0,
       vendas30_ant: i?.vendas30_ant ?? 0,
       faturamento30: i?.faturamento30 ?? 0,
@@ -82,7 +87,7 @@ export function TabelaClientes({
         </thead>
         <tbody>
           {ordenadas.map((c) => {
-            const roas = c.ads ? c.ads_revenue / c.ads : null;
+            const roas = c.ads_com_retorno ? c.ads_revenue / c.ads_com_retorno : null;
             const pctAds = c.ads && c.revenue ? c.ads / c.revenue : null;
             const sc = scores.get(c.id);
             return (
@@ -130,7 +135,7 @@ export function TabelaClientes({
                 </td>
                 <td className="num text-muted" data-label="Investido">
                   {c.ads ? brlShort(c.ads) : "—"}
-                  {c.ads_pendente && (
+                  {c.ads_pendente && !c.ads_manual && (
                     <span
                       className="ml-1 text-warn"
                       title={`Sem o Ads de ${c.ads_pendente.split(",").map(marketplaceLabel).join(" e ")}: o marketplace ainda não liberou a leitura`}

@@ -167,6 +167,9 @@ export default async function ClientePage({
   const marketplacesDisponiveis = integracoes.filter((i) => i.configured).map((i) => i.marketplace);
   const manager = can(user, "clientes.gerenciar");
   const margin = totals.revenue ? totals.profit / totals.revenue : 0;
+  // as campanhas do mês têm o que a API leu e o que foi lançado à mão; o
+  // fechamento sincronizado só tem o primeiro
+  const adsDoMes = Math.max(totals.ads, adsMes.invested);
 
   return (
     <>
@@ -235,8 +238,8 @@ export default async function ClientePage({
         <Stat label="Impostos" value={brl(totals.tax)} hint={`${num(totals.orders)} pedidos`} tone="info" />
         <Stat
           label="Ads no mês"
-          value={brl(totals.ads)}
-          hint={totals.revenue ? `${pct(totals.ads / totals.revenue)} do faturamento` : "—"}
+          value={brl(adsDoMes)}
+          hint={totals.revenue ? `${pct(adsDoMes / totals.revenue)} do faturamento` : "—"}
           tone="warn"
         />
       </div>

@@ -326,6 +326,7 @@ export async function coletarDossie(cliente: ClienteAnalisavel, refMonth: string
           orders: c.orders,
           roas: c.roas,
           acos: c.acos,
+          receitaInformada: c.receitaInformada,
         })),
         origem: {
           fechamento: fechamento?.source ?? "vazio",

@@ -8,6 +8,18 @@ import type { AdsEntry } from "./types.ts";
  * ótimo; ACOS indefinido quer dizer "não vendeu nada", que é o oposto.
  * Confundir os dois faria a pior campanha da conta parecer a melhor.
  */
+/**
+ * A receita atribuída desta linha de Ads é conhecida?
+ *
+ * Lançamento à mão sem receita e sem pedidos quer dizer "não informado", não
+ * "não vendeu": a pessoa sabia o investido e não o retorno. Tratar como zero
+ * punha "não vendeu" na tela, alerta crítico de dinheiro sem retorno e a IA
+ * dizendo que a campanha fracassou. A linha que vem da API sempre é conhecida.
+ */
+export function receitaInformada(e: { source?: string | null; revenue: number; orders: number }): boolean {
+  return e.source === "api" || e.revenue > 0 || e.orders > 0;
+}
+
 export interface CampanhaAnalisada {
   id: string;
   nome: string;
@@ -15,6 +27,8 @@ export interface CampanhaAnalisada {
   clientId: string;
   clientName: string;
   automatica: boolean;
+  /** false: lançado à mão sem o retorno; ROAS e ACOS ficam indefinidos */
+  receitaInformada: boolean;
   invested: number;
   revenue: number;
   clicks: number;
@@ -34,6 +48,7 @@ export interface CampanhaAnalisada {
 export function analisarCampanha(
   e: AdsEntry & { client_name?: string },
 ): CampanhaAnalisada {
+  const informada = receitaInformada(e);
   return {
     id: e.id,
     nome: e.campaign ?? "sem nome",
@@ -41,12 +56,13 @@ export function analisarCampanha(
     clientId: e.client_id,
     clientName: e.client_name ?? "",
     automatica: e.source === "api",
+    receitaInformada: informada,
     invested: e.invested,
     revenue: e.revenue,
     clicks: e.clicks,
     orders: e.orders,
-    roas: e.invested > 0 ? e.revenue / e.invested : null,
-    acos: e.revenue > 0 ? e.invested / e.revenue : null,
+    roas: informada && e.invested > 0 ? e.revenue / e.invested : null,
+    acos: informada && e.revenue > 0 ? e.invested / e.revenue : null,
     cpc: e.clicks > 0 ? e.invested / e.clicks : null,
     conversao: e.clicks > 0 ? e.orders / e.clicks : null,
     ticket: e.orders > 0 ? e.revenue / e.orders : null,
@@ -63,7 +79,7 @@ export function analisarCampanha(
  */
 export function ordenarPorDesempenho(campanhas: CampanhaAnalisada[]): CampanhaAnalisada[] {
   return [...campanhas]
-    .filter((c) => c.invested > 0)
+    .filter((c) => c.invested > 0 && c.receitaInformada)
     .sort((a, b) => {
       const ra = a.roas ?? -1;
       const rb = b.roas ?? -1;
@@ -83,6 +99,8 @@ export interface ResumoAds {
   cpc: number | null;
   ctr: number | null;
   conversao: number | null;
+  /** investido em linhas sem retorno informado: fora do ROAS */
+  semRetorno: number;
 }
 
 export function resumirAds(
@@ -99,12 +117,19 @@ export function resumirAds(
     { invested: 0, revenue: 0, clicks: 0, orders: 0 },
   );
 
+  // o ROAS só compara o que tem os dois lados: investido sem retorno
+  // informado ficaria no denominador e derrubaria o número
+  const comRetorno = campanhas.filter((c) => c.receitaInformada).reduce((s, c) => s + c.invested, 0);
+
   return {
     ...soma,
     prints,
-    roas: soma.invested > 0 ? soma.revenue / soma.invested : null,
-    acos: soma.revenue > 0 ? soma.invested / soma.revenue : null,
-    cpc: soma.clicks > 0 ? soma.invested / soma.clicks : null,
+    semRetorno: soma.invested - comRetorno,
+    roas: comRetorno > 0 ? soma.revenue / comRetorno : null,
+    acos: soma.revenue > 0 ? comRetorno / soma.revenue : null,
+    // custo por clique só de quem informou cliques: o lançado à mão sem
+    // clique dividia R$ 2.500 por 300 cliques de outra campanha
+    cpc: soma.clicks > 0 ? campanhas.filter((c) => c.clicks > 0).reduce((s, c) => s + c.invested, 0) / soma.clicks : null,
     ctr: prints > 0 ? soma.clicks / prints : null,
     conversao: soma.clicks > 0 ? soma.orders / soma.clicks : null,
   };

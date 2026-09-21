@@ -52,6 +52,8 @@ export interface CampanhaLinha {
   /** null quando não há denominador: não vendeu nada é diferente de zero */
   roas: number | null;
   acos: number | null;
+  /** false: lançada à mão sem o retorno; ausente em análise antiga */
+  receitaInformada?: boolean;
 }
 
 export interface MetaLinha {
@@ -183,6 +185,8 @@ export interface DerivadoLoja {
     revenue: number;
     roas: number | null;
     acos: number | null;
+    /** investido lançado à mão sem o retorno: fica fora do ROAS */
+    semRetorno: number;
     /** investimento sobre o faturamento do canal (TACOS): quanto da venda vai para anúncio */
     pctFaturamento: number | null;
     /** variação do investimento contra o mês anterior; null sem mês anterior */
@@ -356,6 +360,8 @@ function derivarLoja(l: LojaNoDossie, faturamentoDoCliente: number): DerivadoLoj
   const seco = diasSemVenda(l.dias);
   const investido = soma(l.campanhas.map((c) => c.invested));
   const receitaAds = soma(l.campanhas.map((c) => c.revenue));
+  // ROAS só sobre o que tem retorno conhecido
+  const comRetorno = soma(l.campanhas.filter((c) => c.receitaInformada !== false).map((c) => c.invested));
   const antes = l.adsAnterior ?? null;
 
   return {
@@ -380,8 +386,9 @@ function derivarLoja(l: LojaNoDossie, faturamentoDoCliente: number): DerivadoLoj
         ? {
             invested: investido,
             revenue: receitaAds,
-            roas: investido ? receitaAds / investido : null,
-            acos: receitaAds ? investido / receitaAds : null,
+            roas: comRetorno ? receitaAds / comRetorno : null,
+            acos: receitaAds && comRetorno ? comRetorno / receitaAds : null,
+            semRetorno: investido - comRetorno,
             pctFaturamento: l.atual.revenue ? investido / l.atual.revenue : null,
             variacaoInvestido: antes?.invested ? diferencaRelativa(investido, antes.invested) : null,
             roasAnterior: antes?.invested ? antes.revenue / antes.invested : null,
@@ -593,8 +600,13 @@ export function linhasDoDossie(d: Dossie): LinhaDoDossie[] {
       l.push("Anúncios pagos: nenhum investimento no mês neste canal.");
     } else {
       l.push(
-        `Anúncios pagos: investido R$ ${real(ld.ads.invested)}${ld.ads.pctFaturamento === null ? "" : ` (${porcento(ld.ads.pctFaturamento)} do faturamento do canal)`}, receita atribuída R$ ${real(ld.ads.revenue)}, ROAS ${multiplo(ld.ads.roas)}, ACOS ${ld.ads.acos === null ? "indefinido (gastou e não vendeu)" : porcento(ld.ads.acos)}.`,
+        `Anúncios pagos: investido R$ ${real(ld.ads.invested)}${ld.ads.pctFaturamento === null ? "" : ` (${porcento(ld.ads.pctFaturamento)} do faturamento do canal)`}, receita atribuída R$ ${real(ld.ads.revenue)}, ROAS ${multiplo(ld.ads.roas)}, ACOS ${ld.ads.acos === null ? (ld.ads.semRetorno ? "indefinido" : "indefinido (gastou e não vendeu)") : porcento(ld.ads.acos)}.`,
       );
+      if (ld.ads.semRetorno) {
+        l.push(
+          `Destes, R$ ${real(ld.ads.semRetorno)} foram lançados à mão pela equipe SEM o retorno em vendas: não é "não vendeu", é "não informado". Não conclua desempenho sobre esse valor; o ROAS acima não o inclui.`,
+        );
+      }
       if (ld.ads.variacaoInvestido !== null && loja.adsAnterior) {
         l.push(
           `Anúncios no mês anterior: investido R$ ${real(loja.adsAnterior.invested)}, receita R$ ${real(loja.adsAnterior.revenue)}, ROAS ${multiplo(ld.ads.roasAnterior)}; o investimento variou ${porcento(ld.ads.variacaoInvestido)}.`,
@@ -605,7 +617,9 @@ export function linhasDoDossie(d: Dossie): LinhaDoDossie[] {
       }
       for (const c of loja.campanhas.slice(0, 8)) {
         l.push(
-          `  - ${c.nome}: investido R$ ${real(c.invested)}, receita R$ ${real(c.revenue)}, ${c.clicks} cliques, ${c.orders} vendas, ROAS ${multiplo(c.roas)}.`,
+          c.receitaInformada === false
+            ? `  - ${c.nome}: investido R$ ${real(c.invested)}, lançado à mão sem o retorno (receita não informada).`
+            : `  - ${c.nome}: investido R$ ${real(c.invested)}, receita R$ ${real(c.revenue)}, ${c.clicks} cliques, ${c.orders} vendas, ROAS ${multiplo(c.roas)}.`,
         );
       }
     }

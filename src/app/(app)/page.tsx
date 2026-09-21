@@ -96,12 +96,14 @@ export default async function DashboardPage({
   const faturamentoAnt = soma((l) => l.prev_revenue);
   const investido = soma((l) => l.ads);
   const receitaAds = soma((l) => l.ads_revenue);
+  const investidoComRetorno = soma((l) => l.ads_com_retorno);
   const vendas30 = soma((l) => l.vendas30);
   const vendas30Ant = soma((l) => l.vendas30_ant);
   const advertencias = soma((l) => l.advertencias);
   const criticas = soma((l) => l.advertencias_criticas);
-  const roasCarteira = investido ? receitaAds / investido : 0;
-  const adsIncompleto = linhas.some((l) => l.ads_pendente);
+  const roasCarteira = investidoComRetorno ? receitaAds / investidoComRetorno : 0;
+  // canal sem leitura mas com valor lançado à mão já não está faltando
+  const adsIncompleto = linhas.some((l) => l.ads_pendente && !l.ads_manual);
 
   // crescimento só conta com base mínima: R$ 50 virando R$ 500 é +900% e
   // não diz nada a quem olha a carteira

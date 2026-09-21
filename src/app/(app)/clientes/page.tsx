@@ -75,11 +75,12 @@ export default async function ClientesPage({
       profit: acc.profit + c.profit,
       ads: acc.ads + c.ads,
       adsRevenue: acc.adsRevenue + c.ads_revenue,
+      comRetorno: acc.comRetorno + c.ads_com_retorno,
       fee: acc.fee + (c.status === "encerrado" ? 0 : c.monthly_fee),
     }),
-    { revenue: 0, profit: 0, ads: 0, adsRevenue: 0, fee: 0 },
+    { revenue: 0, profit: 0, ads: 0, adsRevenue: 0, comRetorno: 0, fee: 0 },
   );
-  const roas = totais.ads ? totais.adsRevenue / totais.ads : 0;
+  const roas = totais.comRetorno ? totais.adsRevenue / totais.comRetorno : 0;
 
   /** URL da lista com os filtros atuais, trocando só o que vier em `extra` */
   const base = (extra: Record<string, string>) => {
