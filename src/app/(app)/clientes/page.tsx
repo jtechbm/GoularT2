@@ -2,17 +2,39 @@ import Link from "next/link";
 import { Suspense } from "react";
 import { requireUser, visibleClientIds } from "@/lib/auth";
 import { can } from "@/lib/permissions";
-import { avaliarOnboardingEmLote, clientRows, scoresEmLote } from "@/lib/queries";
-import { ScoreChip } from "@/components/score-saude";
-import { brlShort, currentMonth, dateBR, lastMonths, num, pct, variacaoMensal } from "@/lib/format";
-import { Avatar, Card, Chip, Delta, Empty, MarketplaceChip, PageHeader, Stat, StatusChip } from "@/components/ui";
+import { avaliarOnboardingEmLote, clientRows, indicadoresDosClientes, scoresEmLote } from "@/lib/queries";
+import { brlShort, currentMonth, lastMonths, pct } from "@/lib/format";
+import { Card, Empty, PageHeader, Stat } from "@/components/ui";
 import { MonthPicker } from "@/components/month-picker";
-import { CLIENT_STATUS, marketplaceLabel } from "@/lib/types";
+import { montarLinhas, TabelaClientes } from "@/components/tabela-clientes";
+import { lerOrdem } from "@/lib/ordem-clientes";
+import { CLIENT_STATUS, MARKETPLACES } from "@/lib/types";
+
+/**
+ * Atalhos para as perguntas que o Kadu mais faz da lista. Cada um é só uma
+ * ordem (e às vezes um filtro) pronta: o mesmo que clicar na coluna.
+ */
+const ATALHOS: { rotulo: string; ordem: string; soAds?: boolean }[] = [
+  { rotulo: "Mais investem em Ads", ordem: "investido" },
+  { rotulo: "Melhor ROAS", ordem: "roas", soAds: true },
+  { rotulo: "Pior ROAS", ordem: "-roas", soAds: true },
+  { rotulo: "Maior % em Ads", ordem: "pct_ads", soAds: true },
+  { rotulo: "Mais cresceram", ordem: "crescimento" },
+  { rotulo: "Com advertências", ordem: "advertencias" },
+];
 
 export default async function ClientesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ mes?: string; q?: string; status?: string; resp?: string }>;
+  searchParams: Promise<{
+    mes?: string;
+    q?: string;
+    status?: string;
+    resp?: string;
+    canal?: string;
+    ordem?: string;
+    ads?: string;
+  }>;
 }) {
   const user = await requireUser();
   const params = await searchParams;
@@ -21,53 +43,68 @@ export default async function ClientesPage({
 
   const query = (params.q ?? "").toLowerCase().trim();
   const status = params.status ?? "";
+  const canal = params.canal ?? "";
   const onlyMine = params.resp === "eu";
+  const soAds = params.ads === "1";
+  const ordem = lerOrdem(params.ordem);
 
-  const all = await clientRows(ref, "cliente", await visibleClientIds(user));
-  // só quem ainda está em onboarding precisa da barra de progresso
+  const escopo = await visibleClientIds(user);
+  const [todos, indicadores] = await Promise.all([
+    clientRows(ref, "cliente", escopo),
+    indicadoresDosClientes(ref, escopo),
+  ]);
   // onboarding e score só dependem da carteira: saem juntos
   const [onboardings, scores] = await Promise.all([
-    avaliarOnboardingEmLote(all.filter((c) => c.status === "onboarding"), ref),
-    scoresEmLote(all, ref),
+    avaliarOnboardingEmLote(todos.filter((c) => c.status === "onboarding"), ref),
+    scoresEmLote(todos, ref),
   ]);
-  const rows = all.filter((c) => {
+
+  const linhas = montarLinhas(todos, indicadores, ref).filter((c) => {
     if (status && c.status !== status) return false;
+    if (canal && !c.marketplaces.split(",").includes(canal)) return false;
     if (onlyMine && c.owner_id !== user.id) return false;
+    if (soAds && !c.ads) return false;
     if (query && ![c.name, c.trade_name, c.segment, c.owner_name].some((v) => v?.toLowerCase().includes(query)))
       return false;
     return true;
   });
 
-  const totals = rows.reduce(
+  const totais = linhas.reduce(
     (acc, c) => ({
       revenue: acc.revenue + c.revenue,
       profit: acc.profit + c.profit,
       ads: acc.ads + c.ads,
+      adsRevenue: acc.adsRevenue + c.ads_revenue,
       fee: acc.fee + (c.status === "encerrado" ? 0 : c.monthly_fee),
     }),
-    { revenue: 0, profit: 0, ads: 0, fee: 0 },
+    { revenue: 0, profit: 0, ads: 0, adsRevenue: 0, fee: 0 },
   );
+  const roas = totais.ads ? totais.adsRevenue / totais.ads : 0;
 
-  const chip = (label: string, href: string, active: boolean) => (
-    <Link key={href} href={href} className={`chip ${active ? "bg-brand text-white" : "bg-surface-2 text-muted"}`}>
-      {label}
-    </Link>
-  );
-
+  /** URL da lista com os filtros atuais, trocando só o que vier em `extra` */
   const base = (extra: Record<string, string>) => {
     const p = new URLSearchParams({ mes: ref });
     if (query) p.set("q", query);
     if (status) p.set("status", status);
+    if (canal) p.set("canal", canal);
     if (onlyMine) p.set("resp", "eu");
+    if (soAds) p.set("ads", "1");
+    if (params.ordem) p.set("ordem", params.ordem);
     for (const [k, v] of Object.entries(extra)) v ? p.set(k, v) : p.delete(k);
     return `/clientes?${p}`;
   };
+
+  const chip = (label: string, href: string, active: boolean) => (
+    <Link key={label} href={href} className={`chip ${active ? "bg-brand text-white" : "bg-surface-2 text-muted"}`}>
+      {label}
+    </Link>
+  );
 
   return (
     <>
       <PageHeader
         title="Clientes"
-        subtitle={`${rows.length} de ${all.length} clientes na carteira`}
+        subtitle={`${linhas.length} de ${todos.length} clientes na carteira`}
         actions={
           <>
             <Suspense fallback={null}>
@@ -83,20 +120,33 @@ export default async function ClientesPage({
       />
 
       <div className="mb-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <Stat label="Faturamento (filtro)" value={brlShort(totals.revenue)} tone="brand" />
+        <Stat label="Faturamento (filtro)" value={brlShort(totais.revenue)} tone="brand" />
         <Stat
           label="Lucro (filtro)"
-          value={brlShort(totals.profit)}
-          hint={totals.revenue ? `margem ${pct(totals.profit / totals.revenue)}` : "—"}
+          value={brlShort(totais.profit)}
+          hint={totais.revenue ? `margem ${pct(totais.profit / totais.revenue)}` : "—"}
           tone="accent"
         />
-        <Stat label="Ads (filtro)" value={brlShort(totals.ads)} tone="warn" />
-        <Stat label="Fee recorrente" value={brlShort(totals.fee)} hint="contratos vigentes" tone="ok" />
+        <Stat
+          label="Investido em Ads (filtro)"
+          value={brlShort(totais.ads)}
+          hint={
+            totais.ads
+              ? `${totais.revenue ? `${pct(totais.ads / totais.revenue)} do faturamento · ` : ""}ROAS ${roas.toFixed(2)}x`
+              : "nenhum investimento no mês"
+          }
+          tone="warn"
+          href={base({ ordem: "investido" })}
+        />
+        <Stat label="Fee recorrente" value={brlShort(totais.fee)} hint="contratos vigentes" tone="ok" />
       </div>
 
       <Card bodyClassName="p-0">
         <form className="flex flex-wrap items-end gap-3 border-b border-line p-4" action="/clientes" method="get">
           <input type="hidden" name="mes" value={ref} />
+          {params.ordem && <input type="hidden" name="ordem" value={params.ordem} />}
+          {onlyMine && <input type="hidden" name="resp" value="eu" />}
+          {soAds && <input type="hidden" name="ads" value="1" />}
           <div className="min-w-52 flex-1">
             <label className="label">Buscar</label>
             <input
@@ -106,13 +156,24 @@ export default async function ClientesPage({
               placeholder="nome, segmento ou responsável…"
             />
           </div>
-          <div className="w-44">
+          <div className="w-40">
             <label className="label">Status</label>
             <select name="status" defaultValue={status} className="select">
               <option value="">Todos</option>
               {CLIENT_STATUS.map((s) => (
                 <option key={s.value} value={s.value}>
                   {s.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="w-40">
+            <label className="label">Canal</label>
+            <select name="canal" defaultValue={canal} className="select">
+              <option value="">Todos</option>
+              {MARKETPLACES.map((m) => (
+                <option key={m.value} value={m.value}>
+                  {m.label}
                 </option>
               ))}
             </select>
@@ -126,98 +187,44 @@ export default async function ClientesPage({
           </div>
         </form>
 
-        {rows.length ? (
-          <div className="table-wrap">
-            <table className="data responsiva">
-              <thead>
-                <tr>
-                  <th>Cliente</th>
-                  <th>Responsável</th>
-                  <th>Equipe</th>
-                  <th>Canais</th>
-                  <th className="num">Faturamento</th>
-                  <th className="num">Lucro</th>
-                  <th className="num">Ads</th>
-                  <th className="num">vs. ant.</th>
-                  <th className="num">Tarefas</th>
-                  <th>Saúde</th>
-                  <th>Última nota</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((c) => (
-                  <tr key={c.id}>
-                    <td data-label="Cliente">
-                      <Link href={`/clientes/${c.id}`} className="block min-w-40">
-                        <span className="block font-semibold text-ink hover:text-brand">{c.name}</span>
-                        <span className="mt-1 flex items-center gap-1.5">
-                          <StatusChip value={c.status} />
-                          {c.segment && <span className="text-[0.7rem] text-dim">{c.segment}</span>}
-                          {onboardings.has(c.id) && (
-                            <span className="text-[0.7rem] text-warn">
-                              onboarding {pct(onboardings.get(c.id)!.progresso)}
-                            </span>
-                          )}
-                        </span>
-                      </Link>
-                    </td>
-                    <td data-label="Responsável">
-                      {c.owner_name ? (
-                        <span className="flex items-center gap-2">
-                          <Avatar name={c.owner_name} color={c.owner_color} size={24} />
-                          <span className="text-xs text-muted">{c.owner_name.split(" ")[0]}</span>
-                        </span>
-                      ) : (
-                        <Chip tone="warn">definir</Chip>
-                      )}
-                    </td>
-                    <td className="num text-muted" data-label="Equipe">{num(c.team_size)}</td>
-                    <td data-label="Canais">
-                      <span className="flex flex-wrap gap-1">
-                        {c.marketplaces ? (
-                          c.marketplaces.split(",").map((m) => <MarketplaceChip key={m} value={m} />)
-                        ) : (
-                          <span className="text-xs text-dim">—</span>
-                        )}
-                      </span>
-                    </td>
-                    <td className="num font-semibold text-ink" data-label="Faturamento">{brlShort(c.revenue)}</td>
-                    <td className="num" data-label="Lucro">{brlShort(c.profit)}</td>
-                    <td className="num text-muted" data-label="Ads">
-                      {brlShort(c.ads)}
-                      {c.ads_pendente && (
-                        <span
-                          className="ml-1 text-warn"
-                          title={`Sem o Ads de ${c.ads_pendente.split(",").map(marketplaceLabel).join(" e ")}: o marketplace ainda não liberou a leitura`}
-                        >
-                          ⚠
-                        </span>
-                      )}
-                    </td>
-                    <td className="num" data-label="vs. ant.">
-                      <Delta value={variacaoMensal(c.revenue, c.prev_revenue)} />
-                    </td>
-                    <td className="num" data-label="Tarefas">
-                      {c.open_tasks > 0 ? <Chip tone="accent">{c.open_tasks}</Chip> : <span className="text-dim">—</span>}
-                    </td>
-                    <td data-label="Saúde">{scores.has(c.id) && <ScoreChip score={scores.get(c.id)!} mostrarMotivo />}</td>
-                    <td className="text-xs text-dim" data-label="Última nota">{c.last_note_at ? dateBR(c.last_note_at) : "—"}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+        <div className="flex flex-wrap items-center gap-1.5 border-b border-line px-4 py-3">
+          <span className="mr-1 text-xs text-dim">Ordenar por:</span>
+          {ATALHOS.map((a) =>
+            chip(
+              a.rotulo,
+              base({ ordem: a.ordem, ads: a.soAds ? "1" : "" }),
+              params.ordem === a.ordem && soAds === Boolean(a.soAds),
+            ),
+          )}
+          {(params.ordem || soAds) && (
+            <Link href={base({ ordem: "", ads: "" })} className="ml-1 text-xs text-dim hover:text-brand">
+              limpar
+            </Link>
+          )}
+        </div>
+
+        {linhas.length ? (
+          <TabelaClientes
+            linhas={linhas}
+            ordem={ordem}
+            href={(o) => base({ ordem: o })}
+            scores={scores}
+            onboardings={onboardings}
+            completa
+          />
         ) : (
           <div className="p-5">
             <Empty
-              title={all.length ? "Nenhum cliente para este filtro" : "Carteira vazia"}
+              title={todos.length ? "Nenhum cliente para este filtro" : "Carteira vazia"}
               hint={
-                all.length
-                  ? "Ajuste a busca ou o status para ver outros clientes."
+                todos.length
+                  ? soAds
+                    ? "Nenhum cliente com investimento em Ads neste mês e filtro."
+                    : "Ajuste a busca, o status ou o canal para ver outros clientes."
                   : "Cadastre o primeiro cliente para começar."
               }
               action={
-                can(user, "clientes.gerenciar") ? (
+                can(user, "clientes.gerenciar") && !todos.length ? (
                   <Link href="/clientes/novo" className="btn btn-primary btn-sm">
                     Cadastrar cliente
                   </Link>

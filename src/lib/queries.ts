@@ -147,6 +147,119 @@ export async function clientRows(
   );
 }
 
+/** O que a lista de clientes mostra além do fechamento do mês. */
+export interface IndicadoresCliente {
+  /** receita atribuída ao Ads no mês, para o ROAS */
+  ads_revenue: number;
+  /** pedidos nos últimos 30 dias até hoje, e nos 30 anteriores */
+  vendas30: number;
+  vendas30_ant: number;
+  faturamento30: number;
+  /** penalidades do marketplace em aberto */
+  advertencias: number;
+  advertencias_criticas: number;
+  /**
+   * Faturamento do mês anterior que dá para comparar com o escolhido. No mês
+   * corrente é só até o mesmo dia; comparar meio mês com o mês cheio punha
+   * todo cliente "em queda" até o dia 30. Null quando não há o dia a dia.
+   */
+  prev_revenue_comparavel: number | null;
+}
+
+/**
+ * Indicadores por cliente para a tela inicial e a lista de clientes.
+ *
+ * "Vendas 30 dias" é janela móvel até hoje, não o mês escolhido: é o número
+ * que responde "como a loja está agora" no dia 3 do mês, quando o mês
+ * fechado ainda não diz nada.
+ */
+export async function indicadoresDosClientes(
+  refMonth: string,
+  scope?: Scope,
+): Promise<Map<string, IndicadoresCliente>> {
+  const hoje = new Date();
+  const dia = (d: number) => new Date(hoje.getTime() - d * 864e5).toISOString().slice(0, 10);
+  const s = scoped(scope, "client_id");
+
+  // no mês corrente, o anterior só até o mesmo dia; nos passados, inteiro
+  const anterior = addMonths(refMonth, -1);
+  const corrente = refMonth === currentMonth();
+  const ateDia = `${anterior}-${String(hoje.getDate()).padStart(2, "0")}`;
+
+  const [ads, vendas, advertencias, comparavel] = await Promise.all([
+    all<{ client_id: string; revenue: number }>(
+      `SELECT client_id, COALESCE(SUM(revenue),0) AS revenue FROM ads_entries
+        WHERE substr(period_start,1,7) <= ? AND substr(period_end,1,7) >= ?${s.sql}
+        GROUP BY client_id`,
+      refMonth,
+      refMonth,
+      ...s.params,
+    ),
+    all<{ client_id: string; vendas30: number; vendas30_ant: number; faturamento30: number }>(
+      `SELECT client_id,
+              COALESCE(SUM(orders)  FILTER (WHERE day >  ?),0) AS vendas30,
+              COALESCE(SUM(orders)  FILTER (WHERE day <= ?),0) AS vendas30_ant,
+              COALESCE(SUM(revenue) FILTER (WHERE day >  ?),0) AS faturamento30
+         FROM finance_daily
+        WHERE day > ?${s.sql}
+        GROUP BY client_id`,
+      dia(30),
+      dia(30),
+      dia(30),
+      dia(60),
+      ...s.params,
+    ),
+    all<{ client_id: string; n: number; criticas: number }>(
+      `SELECT client_id, COUNT(*) AS n, COUNT(*) FILTER (WHERE severity = 'critico') AS criticas
+         FROM penalties WHERE status = 'aberta'${s.sql}
+        GROUP BY client_id`,
+      ...s.params,
+    ),
+    corrente
+      ? all<{ client_id: string; revenue: number }>(
+          `SELECT client_id, COALESCE(SUM(revenue),0) AS revenue FROM finance_daily
+            WHERE day LIKE ? AND day <= ?${s.sql}
+            GROUP BY client_id`,
+          `${anterior}-%`,
+          ateDia,
+          ...s.params,
+        )
+      : Promise.resolve(null),
+  ]);
+
+  const mapa = new Map<string, IndicadoresCliente>();
+  const pegar = (id: string) => {
+    let i = mapa.get(id);
+    if (!i) {
+      i = {
+        ads_revenue: 0,
+        vendas30: 0,
+        vendas30_ant: 0,
+        faturamento30: 0,
+        advertencias: 0,
+        advertencias_criticas: 0,
+        prev_revenue_comparavel: null,
+      };
+      mapa.set(id, i);
+    }
+    return i;
+  };
+  for (const a of ads) pegar(a.client_id).ads_revenue = Number(a.revenue);
+  for (const v of vendas) {
+    const i = pegar(v.client_id);
+    i.vendas30 = Number(v.vendas30);
+    i.vendas30_ant = Number(v.vendas30_ant);
+    i.faturamento30 = Number(v.faturamento30);
+  }
+  for (const p of advertencias) {
+    const i = pegar(p.client_id);
+    i.advertencias = Number(p.n);
+    i.advertencias_criticas = Number(p.criticas);
+  }
+  for (const c of comparavel ?? []) pegar(c.client_id).prev_revenue_comparavel = Number(c.revenue);
+  return mapa;
+}
+
 export interface MonthPoint extends Totals {
   ref_month: string;
 }

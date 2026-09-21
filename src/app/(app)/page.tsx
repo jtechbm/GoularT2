@@ -9,16 +9,15 @@ import {
   marketplaceBreakdown,
   monthlySeries,
   tasks,
-  totalsForMonth,
   ownStoreTotals,
   integrationHealth,
   procedenciaDoMes,
-  adsTotalsCarteira,
   scoresEmLote,
   alertasDaCarteira,
-  adsRows,
+  indicadoresDosClientes,
 } from "@/lib/queries";
-import { addMonths, brl, brlShort, currentMonth, dateBR, lastMonths, num, pct, variacaoMensal } from "@/lib/format";
+import { brl, brlShort, currentMonth, dateBR, lastMonths, num, pct, variacaoMensal } from "@/lib/format";
+import { lerOrdem } from "@/lib/ordem-clientes";
 import {
   Avatar,
   Card,
@@ -32,24 +31,24 @@ import {
   StatusChip,
 } from "@/components/ui";
 import { RevenueProfitChart, ChartLegend, Donut } from "@/components/charts";
-import { IconBarChart, IconDollar, IconPlus, IconReceipt, IconTrendUp, IconUsers } from "@/components/icons";
+import { IconBarChart, IconPlus, IconReceipt, IconTrendUp, IconUsers } from "@/components/icons";
 import { MonthPicker } from "@/components/month-picker";
 import { SaudeIntegracoes } from "@/components/saude-integracoes";
 import { Procedencia } from "@/components/procedencia";
-import { ScoreChip } from "@/components/score-saude";
+import { montarLinhas, TabelaClientes, type LinhaCliente } from "@/components/tabela-clientes";
 import { NIVEL_TOM, NIVEL_LABEL } from "@/lib/alertas";
 import { marketplaceLabel } from "@/lib/types";
 
 export default async function DashboardPage({
   searchParams,
 }: {
-  searchParams: Promise<{ mes?: string; sem_acesso?: string }>;
+  searchParams: Promise<{ mes?: string; sem_acesso?: string; ordem?: string }>;
 }) {
   const user = await requireUser();
   const params = await searchParams;
   const months = lastMonths(12);
   const ref = params.mes && months.includes(params.mes) ? params.mes : currentMonth();
-  const prevRef = addMonths(ref, -1);
+  const corrente = ref === currentMonth();
 
   // membro só enxerga os clientes atribuídos a ele; gestor e admin, a carteira toda
   const escopo = await visibleClientIds(user);
@@ -57,63 +56,69 @@ export default async function DashboardPage({
 
   // Tudo que não depende de outra consulta sai junto. Em fila, a tela
   // esperava a soma de todas; em paralelo, espera a mais lenta.
-  const [
-    totals,
-    prev,
-    rows,
-    propria,
-    series,
-    byMarketplace,
-    openTasks,
-    myTasks,
-    board,
-    saude,
-    procedencia,
-    adsCarteira,
-    adsLinhas,
-  ] = await Promise.all([
-    totalsForMonth(ref, escopo),
-    totalsForMonth(prevRef, escopo),
-    clientRows(ref, "cliente", escopo),
-    verLojasProprias ? ownStoreTotals(ref) : Promise.resolve(null),
-    monthlySeries(6, undefined, escopo),
-    marketplaceBreakdown(ref, undefined, escopo),
-    tasks({ status: "disponivel" }),
-    tasks({ statuses: ["assumida", "em_andamento", "em_revisao"], assignee: user.id }),
-    leaderboard(),
-    integrationHealth(escopo),
-    procedenciaDoMes(ref, { scope: escopo }),
-    adsTotalsCarteira(ref, escopo),
-    adsRows({ refMonth: ref, scope: escopo }),
-  ]);
+  const [rows, propria, series, byMarketplace, openTasks, myTasks, board, saude, procedencia, indicadores] =
+    await Promise.all([
+      clientRows(ref, "cliente", escopo),
+      verLojasProprias ? ownStoreTotals(ref) : Promise.resolve(null),
+      monthlySeries(12, undefined, escopo),
+      marketplaceBreakdown(ref, undefined, escopo),
+      tasks({ status: "disponivel" }),
+      tasks({ statuses: ["assumida", "em_andamento", "em_revisao"], assignee: user.id }),
+      leaderboard(),
+      integrationHealth(escopo),
+      procedenciaDoMes(ref, { scope: escopo }),
+      indicadoresDosClientes(ref, escopo),
+    ]);
 
-  const active = rows.filter((r) => r.status === "ativo" || r.status === "atencao").length;
-  const margin = totals.revenue ? totals.profit / totals.revenue : 0;
-  const prevMargin = prev.revenue ? prev.profit / prev.revenue : 0;
   const mrr = rows
     .filter((r) => r.status !== "encerrado" && r.status !== "pausado")
     .reduce((s, r) => s + r.monthly_fee, 0);
 
-  // receita atribuída de Ads por cliente, para o ROAS da tabela
-  const adsPorCliente = adsLinhas.reduce((acc, e) => {
-    acc.set(e.client_id, (acc.get(e.client_id) ?? 0) + e.revenue);
-    return acc;
-  }, new Map<string, number>());
+  const linhas = montarLinhas(rows, indicadores, ref);
+  const ordem = lerOrdem(params.ordem);
+  const hrefOrdem = (o: string) => {
+    const p = new URLSearchParams();
+    if (params.mes) p.set("mes", params.mes);
+    p.set("ordem", o);
+    return `/?${p}#clientes`;
+  };
 
   // score e alertas dependem da carteira; os dois saem juntos, e os alertas
   // reaproveitam a carteira já carregada em vez de buscá-la de novo
   const [scores, alertas] = await Promise.all([scoresEmLote(rows, ref), alertasDaCarteira(ref, escopo, rows)]);
   const alertasAbertos = alertas.filter((a) => !a.resolvido);
 
-  const roasCarteira = adsCarteira.invested ? adsCarteira.revenue / adsCarteira.invested : 0;
+  // os quatro números saem da mesma lista da tabela: somar de outra fonte
+  // dava total que não batia com as linhas logo abaixo
+  const soma = (f: (l: LinhaCliente) => number) => linhas.reduce((s, l) => s + f(l), 0);
+  const faturamento = soma((l) => l.revenue);
+  const faturamentoAnt = soma((l) => l.prev_revenue);
+  const investido = soma((l) => l.ads);
+  const receitaAds = soma((l) => l.ads_revenue);
+  const vendas30 = soma((l) => l.vendas30);
+  const vendas30Ant = soma((l) => l.vendas30_ant);
+  const advertencias = soma((l) => l.advertencias);
+  const criticas = soma((l) => l.advertencias_criticas);
+  const roasCarteira = investido ? receitaAds / investido : 0;
+  const adsIncompleto = linhas.some((l) => l.ads_pendente);
+
+  // crescimento só conta com base mínima: R$ 50 virando R$ 500 é +900% e
+  // não diz nada a quem olha a carteira
+  const comVariacao = linhas
+    .filter((l) => l.prev_revenue >= 1000)
+    .map((l) => ({ l, v: variacaoMensal(l.revenue, l.prev_revenue)! }));
+  const crescimentos = comVariacao
+    .filter((x) => x.v > 0)
+    .sort((a, b) => b.v - a.v)
+    .slice(0, 4);
+  const quedas = comVariacao
+    .filter((x) => x.v < 0)
+    .sort((a, b) => a.v - b.v)
+    .slice(0, 4);
+  const periodo = corrente ? "até hoje, vs. mesmo período do mês anterior" : "vs. mês anterior";
+
   const emOnboarding = rows.filter((r) => r.status === "onboarding").length;
   const semResponsavel = rows.filter((r) => !r.owner_id).length;
-  const precisamAtencao = rows.filter((r) => {
-    const sc = scores.get(r.id);
-    return sc && sc.classe !== "saudavel";
-  });
-  const top = rows.slice(0, 8);
-
   const totalRevenue = byMarketplace.reduce((s, m) => s + m.revenue, 0);
 
   // quando a pessoa cai aqui por falta de permissão, a tela diz qual foi
@@ -146,187 +151,145 @@ export default async function DashboardPage({
           </span>
         }
         actions={
-          <Suspense fallback={null}>
-            <MonthPicker months={months} value={ref} />
-          </Suspense>
+          <>
+            <Suspense fallback={null}>
+              <MonthPicker months={months} value={ref} />
+            </Suspense>
+            {can(user, "clientes.gerenciar") && (
+              <Link href="/clientes/novo" className="btn btn-primary">
+                <IconPlus size={16} />
+                Novo cliente
+              </Link>
+            )}
+          </>
         }
       />
 
-      {/* quatro números. Antes eram oito, e oito números lado a lado não
-          formam uma decisão: formam um painel de avião */}
+      {/* quatro números, e cada um leva ao detalhe: a tela inicial é o
+          resumo, e o que explica o número está a um clique */}
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <Stat
           label="Faturamento da carteira"
-          value={brl(totals.revenue)}
-          delta={variacaoMensal(totals.revenue, prev.revenue)}
-          hint="vs. mês anterior"
+          value={brl(faturamento)}
+          delta={variacaoMensal(faturamento, faturamentoAnt)}
+          hint={corrente ? "vs. mesmo período do mês anterior" : "vs. mês anterior"}
           tone="brand"
+          href={hrefOrdem("faturamento")}
           icon={<IconBarChart size={20} />}
         />
         <Stat
-          label="Lucro"
-          value={brl(totals.profit)}
-          delta={margin - prevMargin}
-          hint={`margem ${pct(margin)}`}
-          tone={margin >= 0.15 ? "ok" : margin > 0 ? "warn" : "bad"}
-          icon={<IconDollar size={20} />}
-        />
-        <Stat
-          label="Ads"
-          value={brl(totals.ads)}
-          hint={roasCarteira ? `ROAS ${roasCarteira.toFixed(2)}x` : "sem receita atribuída"}
-          tone={roasCarteira >= 3 ? "ok" : roasCarteira > 0 ? "warn" : "neutral"}
-          href="/ads"
+          label="Investido em Ads"
+          value={brl(investido)}
+          hint={
+            investido
+              ? `${faturamento ? `${pct(investido / faturamento)} do faturamento · ` : ""}ROAS ${roasCarteira.toFixed(2)}x${adsIncompleto ? " · falta canal" : ""}`
+              : adsIncompleto
+                ? "falta ler o Ads de algum canal"
+                : "nenhum investimento no mês"
+          }
+          tone={adsIncompleto ? "warn" : roasCarteira >= 3 ? "ok" : roasCarteira > 0 ? "warn" : "neutral"}
+          href={hrefOrdem("investido")}
           icon={<IconTrendUp size={20} />}
         />
         <Stat
-          label="Clientes em atenção"
-          value={num(precisamAtencao.length)}
-          hint={alertasAbertos.length ? `${alertasAbertos.length} alertas em aberto` : "nada pendente"}
-          tone={precisamAtencao.length ? "bad" : "ok"}
-          href="/alertas"
+          label="Vendas nos últimos 30 dias"
+          value={num(vendas30)}
+          delta={variacaoMensal(vendas30, vendas30Ant)}
+          hint="pedidos · vs. 30 dias anteriores"
+          tone="info"
+          href={hrefOrdem("vendas30")}
+          icon={<IconReceipt size={20} />}
+        />
+        <Stat
+          label="Advertências"
+          value={num(advertencias)}
+          hint={
+            advertencias
+              ? `${criticas ? `${criticas} críticas · ` : ""}penalidades abertas nos marketplaces`
+              : "nenhuma penalidade aberta"
+          }
+          tone={criticas ? "bad" : advertencias ? "warn" : "ok"}
+          href="/penalidades"
           icon={<IconUsers size={20} />}
         />
       </div>
 
-      {/* a carteira em uma linha: quantos, em que estágio, e o que falta */}
-      <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <Stat label="Ativos" value={num(active)} hint={`${rows.length} na carteira`} tone="ok" href="/clientes" />
-        <Stat
-          label="Em onboarding"
-          value={num(emOnboarding)}
-          hint={emOnboarding ? "ainda entrando" : "nenhum"}
-          tone={emOnboarding ? "warn" : "neutral"}
-          href="/clientes?status=onboarding"
-        />
-        <Stat
-          label="Precisam de atenção"
-          value={num(precisamAtencao.length)}
-          hint="score abaixo de 70"
-          tone={precisamAtencao.length ? "bad" : "ok"}
-        />
-        <Stat
-          label="Sem responsável"
-          value={num(semResponsavel)}
-          hint={semResponsavel ? "ninguém responde por eles" : "todos atribuídos"}
-          tone={semResponsavel ? "bad" : "ok"}
-        />
-      </div>
+      {/* o estado da carteira cabe numa linha; vira link só o que pede ação */}
+      <p className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted">
+        <span>{num(rows.length)} clientes na carteira</span>
+        {emOnboarding > 0 && (
+          <Link href="/clientes?status=onboarding" className="hover:text-brand">
+            {emOnboarding} em onboarding
+          </Link>
+        )}
+        {semResponsavel > 0 && (
+          <Link href="/clientes" className="text-bad hover:underline">
+            {semResponsavel} sem responsável
+          </Link>
+        )}
+        {propria && propria.stores > 0 && (
+          <span>
+            Lojas do Kadu: <span className="font-medium text-ink">{brlShort(propria.revenue)}</span> · lucro{" "}
+            {brlShort(propria.profit)}
+          </span>
+        )}
+        <span>Fee recorrente: {brlShort(mrr)}</span>
+      </p>
 
-      {/* resultado da agência fica separado do resultado das lojas: são
-          bolsos diferentes e somar os dois dá um número que não existe */}
-      {propria && propria.stores > 0 && (
-        <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <Stat
-            label="Lojas do Kadu"
-            value={brl(propria.revenue)}
-            hint={`${propria.stores} ${propria.stores === 1 ? "loja" : "lojas"} · fora da carteira`}
-            tone="accent"
-            icon={<IconBarChart size={20} />}
-          />
-          <Stat label="Lucro das lojas" value={brl(propria.profit)} tone="accent" />
-          <Stat label="Fee recorrente" value={brl(mrr)} hint="contratos ativos da agência" tone="brand" />
-          <Stat label="Pedidos no mês" value={num(totals.orders)} hint="carteira" tone="neutral" />
-        </div>
-      )}
-
-      {alertasAbertos.length > 0 && (
+      <div className="mt-3 grid gap-3 lg:grid-cols-3">
+        <Card title="Maiores crescimentos" subtitle={periodo}>
+          <ListaVariacao itens={crescimentos} vazio="Nenhum cliente cresceu no período." />
+        </Card>
+        <Card title="Maiores quedas" subtitle={periodo}>
+          <ListaVariacao itens={quedas} vazio="Nenhum cliente caiu no período." />
+        </Card>
         <Card
-          className="mt-3"
           title="Atenção necessária"
-          subtitle={`${alertasAbertos.length} ${alertasAbertos.length === 1 ? "item" : "itens"} esperando decisão`}
+          subtitle={
+            alertasAbertos.length
+              ? `${alertasAbertos.length} ${alertasAbertos.length === 1 ? "item" : "itens"} esperando decisão`
+              : "nada esperando decisão"
+          }
           actions={
-            <Link href="/alertas" className="link-more">
-              Ver todos
-            </Link>
+            alertasAbertos.length > 0 && (
+              <Link href="/alertas" className="link-more">
+                Ver todos
+              </Link>
+            )
           }
         >
-          <ul className="space-y-2">
-            {alertasAbertos.slice(0, 5).map((a) => (
-              <li key={a.key}>
-                <Link
-                  href={a.href}
-                  className="flex flex-wrap items-center gap-2 rounded-[10px] border border-line px-3 py-2.5 transition-colors hover:border-line-strong"
-                >
-                  <Chip tone={NIVEL_TOM[a.nivel]}>{NIVEL_LABEL[a.nivel]}</Chip>
-                  <span className="text-sm text-ink">{a.titulo}</span>
-                  {a.clientName && <span className="text-xs text-dim">{a.clientName}</span>}
-                </Link>
-              </li>
-            ))}
-          </ul>
+          {alertasAbertos.length ? (
+            <ul className="space-y-1.5">
+              {alertasAbertos.slice(0, 4).map((a) => (
+                <li key={a.key}>
+                  <Link href={a.href} className="flex items-center gap-2 text-xs hover:text-brand">
+                    <Chip tone={NIVEL_TOM[a.nivel]}>{NIVEL_LABEL[a.nivel]}</Chip>
+                    <span className="min-w-0 truncate text-ink">{a.titulo}</span>
+                    {a.clientName && <span className="shrink-0 text-dim">{a.clientName}</span>}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-sm text-dim">Tudo em dia.</p>
+          )}
         </Card>
-      )}
+      </div>
 
+      <div id="clientes" className="scroll-mt-4" />
       <Card
         className="mt-3"
-        title="Carteira"
-        subtitle="Quem precisa de você hoje, em ordem de faturamento"
+        title="Clientes"
+        subtitle="Clique numa coluna para ordenar, ou no nome para ver o detalhe"
         bodyClassName="p-0"
         actions={
           <Link href="/clientes" className="link-more">
-            Ver tudo
+            Filtrar e gerenciar
           </Link>
         }
       >
         {rows.length ? (
-          <div className="table-wrap">
-            <table className="data responsiva">
-              <thead>
-                <tr>
-                  <th>Cliente</th>
-                  <th>Responsável</th>
-                  <th className="num">Faturamento</th>
-                  <th className="num">vs. ant.</th>
-                  <th className="num">ROAS</th>
-                  <th>Saúde</th>
-                  <th>Principal pendência</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.slice(0, 10).map((c) => {
-                  const sc = scores.get(c.id);
-                  const doCliente = alertasAbertos.filter((a) => a.clientId === c.id);
-                  const roasCliente = c.ads ? (adsPorCliente.get(c.id) ?? 0) / c.ads : 0;
-                  return (
-                    <tr key={c.id}>
-                      <td data-label="Cliente">
-                        <Link href={`/clientes/${c.id}`} className="font-medium text-ink hover:text-brand">
-                          {c.name}
-                        </Link>
-                        <StatusChip value={c.status} />
-                      </td>
-                      <td data-label="Responsável">
-                        {c.owner_name ? (
-                          <span className="flex items-center gap-1.5">
-                            <Avatar name={c.owner_name} color={c.owner_color} size={22} />
-                            <span className="text-xs text-muted">{c.owner_name.split(" ")[0]}</span>
-                          </span>
-                        ) : (
-                          <Chip tone="bad">definir</Chip>
-                        )}
-                      </td>
-                      <td className="num font-semibold text-ink" data-label="Faturamento">{brlShort(c.revenue)}</td>
-                      <td className="num" data-label="vs. ant.">
-                        <Delta value={variacaoMensal(c.revenue, c.prev_revenue)} />
-                      </td>
-                      <td className="num text-muted" data-label="ROAS">{roasCliente ? `${roasCliente.toFixed(2)}x` : "—"}</td>
-                      <td data-label="Saúde">{sc && <ScoreChip score={sc} />}</td>
-                      <td className="text-xs text-muted" data-label="Principal pendência">
-                        {doCliente.length ? (
-                          <Link href={doCliente[0].href} className="hover:text-brand">
-                            {doCliente[0].titulo}
-                          </Link>
-                        ) : (
-                          <span className="text-dim">—</span>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+          <TabelaClientes linhas={linhas} ordem={ordem} href={hrefOrdem} scores={scores} />
         ) : (
           <div className="p-5">
             <Empty title="Carteira vazia" hint="Cadastre o primeiro cliente para começar." />
@@ -337,7 +300,7 @@ export default async function DashboardPage({
       <div className="mt-3 grid gap-3 lg:grid-cols-3">
         <Card
           className="lg:col-span-2"
-          title="Faturamento e lucro — últimos 6 meses"
+          title="Faturamento e lucro — últimos 12 meses"
           actions={
             <ChartLegend
               items={[
@@ -407,81 +370,79 @@ export default async function DashboardPage({
       </div>
 
       <div className="mt-3 grid gap-3 lg:grid-cols-3">
-        <div className="space-y-3">
-          <SaudeIntegracoes
-            conectadas={saude.conectadas}
-            comErro={saude.comErro}
-            paradas={saude.paradas}
-            ultimoCron={saude.ultimoCron}
-          />
+        <SaudeIntegracoes
+          conectadas={saude.conectadas}
+          comErro={saude.comErro}
+          paradas={saude.paradas}
+          ultimoCron={saude.ultimoCron}
+        />
 
-          <Card
-            title="Tarefas da equipe"
-            actions={
-              <Link href="/tarefas" className="btn btn-ghost btn-sm">
-                Abrir
-              </Link>
-            }
-          >
-            <div className="grid grid-cols-2 gap-2">
-              <div className="rounded-lg border border-line bg-surface-2 p-3">
-                <div className="text-xl font-bold text-ink">{openTasks.length}</div>
-                <div className="text-[0.7rem] text-dim">disponíveis no mural</div>
-              </div>
-              <div className="rounded-lg border border-line bg-surface-2 p-3">
-                <div className="text-xl font-bold text-accent">{myTasks.length}</div>
-                <div className="text-[0.7rem] text-dim">comigo agora</div>
-              </div>
+        <Card
+          title="Tarefas da equipe"
+          actions={
+            <Link href="/tarefas" className="btn btn-ghost btn-sm">
+              Abrir
+            </Link>
+          }
+        >
+          <div className="grid grid-cols-2 gap-2">
+            <div className="rounded-lg border border-line bg-surface-2 p-3">
+              <div className="text-xl font-bold text-ink">{openTasks.length}</div>
+              <div className="text-[0.7rem] text-dim">disponíveis no mural</div>
             </div>
-            {openTasks.slice(0, 3).map((t) => (
-              <div key={t.id} className="mt-2 flex items-center justify-between gap-2 border-t border-line pt-2">
-                <span className="min-w-0 truncate text-xs text-muted">{t.title}</span>
-                <StatusChip value={t.priority} />
-              </div>
-            ))}
-          </Card>
-
-          <Card title="Pontos nos últimos 30 dias" subtitle="Base da gamificação">
-            {board.some((b) => b.points > 0) ? (
-              <ul className="space-y-2">
-                {board.slice(0, 5).map((b, i) => (
-                  <li key={b.id} className="flex items-center gap-2.5">
-                    <span className="w-4 text-xs font-bold text-dim">{i + 1}</span>
-                    <Avatar name={b.name} color={b.color} size={24} />
-                    <span className="flex-1 truncate text-xs text-muted">{b.name}</span>
-                    <span className="text-xs font-bold text-accent">{b.points} pts</span>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="text-sm text-dim">Nenhuma tarefa concluída ainda neste período.</p>
-            )}
-          </Card>
-        </div>
-      </div>
-
-      <section className="relative mt-3 overflow-hidden rounded-[var(--radius-card)] border border-line bg-surface">
-        <div className="pointer-events-none absolute inset-y-0 right-0 w-1/2 bg-gradient-to-l from-brand-soft to-transparent" />
-        <div className="relative flex flex-wrap items-center justify-between gap-4 px-6 py-5">
-          <div className="flex items-center gap-3">
-            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brand-soft text-brand">
-              <IconTrendUp size={20} />
-            </span>
-            <div>
-              <p className="text-[0.95rem] font-semibold text-ink">Tudo no lugar, para você ir mais longe.</p>
-              <p className="text-sm text-muted">Clientes, marketplaces, ads e finanças em um só sistema.</p>
+            <div className="rounded-lg border border-line bg-surface-2 p-3">
+              <div className="text-xl font-bold text-accent">{myTasks.length}</div>
+              <div className="text-[0.7rem] text-dim">comigo agora</div>
             </div>
           </div>
-          <Link href="/clientes/novo" className="btn btn-primary">
-            <IconPlus size={16} />
-            Novo cliente
-          </Link>
-        </div>
-      </section>
+          {openTasks.slice(0, 3).map((t) => (
+            <div key={t.id} className="mt-2 flex items-center justify-between gap-2 border-t border-line pt-2">
+              <span className="min-w-0 truncate text-xs text-muted">{t.title}</span>
+              <StatusChip value={t.priority} />
+            </div>
+          ))}
+        </Card>
+
+        <Card title="Pontos nos últimos 30 dias" subtitle="Base da gamificação">
+          {board.some((b) => b.points > 0) ? (
+            <ul className="space-y-2">
+              {board.slice(0, 5).map((b, i) => (
+                <li key={b.id} className="flex items-center gap-2.5">
+                  <span className="w-4 text-xs font-bold text-dim">{i + 1}</span>
+                  <Avatar name={b.name} color={b.color} size={24} />
+                  <span className="flex-1 truncate text-xs text-muted">{b.name}</span>
+                  <span className="text-xs font-bold text-accent">{b.points} pts</span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-sm text-dim">Nenhuma tarefa concluída ainda neste período.</p>
+          )}
+        </Card>
+      </div>
 
       <p className="mt-4 text-center text-xs text-dim">
         Mês de referência: {dateBR(`${ref}-01`)} · dados consolidados de fechamentos manuais e sincronizações de API
       </p>
     </>
+  );
+}
+
+function ListaVariacao({ itens, vazio }: { itens: { l: LinhaCliente; v: number }[]; vazio: string }) {
+  if (!itens.length) return <p className="text-sm text-dim">{vazio}</p>;
+  return (
+    <ul className="space-y-1.5">
+      {itens.map(({ l, v }) => (
+        <li key={l.id}>
+          <Link href={`/clientes/${l.id}`} className="flex items-center justify-between gap-2 text-sm hover:text-brand">
+            <span className="min-w-0 truncate text-ink">{l.name}</span>
+            <span className="flex shrink-0 items-center gap-2">
+              <span className="text-xs text-muted">{brlShort(l.revenue)}</span>
+              <Delta value={v} />
+            </span>
+          </Link>
+        </li>
+      ))}
+    </ul>
   );
 }
