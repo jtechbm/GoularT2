@@ -42,7 +42,7 @@ export const TIPOS_ALERTA: { kind: string; label: string }[] = [
   { kind: "roas_baixo", label: "ROAS abaixo da meta" },
   { kind: "loja_parada", label: "Loja sem sincronização" },
   { kind: "sem_responsavel", label: "Cliente sem responsável" },
-  { kind: "tarefa_atrasada", label: "Tarefa crítica atrasada" },
+  { kind: "tarefa_atrasada", label: "Tarefa atrasada" },
   { kind: "onboarding_incompleto", label: "Onboarding incompleto" },
   { kind: "contrato_sem_valor", label: "Contrato sem valores" },
   { kind: "cobranca_vencida", label: "Cobrança vencida" },
@@ -189,8 +189,8 @@ export function alertasDoCliente(c: ClienteParaAlerta, refMonth: string): Alerta
       kind: "tarefa_atrasada",
       nivel: "critico",
       titulo: `Tarefa atrasada: ${t.title}`,
-      detalhe: t.due_date ? `O prazo era ${t.due_date}.` : "Sem prazo definido.",
-      href: `/tarefas?cliente=${c.id}`,
+      detalhe: t.due_date ? `O prazo era ${t.due_date}.` : "Estourou o prazo para concluir.",
+      href: `/tarefas/${t.id}`,
       tarefaSugerida: t.title,
     });
   }

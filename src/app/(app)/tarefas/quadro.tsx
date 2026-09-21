@@ -5,6 +5,7 @@ import { claimTaskAction, moveTaskAction, startTaskAction, submitTaskAction } fr
 import { dateBR } from "@/lib/format";
 import { TASK_COLUMNS, type TaskStatus } from "@/lib/types";
 import type { TaskRow } from "@/lib/queries";
+import { atrasada, PrazoChip } from "@/components/prazo-tarefa";
 
 const TOM_PRIORIDADE: Record<string, "bad" | "warn" | "brand" | "neutral"> = {
   urgente: "bad",
@@ -12,10 +13,6 @@ const TOM_PRIORIDADE: Record<string, "bad" | "warn" | "brand" | "neutral"> = {
   media: "brand",
   baixa: "neutral",
 };
-
-export function atrasada(t: TaskRow): boolean {
-  return Boolean(t.due_date && t.status !== "concluida" && new Date(`${t.due_date}T23:59:59`) < new Date());
-}
 
 /**
  * Cartão do quadro.
@@ -67,8 +64,9 @@ function Cartao({
       </div>
 
       <div className="mt-2 flex items-center justify-between gap-2">
-        <span className={`text-[0.7rem] ${late ? "font-semibold text-bad" : "text-dim"}`}>
-          {t.due_date ? (late ? `atrasada desde ${dateBR(t.due_date)}` : dateBR(t.due_date)) : "sem prazo"}
+        <span className="flex flex-wrap items-center gap-1.5">
+          <PrazoChip t={t} />
+          {t.due_date && <span className="text-[0.7rem] text-dim">até {dateBR(t.due_date)}</span>}
         </span>
         {t.assignee_name && <Avatar name={t.assignee_name} color={t.assignee_color} size={22} />}
       </div>

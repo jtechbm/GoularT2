@@ -156,6 +156,12 @@ export interface Task {
   rejections: number;
   /** a própria pessoa registrou a tarefa para si */
   self_created: number;
+  /** prazo para concluir, em horas, contado de quando alguém pega a tarefa */
+  sla_hours: number | null;
+  /** quando o prazo em horas vence; null enquanto ninguém pegou */
+  deadline_at: string | null;
+  /** quando o aviso de atraso saiu; evita repetir */
+  overdue_notified_at: string | null;
 }
 
 export interface TaskChecklistItem {

@@ -761,6 +761,15 @@ ALTER TABLE client_marketplaces ADD COLUMN IF NOT EXISTS ads_permission text;
 -- por vez para trás até 12 meses, retomando daqui na rodada seguinte.
 ALTER TABLE client_marketplaces ADD COLUMN IF NOT EXISTS history_from text;
 
+-- Prazo para concluir, em horas, definido por quem cria a tarefa. Começa a
+-- correr quando alguém pega ou recebe a tarefa (deadline_at). O aviso de
+-- atraso sai uma vez só: overdue_notified_at marca que já saiu.
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS sla_hours           integer;
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS deadline_at         text;
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS overdue_notified_at text;
+CREATE INDEX IF NOT EXISTS idx_tasks_deadline ON tasks(deadline_at)
+  WHERE deadline_at IS NOT NULL AND overdue_notified_at IS NULL;
+
 ALTER TABLE store_analyses ALTER COLUMN client_marketplace_id DROP NOT NULL;
 ALTER TABLE store_analyses ALTER COLUMN marketplace           DROP NOT NULL;
 

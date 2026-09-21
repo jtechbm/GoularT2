@@ -8,6 +8,7 @@ import { Avatar, Card, Chip, Empty, Field, PageHeader, Stat } from "@/components
 import { SubmitButton } from "@/components/submit";
 import {
   approveTaskAction,
+  definirPrazoAction,
   rejectTaskAction,
   releaseTaskAction,
   reopenTaskAction,
@@ -25,6 +26,8 @@ import {
 } from "@/lib/actions/task-detalhe";
 import { TASK_COLUMNS } from "@/lib/types";
 import { calcularPontos } from "@/lib/pontos";
+import { OPCOES_PRAZO, rotuloPrazo, situacaoPrazo } from "@/lib/prazo-tarefa";
+import { PrazoChip } from "@/components/prazo-tarefa";
 
 export default async function TarefaPage({ params }: { params: Promise<{ id: string }> }) {
   const user = await requireUser();
@@ -50,6 +53,7 @@ export default async function TarefaPage({ params }: { params: Promise<{ id: str
     priority: task.priority,
     pointsOverride: task.points,
     due_date: task.due_date,
+    deadline_at: task.deadline_at,
     submitted_at: task.submitted_at,
     rejections: task.rejections,
     self_created: task.self_created,
@@ -77,7 +81,7 @@ export default async function TarefaPage({ params }: { params: Promise<{ id: str
                 {task.client_name}
               </Link>
             )}
-            {task.due_date && <span className="text-xs text-dim">prazo {dateBR(task.due_date)}</span>}
+            <PrazoChip t={task} />
           </span>
         }
       />
@@ -407,6 +411,56 @@ export default async function TarefaPage({ params }: { params: Promise<{ id: str
                 </form>
               )}
             </div>
+          </Card>
+
+          <Card title="Prazo">
+            <dl className="space-y-1.5 text-xs">
+              <div className="flex justify-between gap-2">
+                <dt className="text-muted">Para concluir</dt>
+                <dd className="text-ink">{rotuloPrazo(task.sla_hours) ?? "sem prazo em horas"}</dd>
+              </div>
+              {task.due_date && (
+                <div className="flex justify-between gap-2">
+                  <dt className="text-muted">Data limite</dt>
+                  <dd className="text-ink">{dateBR(task.due_date)}</dd>
+                </div>
+              )}
+              {task.claimed_at && (
+                <div className="flex justify-between gap-2">
+                  <dt className="text-muted">Com {task.assignee_name?.split(" ")[0] ?? "a pessoa"} desde</dt>
+                  <dd className="text-ink">{dateTimeBR(task.claimed_at)}</dd>
+                </div>
+              )}
+              {situacaoPrazo(task).limite && (
+                <div className="flex justify-between gap-2">
+                  <dt className="text-muted">Vence em</dt>
+                  <dd className="text-ink">{dateTimeBR(situacaoPrazo(task).limite!.toISOString())}</dd>
+                </div>
+              )}
+            </dl>
+            {manager && task.status !== "concluida" && (
+              <form action={definirPrazoAction} className="mt-3 flex items-end gap-2 border-t border-line pt-3">
+                <input type="hidden" name="task_id" value={task.id} />
+                <Field label="Mudar prazo para concluir">
+                  <select name="sla_hours" className="select" defaultValue={task.sla_hours ?? ""}>
+                    <option value="">Sem prazo em horas</option>
+                    {OPCOES_PRAZO.map((o) => (
+                      <option key={o.horas} value={o.horas}>
+                        {o.rotulo}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+                <SubmitButton variant="ghost" size="sm">
+                  Salvar
+                </SubmitButton>
+              </form>
+            )}
+            {manager && task.claimed_at && task.status !== "concluida" && (
+              <p className="mt-2 text-[0.7rem] text-dim">
+                O prazo conta de quando {task.assignee_name?.split(" ")[0] ?? "a pessoa"} ficou com a tarefa, não de agora.
+              </p>
+            )}
           </Card>
 
           <Card title="Histórico" subtitle="Tudo que aconteceu com esta tarefa">

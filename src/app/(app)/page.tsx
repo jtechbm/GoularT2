@@ -37,6 +37,7 @@ import { SaudeIntegracoes } from "@/components/saude-integracoes";
 import { Procedencia } from "@/components/procedencia";
 import { montarLinhas, TabelaClientes, type LinhaCliente } from "@/components/tabela-clientes";
 import { NIVEL_TOM, NIVEL_LABEL } from "@/lib/alertas";
+import { atrasada } from "@/components/prazo-tarefa";
 import { marketplaceLabel } from "@/lib/types";
 
 export default async function DashboardPage({
@@ -56,14 +57,14 @@ export default async function DashboardPage({
 
   // Tudo que não depende de outra consulta sai junto. Em fila, a tela
   // esperava a soma de todas; em paralelo, espera a mais lenta.
-  const [rows, propria, series, byMarketplace, openTasks, myTasks, board, saude, procedencia, indicadores] =
+  const [rows, propria, series, byMarketplace, openTasks, emAndamento, board, saude, procedencia, indicadores] =
     await Promise.all([
       clientRows(ref, "cliente", escopo),
       verLojasProprias ? ownStoreTotals(ref) : Promise.resolve(null),
       monthlySeries(12, undefined, escopo),
       marketplaceBreakdown(ref, undefined, escopo),
       tasks({ status: "disponivel" }),
-      tasks({ statuses: ["assumida", "em_andamento", "em_revisao"], assignee: user.id }),
+      tasks({ statuses: ["assumida", "em_andamento", "em_revisao"] }),
       leaderboard(),
       integrationHealth(escopo),
       procedenciaDoMes(ref, { scope: escopo }),
@@ -120,6 +121,8 @@ export default async function DashboardPage({
   const emOnboarding = rows.filter((r) => r.status === "onboarding").length;
   const semResponsavel = rows.filter((r) => !r.owner_id).length;
   const totalRevenue = byMarketplace.reduce((s, m) => s + m.revenue, 0);
+  const myTasks = emAndamento.filter((t) => t.assignee_id === user.id);
+  const tarefasAtrasadas = emAndamento.filter(atrasada);
 
   // quando a pessoa cai aqui por falta de permissão, a tela diz qual foi
   const semAcesso = params.sem_acesso
@@ -395,6 +398,17 @@ export default async function DashboardPage({
               <div className="text-[0.7rem] text-dim">comigo agora</div>
             </div>
           </div>
+          {tarefasAtrasadas.length > 0 && (
+            <Link
+              href="/tarefas?aba=registro"
+              className="mt-2 flex items-center justify-between rounded-lg border border-bad/30 bg-bad-soft px-3 py-2 text-xs text-bad hover:opacity-90"
+            >
+              <span>
+                {tarefasAtrasadas.length} {tarefasAtrasadas.length === 1 ? "tarefa estourou" : "tarefas estouraram"} o prazo
+              </span>
+              <span>ver registro →</span>
+            </Link>
+          )}
           {openTasks.slice(0, 3).map((t) => (
             <div key={t.id} className="mt-2 flex items-center justify-between gap-2 border-t border-line pt-2">
               <span className="min-w-0 truncate text-xs text-muted">{t.title}</span>

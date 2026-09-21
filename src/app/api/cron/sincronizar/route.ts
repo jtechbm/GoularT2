@@ -5,6 +5,7 @@ import { avancarHistorico, contasComHistoricoPendente } from "@/lib/integrations
 import { verificarPenalidadesML } from "@/lib/penalidades/mercadolivre";
 import { verificarPenalidadesShopee } from "@/lib/penalidades/shopee";
 import { addMonths, currentMonth } from "@/lib/format";
+import { avisarTarefasAtrasadas } from "@/lib/tarefas-atraso";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -133,6 +134,8 @@ export async function GET(req: NextRequest) {
   // Barata (um DELETE por índice) e o único lugar do sistema que roda todo dia
   // sem ninguém pedir.
   const sessoesLimpas = await run("DELETE FROM sessions WHERE expires_at < ?", now());
+  // a navegação já avisa; isto cobre o fim de semana, quando ninguém entra
+  const prazosEstourados = await avisarTarefasAtrasadas().catch(() => 0);
 
   // batimento cardíaco: sem isto, um cron que nunca roda é indistinguível
   // de um cron que roda e não encontra nada para fazer
@@ -147,6 +150,7 @@ export async function GET(req: NextRequest) {
 
   return NextResponse.json({
     sessoesVencidasApagadas: sessoesLimpas,
+    prazosEstourados,
     contas: contas.length,
     processadas: resultados.length,
     ok: resultados.filter((r) => r.ok).length,

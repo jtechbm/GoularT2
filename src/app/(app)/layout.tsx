@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { requireUser, visibleClientIds } from "@/lib/auth";
 import { one } from "@/lib/db";
 import { Sidebar } from "@/components/nav";
+import { avisarTarefasAtrasadas } from "@/lib/tarefas-atraso";
 
 // toda tela aqui depende da sessão e do banco: nada é pré-renderizado.
 // sem isto, o build tenta avaliar as páginas e passa a depender do banco
@@ -16,6 +17,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   if (user.must_change_password === 1 && user.invite_token) {
     redirect(`/convite/${user.invite_token}`);
   }
+
+  // antes dos contadores, para o aviso de prazo estourado já entrar na conta
+  // do sino. Falha aqui não pode derrubar a navegação.
+  await avisarTarefasAtrasadas().catch(() => 0);
 
   // os três contadores do menu são independentes: disparados juntos, a
   // navegação espera o mais lento, não a soma dos três

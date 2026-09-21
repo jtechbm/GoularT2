@@ -1,4 +1,5 @@
 import { TASK_PRIORITIES, type TaskPriority } from "./types.ts";
+import { noPrazo } from "./prazo-tarefa.ts";
 
 /**
  * Como uma tarefa vira pontos.
@@ -41,6 +42,7 @@ export interface EntradaPontos {
   /** pontos definidos à mão na criação, quando houver */
   pointsOverride?: number | null;
   due_date: string | null;
+  deadline_at?: string | null;
   submitted_at: string | null;
   rejections: number;
   self_created: number;
@@ -55,13 +57,13 @@ export function calcularPontos(t: EntradaPontos): Pontuacao {
   const base = pontosBase(t.priority, t.pointsOverride);
   const motivos: { texto: string; valor: number }[] = [{ texto: "Complexidade combinada", valor: base }];
 
-  // no prazo = entregou para revisão até o fim do dia do vencimento.
+  // no prazo = entregou para revisão até o limite (ver prazo-tarefa.ts).
   // Sem prazo definido, ninguém prometeu nada, então não há bônus nem
   // punição: dar o bônus faria toda tarefa sem prazo valer mais.
   let prazo = 0;
-  if (t.due_date && t.submitted_at) {
-    const limite = new Date(`${t.due_date}T23:59:59`);
-    if (new Date(t.submitted_at) <= limite) {
+  const pontual = noPrazo(t);
+  if (pontual !== null) {
+    if (pontual) {
       prazo = Math.round(base * BONUS_PRAZO);
       motivos.push({ texto: "Entregue no prazo", valor: prazo });
     } else {
@@ -92,10 +94,4 @@ export function calcularPontos(t: EntradaPontos): Pontuacao {
     total: Math.max(1, bruto - desconto),
     motivos,
   };
-}
-
-/** Entregou dentro do prazo? Usado na taxa de pontualidade do ranking. */
-export function noPrazo(due_date: string | null, submitted_at: string | null): boolean | null {
-  if (!due_date || !submitted_at) return null;
-  return new Date(submitted_at) <= new Date(`${due_date}T23:59:59`);
 }

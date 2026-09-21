@@ -9,6 +9,7 @@ import { str, strOrNull, toNumber } from "@/lib/format";
 import { TASK_PRIORITIES } from "@/lib/types";
 import { calcularPontos } from "@/lib/pontos";
 import { notificar, notificarVarios } from "@/lib/notificacoes";
+import { calcularDeadline, OPCOES_PRAZO, rotuloPrazo } from "@/lib/prazo-tarefa";
 
 function refresh() {
   revalidatePath("/tarefas");
@@ -28,6 +29,12 @@ async function logEvent(taskId: string, userId: string | null, type: string, poi
     meta ?? null,
     now(),
   );
+}
+
+/** Só aceita as opções do formulário: prazo digitado à mão vira bagunça no registro. */
+function lerSla(valor: FormDataEntryValue | null): number | null {
+  const horas = Number(valor);
+  return OPCOES_PRAZO.some((o) => o.horas === horas) ? horas : null;
 }
 
 function pointsFor(priority: string, override?: number): number {
@@ -68,10 +75,15 @@ export async function createTaskAction(formData: FormData) {
   const clientId = strOrNull(formData.get("client_id"));
   if (clientId) await assertClientAccess(user, clientId);
 
+  // o prazo em horas é do gestor; quem registra para si não se dá prazo
+  const sla = distribui ? lerSla(formData.get("sla_hours")) : null;
+  const agora = now();
+
   await run(
     `INSERT INTO tasks (id, title, description, client_id, priority, status, due_date, points, created_by,
-                        assignee_id, claimed_at, requires_evidence, self_created, created_at, updated_at)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+                        assignee_id, claimed_at, requires_evidence, self_created, sla_hours, deadline_at,
+                        created_at, updated_at)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     taskId,
     title,
     strOrNull(formData.get("description")),
@@ -82,11 +94,14 @@ export async function createTaskAction(formData: FormData) {
     pointsFor(priority, toNumber(formData.get("points"))),
     user.id,
     assignee,
-    assignee ? now() : null,
+    assignee ? agora : null,
     formData.get("requires_evidence") ? 1 : 0,
     propria ? 1 : 0,
-    now(),
-    now(),
+    sla,
+    // atribuída na criação: o relógio começa agora
+    assignee ? calcularDeadline(agora, sla) : null,
+    agora,
+    agora,
   );
 
   await logEvent(
@@ -102,7 +117,7 @@ export async function createTaskAction(formData: FormData) {
       userId: assignee,
       actorId: user.id,
       type: "atribuicao",
-      title: `${user.name} atribuiu "${title}" a você`,
+      title: `${user.name} atribuiu "${title}" a você${sla ? ` · prazo de ${rotuloPrazo(sla)}` : ""}`,
       href: `/tarefas/${taskId}`,
       taskId,
       clientId,
@@ -117,17 +132,24 @@ export async function createTaskAction(formData: FormData) {
 export async function claimTaskAction(formData: FormData) {
   const user = await requireUser();
   const taskId = str(formData.get("task_id"));
-  const task = await one<{ status: string }>("SELECT status FROM tasks WHERE id = ?", taskId);
+  const task = await one<{ status: string; sla_hours: number | null }>(
+    "SELECT status, sla_hours FROM tasks WHERE id = ?",
+    taskId,
+  );
   if (!task || task.status !== "disponivel") redirect("/tarefas?erro=indisponivel");
 
   // a condição status='disponivel' no UPDATE e o que impede dois
   // funcionários de pegarem a mesma tarefa: quem chega depois atualiza
   // zero linhas e cai no erro, em vez de roubar a tarefa do primeiro
+  // o prazo em horas começa a correr aqui, na hora de pegar
+  const agora = now();
   const linhas = await run(
-    "UPDATE tasks SET status='assumida', assignee_id=?, claimed_at=?, updated_at=? WHERE id=? AND status='disponivel'",
+    `UPDATE tasks SET status='assumida', assignee_id=?, claimed_at=?, deadline_at=?, overdue_notified_at=NULL,
+            updated_at=? WHERE id=? AND status='disponivel'`,
     user.id,
-    now(),
-    now(),
+    agora,
+    calcularDeadline(agora, task.sla_hours),
+    agora,
     taskId,
   );
   if (!linhas) redirect("/tarefas?erro=indisponivel");
@@ -142,7 +164,8 @@ export async function releaseTaskAction(formData: FormData) {
   const user = await requireUser();
   const taskId = str(formData.get("task_id"));
   await run(
-    "UPDATE tasks SET status='disponivel', assignee_id=NULL, claimed_at=NULL, updated_at=? WHERE id=?",
+    `UPDATE tasks SET status='disponivel', assignee_id=NULL, claimed_at=NULL, deadline_at=NULL,
+            overdue_notified_at=NULL, updated_at=? WHERE id=?`,
     now(),
     taskId,
   );
@@ -230,11 +253,12 @@ export async function approveTaskAction(formData: FormData) {
     status: string;
     priority: string;
     due_date: string | null;
+    deadline_at: string | null;
     submitted_at: string | null;
     rejections: number;
     self_created: number;
   }>(
-    `SELECT points, assignee_id, status, priority, due_date, submitted_at, rejections, self_created
+    `SELECT points, assignee_id, status, priority, due_date, deadline_at, submitted_at, rejections, self_created
        FROM tasks WHERE id = ?`,
     taskId,
   );
@@ -253,6 +277,7 @@ export async function approveTaskAction(formData: FormData) {
     priority: task.priority,
     pointsOverride: task.points,
     due_date: task.due_date,
+    deadline_at: task.deadline_at,
     submitted_at: task.submitted_at,
     rejections: task.rejections,
     self_created: task.self_created,
@@ -415,4 +440,48 @@ export async function deleteTaskAction(formData: FormData) {
   await run("DELETE FROM tasks WHERE id = ?", str(formData.get("task_id")));
   refresh();
   redirect("/tarefas");
+}
+
+/**
+ * O gestor muda o prazo em horas de uma tarefa.
+ *
+ * Se alguém já está com ela, o novo prazo conta de quando a pessoa pegou,
+ * não de agora: aumentar o prazo não pode zerar o relógio de quem atrasou.
+ * O aviso de atraso volta a valer, porque o prazo agora é outro.
+ */
+export async function definirPrazoAction(formData: FormData) {
+  const user = await requireUser();
+  assertCan(user, "tarefas.gerenciar", "Somente gestores e admins definem o prazo.");
+  const taskId = str(formData.get("task_id"));
+  const sla = lerSla(formData.get("sla_hours"));
+
+  const task = await one<{ claimed_at: string | null; assignee_id: string | null; title: string }>(
+    "SELECT claimed_at, assignee_id, title FROM tasks WHERE id = ?",
+    taskId,
+  );
+  if (!task) redirect("/tarefas");
+
+  await run(
+    "UPDATE tasks SET sla_hours=?, deadline_at=?, overdue_notified_at=NULL, updated_at=? WHERE id=?",
+    sla,
+    task.claimed_at ? calcularDeadline(task.claimed_at, sla) : null,
+    now(),
+    taskId,
+  );
+  await logEvent(taskId, user.id, "prazo_definido", 0, sla ? rotuloPrazo(sla)! : "sem prazo em horas");
+  if (task.assignee_id) {
+    await notificar({
+      userId: task.assignee_id,
+      actorId: user.id,
+      type: "prazo",
+      title: sla
+        ? `${user.name} definiu ${rotuloPrazo(sla)} de prazo para "${task.title}"`
+        : `${user.name} tirou o prazo em horas de "${task.title}"`,
+      href: `/tarefas/${taskId}`,
+      taskId,
+    });
+  }
+  refresh();
+  revalidatePath(`/tarefas/${taskId}`);
+  redirect(`/tarefas/${taskId}?ok=1`);
 }

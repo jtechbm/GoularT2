@@ -20,6 +20,15 @@ import type {
   User,
 } from "./types";
 
+/**
+ * Limite efetivo de uma tarefa em SQL: o que vencer primeiro entre a data
+ * (fim do dia em Brasília) e o prazo em horas. É o mesmo cálculo de
+ * limiteDaTarefa, em prazo-tarefa.ts; LEAST ignora o que for nulo.
+ */
+function limiteTarefa(t = "tasks"): string {
+  return `LEAST(${t}.deadline_at::timestamptz, (${t}.due_date || 'T23:59:59-03:00')::timestamptz)`;
+}
+
 export interface Totals {
   revenue: number;
   profit: number;
@@ -420,6 +429,49 @@ export async function tasks(
     `${TASK_SELECT} ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
      ORDER BY (CASE t.priority WHEN 'urgente' THEN 0 WHEN 'alta' THEN 1 WHEN 'media' THEN 2 ELSE 3 END),
               (t.due_date IS NULL), t.due_date, t.created_at DESC`,
+    ...params,
+  );
+}
+
+export interface LinhaRegistro extends TaskRow {
+  /** 'atribuida' quando alguém deu a tarefa à pessoa; 'pegou' quando ela pegou do mural */
+  como: "atribuida" | "pegou";
+}
+
+/**
+ * Registro de tarefas: quem ficou com o quê, quando, e se cumpriu o prazo.
+ *
+ * O período é pelo momento em que a tarefa foi pega ou atribuída. As que
+ * continuam abertas e atrasadas entram sempre, de qualquer período: uma
+ * tarefa atrasada desde o mês passado é justamente a que o gestor precisa ver.
+ */
+export async function registroTarefas(filtro: {
+  inicio: string;
+  fim: string;
+  userId?: string;
+}): Promise<LinhaRegistro[]> {
+  const params: unknown[] = [filtro.inicio, `${filtro.fim}T23:59:59.999Z`, new Date().toISOString()];
+  let pessoa = "";
+  if (filtro.userId) {
+    pessoa = " AND t.assignee_id = ?";
+    params.push(filtro.userId);
+  }
+  return all<LinhaRegistro>(
+    `SELECT sub.* FROM (
+       ${TASK_SELECT.replace(
+         "SELECT t.*,",
+         `SELECT t.*,
+                 CASE WHEN EXISTS (SELECT 1 FROM task_events e
+                                    WHERE e.task_id = t.id AND e.type = 'assumida'
+                                      AND e.meta = 'atribuída na criação')
+                      THEN 'atribuida' ELSE 'pegou' END AS como,`,
+       )}
+       WHERE t.assignee_id IS NOT NULL AND t.claimed_at IS NOT NULL
+         AND ((t.claimed_at >= ? AND t.claimed_at <= ?)
+              OR (t.status <> 'concluida' AND t.submitted_at IS NULL AND ${limiteTarefa("t")} < ?::timestamptz))
+         ${pessoa}
+     ) sub
+     ORDER BY sub.claimed_at DESC`,
     ...params,
   );
 }
@@ -917,7 +969,6 @@ export async function scoresEmLote(rows: ClientRow[], refMonth = currentMonth())
   const ids = rows.map((r) => r.id);
   const marcas = ids.map(() => "?").join(",");
   const paradoDesde = new Date(Date.now() - 3 * 864e5).toISOString();
-  const hoje = new Date().toISOString().slice(0, 10);
 
   const penais = await penalidadesAbertasPorCliente(ids);
   const [metas, onboardings, ads, atrasadas, contas] = await Promise.all([
@@ -934,10 +985,10 @@ export async function scoresEmLote(rows: ClientRow[], refMonth = currentMonth())
     ),
     all<{ client_id: string; n: number }>(
       `SELECT client_id, COUNT(*) AS n FROM tasks
-        WHERE status <> 'concluida' AND due_date IS NOT NULL AND due_date < ?
+        WHERE status <> 'concluida' AND submitted_at IS NULL AND ${limiteTarefa()} < ?::timestamptz
           AND client_id IN (${marcas})
         GROUP BY client_id`,
-      hoje,
+      new Date().toISOString(),
       ...ids,
     ),
     all<{ client_id: string; conectadas: number; problema: number }>(
@@ -1033,10 +1084,14 @@ export async function alertasDaCarteira(
       ...ids, paradoDesde,
     ),
     all<{ id: string; client_id: string; title: string; due_date: string | null }>(
+      // crítica vencida pela data, ou qualquer uma que estourou o prazo em
+      // horas: esse prazo foi o gestor que deu, então o atraso é notícia
       `SELECT id, client_id, title, due_date FROM tasks
-        WHERE status <> 'concluida' AND due_date IS NOT NULL AND due_date < ?
-          AND priority IN ('alta','urgente') AND client_id IN (${marcas})`,
-      hoje, ...ids,
+        WHERE status <> 'concluida' AND submitted_at IS NULL
+          AND ((priority IN ('alta','urgente') AND due_date IS NOT NULL AND due_date < ?)
+               OR (deadline_at IS NOT NULL AND deadline_at < ?))
+          AND client_id IN (${marcas})`,
+      hoje, new Date().toISOString(), ...ids,
     ),
     all<{ id: string; client_id: string; total: number; due_date: string | null }>(
       `SELECT id, client_id, total, due_date FROM agency_charges
@@ -1218,10 +1273,9 @@ export async function rankingMensal(refMonth = currentMonth()) {
     `SELECT u.id, u.name, u.color,
             COALESCE(SUM(e.points), 0)                                  AS points,
             COUNT(e.id)                                                 AS concluidas,
-            COUNT(*) FILTER (WHERE t.due_date IS NOT NULL
-                               AND t.submitted_at IS NOT NULL
-                               AND t.submitted_at <= t.due_date || 'T23:59:59') AS no_prazo,
-            COUNT(*) FILTER (WHERE t.due_date IS NOT NULL AND e.id IS NOT NULL) AS com_prazo,
+            COUNT(*) FILTER (WHERE t.submitted_at IS NOT NULL
+                               AND t.submitted_at::timestamptz <= ${limiteTarefa("t")}) AS no_prazo,
+            COUNT(*) FILTER (WHERE ${limiteTarefa("t")} IS NOT NULL AND e.id IS NOT NULL) AS com_prazo,
             COALESCE(SUM(t.rejections), 0)                              AS retrabalho
        FROM users u
        LEFT JOIN task_events e
@@ -1503,8 +1557,6 @@ export interface DesempenhoPessoa {
  * dias distorce a média da pessoa inteira e some na mediana.
  */
 export async function desempenhoEquipe(inicio: string, fim: string): Promise<DesempenhoPessoa[]> {
-  const hoje = new Date().toISOString().slice(0, 10);
-
   const pessoas = await all<{
     id: string;
     name: string;
@@ -1517,19 +1569,19 @@ export async function desempenhoEquipe(inicio: string, fim: string): Promise<Des
     all<{ assignee_id: string; ativas: number; atrasadas: number; revisao: number }>(
       `SELECT assignee_id,
               COUNT(*) FILTER (WHERE status IN ('assumida','em_andamento','em_revisao'))   AS ativas,
-              COUNT(*) FILTER (WHERE status <> 'concluida'
-                                 AND due_date IS NOT NULL AND due_date < ?)                AS atrasadas,
+              COUNT(*) FILTER (WHERE status <> 'concluida' AND submitted_at IS NULL
+                                 AND ${limiteTarefa()} < ?::timestamptz)                   AS atrasadas,
               COUNT(*) FILTER (WHERE status = 'em_revisao')                                AS revisao
          FROM tasks WHERE assignee_id IS NOT NULL GROUP BY assignee_id`,
-      hoje,
+      new Date().toISOString(),
     ),
     all<{ user_id: string; pontos: number; aprovadas: number; no_prazo: number; com_prazo: number; reaberturas: number }>(
       `SELECT e.user_id,
               COALESCE(SUM(e.points), 0)                                                     AS pontos,
               COUNT(e.id)                                                                    AS aprovadas,
-              COUNT(*) FILTER (WHERE t.due_date IS NOT NULL AND t.submitted_at IS NOT NULL
-                                 AND t.submitted_at <= t.due_date || 'T23:59:59')            AS no_prazo,
-              COUNT(*) FILTER (WHERE t.due_date IS NOT NULL)                                 AS com_prazo,
+              COUNT(*) FILTER (WHERE t.submitted_at IS NOT NULL
+                                 AND t.submitted_at::timestamptz <= ${limiteTarefa("t")})   AS no_prazo,
+              COUNT(*) FILTER (WHERE ${limiteTarefa("t")} IS NOT NULL)                      AS com_prazo,
               COALESCE(SUM(t.rejections), 0)                                                 AS reaberturas
          FROM task_events e JOIN tasks t ON t.id = e.task_id
         WHERE e.type IN ('aprovada','concluida') AND e.points > 0
