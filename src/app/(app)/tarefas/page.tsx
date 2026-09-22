@@ -13,13 +13,38 @@ import {
 } from "@/lib/queries";
 import { Card, Chip, Empty, Field, PageHeader, Stat } from "@/components/ui";
 import { SaveBar, SubmitButton } from "@/components/submit";
-import { createTaskAction } from "@/lib/actions/tasks";
+import { claimTaskAction, createTaskAction, startTaskAction } from "@/lib/actions/tasks";
 import { TASK_COLUMNS, TASK_PRIORITIES, type TaskStatus } from "@/lib/types";
 import { Quadro } from "./quadro";
 import { atrasada, PrazoChip } from "@/components/prazo-tarefa";
 import { MonthPicker } from "@/components/month-picker";
 import { currentMonth, dateTimeBR, lastMonths, monthLabel, pct } from "@/lib/format";
-import { duracao, OPCOES_PRAZO, rotuloPrazo, situacaoPrazo } from "@/lib/prazo-tarefa";
+import { duracao, limiteDaTarefa, OPCOES_PRAZO, rotuloPrazo, situacaoPrazo } from "@/lib/prazo-tarefa";
+
+const TOM_PRIORIDADE: Record<string, "bad" | "warn" | "brand" | "neutral"> = {
+  urgente: "bad",
+  alta: "warn",
+  media: "brand",
+  baixa: "neutral",
+};
+
+/** A etapa de uma tarefa, no singular: "Assumidas" é nome de coluna, não de tarefa. */
+const ETAPA: Record<string, { rotulo: string; tom: "brand" | "info" | "warn" | "ok" | "neutral" }> = {
+  disponivel: { rotulo: "no mural", tom: "neutral" },
+  assumida: { rotulo: "a começar", tom: "brand" },
+  em_andamento: { rotulo: "em andamento", tom: "info" },
+  em_revisao: { rotulo: "esperando revisão", tom: "warn" },
+  concluida: { rotulo: "concluída", tom: "ok" },
+};
+
+/** Revisão por último; entre as outras, o prazo que vence primeiro. */
+function porPrazo(a: TaskRow, b: TaskRow): number {
+  const revisao = Number(a.status === "em_revisao") - Number(b.status === "em_revisao");
+  if (revisao) return revisao;
+  const la = limiteDaTarefa(a)?.getTime() ?? Infinity;
+  const lb = limiteDaTarefa(b)?.getTime() ?? Infinity;
+  return la - lb;
+}
 
 const ABAS = [
   { key: "quadro", label: "Quadro" },
@@ -43,9 +68,9 @@ export default async function TarefasPage({
 }) {
   const user = await requireUser();
   const sp = await searchParams;
-  const aba = ABAS.some((a) => a.key === sp.aba) ? sp.aba! : "quadro";
-
   const manager = can(user, "tarefas.gerenciar");
+  // quem não distribui tarefa quer saber o que está com ele: abre ali
+  const aba = ABAS.some((a) => a.key === sp.aba) ? sp.aba! : manager ? "quadro" : "minhas";
   const clients = await clientOptions(await visibleClientIds(user));
   const team = await listUsers();
 
@@ -99,11 +124,21 @@ export default async function TarefasPage({
     return `/tarefas?${p}`;
   };
 
+  // o que a aba "minhas" e os números do topo usam
+  const naMao = minhas.filter((t) => t.status !== "em_revisao");
+  const minhasEmRevisao = minhas.filter((t) => t.status === "em_revisao");
+  const minhasAtrasadas = naMao.filter(atrasada);
+  const mural = porColuna.disponivel ?? [];
+
   return (
     <>
       <PageHeader
-        title="Tarefas da equipe"
-        subtitle="O gestor publica; quem pega assume; o gestor aprova antes de valer ponto."
+        title={manager ? "Tarefas da equipe" : "Suas tarefas"}
+        subtitle={
+          manager
+            ? "O gestor publica; quem pega assume; o gestor aprova antes de valer ponto."
+            : "Pegue, faça e envie para revisão. Os pontos entram quando o gestor aprova."
+        }
         actions={
           <nav className="flex gap-1">
             {ABAS.map((a) => (
@@ -130,134 +165,64 @@ export default async function TarefasPage({
           Alguém pegou essa tarefa antes de você.
         </div>
       )}
+      {minhasAtrasadas.length > 0 && (
+        <div className="mb-3 rounded-[12px] border border-bad/30 bg-bad-soft px-4 py-3 text-sm text-bad">
+          {minhasAtrasadas.length === 1
+            ? `"${minhasAtrasadas[0].title}" passou do prazo. Termine e envie para revisão.`
+            : `${minhasAtrasadas.length} tarefas suas passaram do prazo. Termine e envie para revisão.`}
+        </div>
+      )}
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <Stat label="Disponíveis" value={String((porColuna.disponivel ?? []).length)} tone="brand" />
-        <Stat label="Minhas em aberto" value={String(minhas.length)} tone="accent" />
         <Stat
-          label="Em revisão"
-          value={String(emRevisao.length)}
-          hint={manager ? "esperando você aprovar" : "esperando o gestor"}
-          tone={emRevisao.length ? "warn" : "neutral"}
+          label="Na sua mão"
+          value={String(naMao.length)}
+          hint={naMao.length ? `valem ${naMao.reduce((s, t) => s + t.points, 0)} pontos` : "nada agora"}
+          tone="brand"
+          href={link({ aba: "minhas" })}
         />
         <Stat
-          label="Atrasadas"
-          value={String(atrasadas.length)}
-          hint={`você tem ${meusPontos} pontos em 30 dias`}
-          tone={atrasadas.length ? "bad" : "ok"}
+          label="Esperando revisão"
+          value={String(manager ? emRevisao.length : minhasEmRevisao.length)}
+          hint={manager ? "esperando você aprovar" : "o gestor ainda vai aprovar"}
+          tone={(manager ? emRevisao.length : minhasEmRevisao.length) ? "warn" : "neutral"}
         />
-      </div>
-
-      <Card className="mt-3" bodyClassName="p-4">
-        <form className="grid gap-3 sm:grid-cols-4">
-          <input type="hidden" name="aba" value={aba} />
-          {sp.mes && <input type="hidden" name="mes" value={sp.mes} />}
-          <Field label="Cliente">
-            <select name="cliente" defaultValue={sp.cliente ?? ""} className="select">
-              <option value="">Todos</option>
-              {clients.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
-          </Field>
-          <Field label="Responsável">
-            <select name="resp" defaultValue={sp.resp ?? ""} className="select">
-              <option value="">Todos</option>
-              {team.map((u) => (
-                <option key={u.id} value={u.id}>
-                  {u.name}
-                </option>
-              ))}
-            </select>
-          </Field>
-          <Field label="Prioridade">
-            <select name="prioridade" defaultValue={sp.prioridade ?? ""} className="select">
-              <option value="">Todas</option>
-              {TASK_PRIORITIES.map((p) => (
-                <option key={p.value} value={p.value}>
-                  {p.label}
-                </option>
-              ))}
-            </select>
-          </Field>
-          <div className="flex items-end gap-2">
-            <SubmitButton variant="ghost" size="sm">
-              Filtrar
-            </SubmitButton>
-            <Link href={`/tarefas?aba=${aba}`} className="btn btn-ghost btn-sm">
-              Limpar
-            </Link>
-          </div>
-        </form>
-      </Card>
-
-      <div className="mt-3">
-        {aba === "registro" ? (
-          <Registro linhas={registro} mes={mesRegistro} meses={meses} manager={manager} />
-        ) : aba === "quadro" ? (
-          <Quadro porColuna={porColuna} userId={user.id} manager={manager} checklists={checklists} />
+        <Stat
+          label="No mural"
+          value={String(mural.length)}
+          hint={mural.length ? "quem pega primeiro leva" : "nada disponível"}
+          tone="accent"
+          href={link({ aba: "quadro" })}
+        />
+        {manager ? (
+          <Stat
+            label="Atrasadas na equipe"
+            value={String(atrasadas.length)}
+            hint={atrasadas.length ? "ver no registro" : "tudo no prazo"}
+            tone={atrasadas.length ? "bad" : "ok"}
+            href={link({ aba: "registro" })}
+          />
         ) : (
-          <Card title="Minhas tarefas" subtitle="O que está na sua mão agora" bodyClassName="p-0">
-            {minhas.length ? (
-              <div className="table-wrap">
-                <table className="data responsiva">
-                  <thead>
-                    <tr>
-                      <th>Tarefa</th>
-                      <th>Cliente</th>
-                      <th>Etapa</th>
-                      <th className="num">Prazo</th>
-                      <th className="num">Pontos</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {minhas.map((t) => (
-                      <tr key={t.id}>
-                        <td data-label="Tarefa">
-                          <Link href={`/tarefas/${t.id}`} className="font-medium text-ink hover:text-brand">
-                            {t.title}
-                          </Link>
-                        </td>
-                        <td className="text-xs text-muted" data-label="Cliente">{t.client_name ?? "—"}</td>
-                        <td data-label="Etapa">
-                          <Chip tone={t.status === "em_revisao" ? "warn" : "brand"}>
-                            {TASK_COLUMNS.find((c) => c.value === t.status)?.label ?? t.status}
-                          </Chip>
-                        </td>
-                        <td className="num text-xs" data-label="Prazo">
-                          <PrazoChip t={t} />
-                        </td>
-                        <td className="num text-muted" data-label="Pontos">{t.points}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            ) : (
-              <div className="p-5">
-                <Empty title="Nada na sua mão" hint="Pegue uma tarefa disponível no quadro." />
-              </div>
-            )}
-          </Card>
+          <Stat label="Seus pontos" value={String(meusPontos)} hint="nos últimos 30 dias" tone="ok" href="/" />
         )}
       </div>
 
-      <form action={createTaskAction} className="mt-3">
-        <Card
-          title={manager ? "Nova tarefa" : "Registrar uma demanda"}
-          subtitle={
-            manager
-              ? "Nasce disponível, sem dono"
-              : "Fica na sua mão. Os pontos só entram depois que um gestor aprovar."
-          }
-          bodyClassName="p-5 pb-0"
-        >
-            <div className="grid gap-3 sm:grid-cols-2">
-              <Field label="Título *">
-                <input name="title" required className="input" placeholder="o que precisa ser feito" />
-              </Field>
+      {/* criar fica recolhido: é o que menos se faz nesta tela */}
+      <details className="mt-3 rounded-[var(--radius-card)] border border-line bg-surface">
+        <summary className="cursor-pointer px-5 py-3.5 text-sm font-medium text-brand">
+          {manager ? "+ Nova tarefa" : "+ Registrar uma demanda para mim"}
+          <span className="ml-2 text-xs font-normal text-dim">
+            {manager
+              ? "nasce no mural, ou já atribuída"
+              : "fica na sua mão; os pontos entram depois que um gestor aprovar"}
+          </span>
+        </summary>
+        <form action={createTaskAction} className="border-t border-line px-5 pt-4">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Field label="Título *">
+              <input name="title" required className="input" placeholder="o que precisa ser feito" />
+            </Field>
+            {clients.length > 0 && (
               <Field label="Cliente">
                 <select name="client_id" className="select" defaultValue={sp.cliente ?? ""}>
                   <option value="">Sem cliente</option>
@@ -268,64 +233,193 @@ export default async function TarefasPage({
                   ))}
                 </select>
               </Field>
-              <Field label="Prioridade">
-                <select name="priority" className="select" defaultValue="media">
-                  {TASK_PRIORITIES.map((p) => (
-                    <option key={p.value} value={p.value}>
-                      {p.label} · {p.points} pts
+            )}
+            <Field label="Prioridade">
+              <select name="priority" className="select" defaultValue="media">
+                {TASK_PRIORITIES.map((p) => (
+                  <option key={p.value} value={p.value}>
+                    {p.label} · {p.points} pts
+                  </option>
+                ))}
+              </select>
+            </Field>
+            {manager && (
+              <Field label="Prazo para concluir" hint="Conta de quando a pessoa pega ou recebe a tarefa.">
+                <select name="sla_hours" className="select" defaultValue="">
+                  <option value="">Sem prazo em horas</option>
+                  {OPCOES_PRAZO.map((o) => (
+                    <option key={o.horas} value={o.horas}>
+                      {o.rotulo}
                     </option>
                   ))}
                 </select>
               </Field>
-              {manager && (
-                <Field label="Prazo para concluir" hint="Conta de quando a pessoa pega ou recebe a tarefa.">
-                  <select name="sla_hours" className="select" defaultValue="">
-                    <option value="">Sem prazo em horas</option>
-                    {OPCOES_PRAZO.map((o) => (
-                      <option key={o.horas} value={o.horas}>
-                        {o.rotulo}
-                      </option>
-                    ))}
-                  </select>
-                </Field>
-              )}
-              <Field label="Data limite" hint="Opcional. Vale o que vencer primeiro.">
-                <input name="due_date" type="date" className="input" />
+            )}
+            <Field label="Data limite" hint="Opcional. Vale o que vencer primeiro.">
+              <input name="due_date" type="date" className="input" />
+            </Field>
+            {manager && (
+              <Field label="Atribuir a" hint="Em branco: vai para o mural.">
+                <select name="assignee_id" className="select" defaultValue="">
+                  <option value="">Ninguém, vai para o mural</option>
+                  {team.map((u) => (
+                    <option key={u.id} value={u.id}>
+                      {u.name}
+                    </option>
+                  ))}
+                </select>
               </Field>
-              <div className="sm:col-span-2">
-                <Field label="Descrição">
-                  <textarea name="description" rows={2} className="textarea" />
-                </Field>
-              </div>
-              {manager && (
-                <label className="flex items-center gap-2 text-xs text-muted sm:col-span-2">
-                  <input type="checkbox" name="requires_evidence" value="1" />
-                  Exigir evidência antes de mandar para revisão
-                </label>
-              )}
-              {manager && (
-                <Field label="Atribuir a" hint="Deixe em branco para publicar no mural.">
-                  <select name="assignee_id" className="select" defaultValue="">
-                    <option value="">Ninguém, vai para o mural</option>
-                    {team.map((u) => (
-                      <option key={u.id} value={u.id}>
-                        {u.name}
-                      </option>
-                    ))}
-                  </select>
-                </Field>
-              )}
+            )}
+            <div className="sm:col-span-2">
+              <Field label="Descrição">
+                <textarea name="description" rows={2} className="textarea" />
+              </Field>
             </div>
-            <SaveBar
-              label={manager ? "Publicar tarefa" : "Registrar para mim"}
-              hint={
-                manager
-                  ? "Qualquer pessoa da equipe pode pegar."
-                  : "Você não pode atribuir tarefa para outra pessoa."
-              }
-            />
-        </Card>
-      </form>
+            {manager && (
+              <label className="flex items-center gap-2 text-xs text-muted sm:col-span-2">
+                <input type="checkbox" name="requires_evidence" value="1" />
+                Exigir evidência antes de mandar para revisão
+              </label>
+            )}
+          </div>
+          <SaveBar
+            label={manager ? "Publicar tarefa" : "Registrar para mim"}
+            hint={manager ? "Sem responsável, qualquer pessoa da equipe pode pegar." : ""}
+          />
+        </form>
+      </details>
+
+      {/* filtro só serve para quem olha a equipe inteira */}
+      {manager && aba !== "minhas" && (
+        <form className="mt-3 flex flex-wrap items-center gap-2">
+          <input type="hidden" name="aba" value={aba} />
+          {sp.mes && <input type="hidden" name="mes" value={sp.mes} />}
+          <select name="cliente" defaultValue={sp.cliente ?? ""} className="select w-44" aria-label="Cliente">
+            <option value="">Todos os clientes</option>
+            {clients.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </select>
+          <select name="resp" defaultValue={sp.resp ?? ""} className="select w-44" aria-label="Responsável">
+            <option value="">Todas as pessoas</option>
+            {team.map((u) => (
+              <option key={u.id} value={u.id}>
+                {u.name}
+              </option>
+            ))}
+          </select>
+          <select name="prioridade" defaultValue={sp.prioridade ?? ""} className="select w-40" aria-label="Prioridade">
+            <option value="">Toda prioridade</option>
+            {TASK_PRIORITIES.map((p) => (
+              <option key={p.value} value={p.value}>
+                {p.label}
+              </option>
+            ))}
+          </select>
+          <button type="submit" className="btn btn-ghost btn-sm">
+            Filtrar
+          </button>
+          {(sp.cliente || sp.resp || sp.prioridade) && (
+            <Link href={`/tarefas?aba=${aba}`} className="text-xs text-dim hover:text-brand">
+              limpar
+            </Link>
+          )}
+        </form>
+      )}
+
+      <div className="mt-3">
+        {aba === "registro" ? (
+          <Registro linhas={registro} mes={mesRegistro} meses={meses} manager={manager} />
+        ) : aba === "quadro" ? (
+          <Quadro porColuna={porColuna} userId={user.id} manager={manager} checklists={checklists} />
+        ) : (
+          <div className="space-y-3">
+            <Card
+              title="Na sua mão"
+              subtitle={minhas.length ? "Da que vence primeiro para a última" : undefined}
+              bodyClassName="p-0"
+            >
+              {minhas.length ? (
+                <ul className="divide-y divide-line">
+                  {[...minhas].sort(porPrazo).map((t) => (
+                    <li key={t.id} className="flex flex-wrap items-center gap-3 px-4 py-3.5">
+                      <div className="min-w-0 flex-1">
+                        <Link href={`/tarefas/${t.id}`} className="block truncate text-sm font-semibold text-ink hover:text-brand">
+                          {t.title}
+                        </Link>
+                        <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                          <Chip tone={ETAPA[t.status]?.tom ?? "neutral"}>{ETAPA[t.status]?.rotulo ?? t.status}</Chip>
+                          {t.status !== "em_revisao" && <PrazoChip t={t} />}
+                          {t.client_name && <span className="text-[0.7rem] text-dim">{t.client_name}</span>}
+                        </div>
+                      </div>
+                      <span className="shrink-0 rounded-full bg-brand-soft px-2.5 py-1 text-xs font-bold text-brand">
+                        +{t.points} pts
+                      </span>
+                      {t.status === "assumida" ? (
+                        <form action={startTaskAction}>
+                          <input type="hidden" name="task_id" value={t.id} />
+                          <SubmitButton size="sm" pendingLabel="Começando…">
+                            Começar
+                          </SubmitButton>
+                        </form>
+                      ) : t.status === "em_andamento" ? (
+                        <Link href={`/tarefas/${t.id}`} className="btn btn-primary btn-sm">
+                          Abrir e enviar
+                        </Link>
+                      ) : (
+                        <Link href={`/tarefas/${t.id}`} className="btn btn-ghost btn-sm">
+                          Ver
+                        </Link>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <div className="p-5">
+                  <Empty title="Nada na sua mão" hint="Pegue uma tarefa do mural logo abaixo." />
+                </div>
+              )}
+            </Card>
+
+            <Card
+              title="No mural"
+              subtitle={mural.length ? "Quem pega primeiro fica com ela" : undefined}
+              bodyClassName="p-0"
+            >
+              {mural.length ? (
+                <ul className="divide-y divide-line">
+                  {mural.map((t) => (
+                    <li key={t.id} className="flex flex-wrap items-center gap-3 px-4 py-3">
+                      <div className="min-w-0 flex-1">
+                        <Link href={`/tarefas/${t.id}`} className="block truncate text-sm font-medium text-ink hover:text-brand">
+                          {t.title}
+                        </Link>
+                        <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                          <Chip tone={TOM_PRIORIDADE[t.priority] ?? "neutral"}>{t.priority}</Chip>
+                          <PrazoChip t={t} />
+                          {t.client_name && <span className="text-[0.7rem] text-dim">{t.client_name}</span>}
+                        </div>
+                      </div>
+                      <span className="shrink-0 text-xs font-bold text-brand">+{t.points} pts</span>
+                      <form action={claimTaskAction}>
+                        <input type="hidden" name="task_id" value={t.id} />
+                        <SubmitButton size="sm" pendingLabel="Pegando…">
+                          Pegar
+                        </SubmitButton>
+                      </form>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="p-5 text-sm text-dim">Nada no mural agora. Quando o gestor publicar, aparece aqui.</p>
+              )}
+            </Card>
+          </div>
+        )}
+      </div>
     </>
   );
 }
