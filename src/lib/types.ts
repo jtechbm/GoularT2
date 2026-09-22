@@ -27,6 +27,8 @@ export interface User {
   invite_token: string | null;
   invite_expires_at: string | null;
   password_changed_at: string | null;
+  /** permissões do papel, carregadas com a sessão (tela de Equipe) */
+  permissions?: string[];
 }
 
 /** 'cliente' é atendido pela operação; 'propria' é loja do próprio Kadu. */

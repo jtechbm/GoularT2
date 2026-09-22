@@ -77,8 +77,38 @@ const POR_PAPEL: Record<Role, Permission[]> = {
   membro: ["integracoes.sincronizar"],
 };
 
-export function can(user: { role: Role }, permission: Permission): boolean {
+/**
+ * Pode? Usa as permissões gravadas para o papel (tela de Equipe) quando a
+ * sessão as carregou; sem elas, o padrão do código. O admin tem tudo sempre.
+ */
+export function can(user: { role: Role; permissions?: readonly string[] | null }, permission: Permission): boolean {
+  if (user.role === "admin") return true;
+  if (user.permissions) return user.permissions.includes(permission);
   return POR_PAPEL[user.role]?.includes(permission) ?? false;
+}
+
+/** Papéis cujas permissões podem ser mudadas na tela. */
+export const PAPEIS_EDITAVEIS: Role[] = ["gestor", "membro"];
+
+/**
+ * Lê o que está gravado para um papel. Texto estragado ou permissão que não
+ * existe mais é ignorado; sem nada gravado, vale o padrão.
+ */
+export function permissoesGravadas(role: Role, gravado: string | null | undefined): Permission[] {
+  if (role === "admin") return TODAS;
+  if (!gravado) return POR_PAPEL[role] ?? [];
+  try {
+    const lista = JSON.parse(gravado) as unknown;
+    if (!Array.isArray(lista)) return POR_PAPEL[role] ?? [];
+    return TODAS.filter((p) => lista.includes(p));
+  } catch {
+    return POR_PAPEL[role] ?? [];
+  }
+}
+
+/** O padrão do código para o papel, para o botão "voltar ao padrão". */
+export function permissoesPadrao(role: Role): Permission[] {
+  return POR_PAPEL[role] ?? [];
 }
 
 /**

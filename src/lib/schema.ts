@@ -770,6 +770,17 @@ ALTER TABLE tasks ADD COLUMN IF NOT EXISTS overdue_notified_at text;
 CREATE INDEX IF NOT EXISTS idx_tasks_deadline ON tasks(deadline_at)
   WHERE deadline_at IS NOT NULL AND overdue_notified_at IS NULL;
 
+-- O que gestor e membro podem fazer, editável na tela de Equipe. Sem linha,
+-- vale o padrão do código (permissions.ts). O admin não entra aqui: tem
+-- tudo sempre, senão um clique errado tirava de todo mundo o poder de
+-- devolver as permissões.
+CREATE TABLE IF NOT EXISTS role_permissions (
+  role        text PRIMARY KEY,
+  permissions text NOT NULL,
+  updated_by  text REFERENCES users(id) ON DELETE SET NULL,
+  updated_at  text NOT NULL
+);
+
 ALTER TABLE store_analyses ALTER COLUMN client_marketplace_id DROP NOT NULL;
 ALTER TABLE store_analyses ALTER COLUMN marketplace           DROP NOT NULL;
 

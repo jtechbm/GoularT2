@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import { randomBytes } from "node:crypto";
 import { id, now, one, run } from "@/lib/db";
 import { hashPassword, requirePermission, requireUser } from "@/lib/auth";
-import { can } from "@/lib/permissions";
+import { can, PAPEIS_EDITAVEIS, PERMISSION_LABEL, PERMISSION_ORDER, permissoesPadrao } from "@/lib/permissions";
 import { str, strOrNull } from "@/lib/format";
 import { validarSenha } from "@/lib/senha";
 import type { Role } from "@/lib/types";
@@ -237,4 +237,48 @@ export async function definirSenhaAction(formData: FormData) {
   await registrar(alvo.id, alvo.id, "senha_definida", "pelo convite");
 
   redirect("/login?senha=definida");
+}
+
+/**
+ * Salva o que gestor e membro podem fazer.
+ *
+ * Só quem gerencia a equipe muda isso, e o admin fica fora: tem tudo sempre.
+ * Cada mudança vai para a trilha de acesso com o que entrou e o que saiu,
+ * porque dar "ver a carteira inteira" a um membro é abrir dado de cliente.
+ */
+export async function salvarPapeisAction(formData: FormData) {
+  const user = await requirePermission("equipe.gerenciar");
+  const voltarAoPadrao = str(formData.get("padrao")) === "1";
+
+  for (const role of PAPEIS_EDITAVEIS) {
+    const antes = await one<{ permissions: string }>("SELECT permissions FROM role_permissions WHERE role = ?", role);
+    const anterior: string[] = antes ? (JSON.parse(antes.permissions) as string[]) : permissoesPadrao(role);
+    const marcadas = voltarAoPadrao
+      ? permissoesPadrao(role)
+      : PERMISSION_ORDER.filter((p) => formData.get(`${role}:${p}`) === "1");
+
+    const entrou = marcadas.filter((p) => !anterior.includes(p));
+    const saiu = anterior.filter((p) => !marcadas.includes(p as never));
+    if (!entrou.length && !saiu.length) continue;
+
+    await run(
+      `INSERT INTO role_permissions (role, permissions, updated_by, updated_at) VALUES (?,?,?,?)
+       ON CONFLICT (role) DO UPDATE SET permissions = EXCLUDED.permissions,
+         updated_by = EXCLUDED.updated_by, updated_at = EXCLUDED.updated_at`,
+      role,
+      JSON.stringify(marcadas),
+      user.id,
+      now(),
+    );
+    const nome = (p: string) => PERMISSION_LABEL[p as keyof typeof PERMISSION_LABEL] ?? p;
+    await registrar(
+      user.id,
+      user.id,
+      "permissoes_do_papel",
+      `${role}: ${[...entrou.map((p) => `+ ${nome(p)}`), ...saiu.map((p) => `− ${nome(p)}`)].join("; ")}`,
+    );
+  }
+
+  revalidatePath("/", "layout");
+  redirect("/equipe?papeis=ok");
 }

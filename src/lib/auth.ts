@@ -4,7 +4,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
 import { all, id, now, one, run } from "./db";
-import { can, type Permission } from "./permissions";
+import { can, type Permission, permissoesGravadas } from "./permissions";
 import type { Role, User } from "./types";
 
 const COOKIE = "goulart_session";
@@ -68,10 +68,12 @@ export const currentUser = cache(async function currentUser(): Promise<User | nu
   const token = jar.get(COOKIE)?.value;
   if (!token) return null;
 
-  const row = await one<User & { expires_at: string }>(
-    `SELECT ${USER_COLS_U}, s.expires_at
+  // as permissões do papel vêm na mesma consulta: sem ida a mais ao banco
+  const row = await one<User & { expires_at: string; role_permissions: string | null }>(
+    `SELECT ${USER_COLS_U}, s.expires_at, rp.permissions AS role_permissions
        FROM sessions s
        JOIN users u ON u.id = s.user_id
+       LEFT JOIN role_permissions rp ON rp.role = u.role
       WHERE s.token = ? AND u.active = 1`,
     token,
   );
@@ -81,8 +83,8 @@ export const currentUser = cache(async function currentUser(): Promise<User | nu
     await run("DELETE FROM sessions WHERE token = ?", token);
     return null;
   }
-  const { expires_at: _expires, ...user } = row;
-  return user;
+  const { expires_at: _expires, role_permissions, ...user } = row;
+  return { ...user, permissions: permissoesGravadas(user.role, role_permissions) };
 });
 
 /** Usuário da sessão; redireciona para /login quando não houver. */

@@ -5,6 +5,7 @@ import { avaliarOnboarding } from "./onboarding";
 import { calcularScore, type Score } from "./score";
 import { alertasDoCliente, ordenarAlertas, type Alerta } from "./alertas";
 import { receitaInformada } from "./ads-analise";
+import { permissoesGravadas, type Permission } from "./permissions";
 import type {
   AdsEntry,
   AgencyCharge,
@@ -19,6 +20,7 @@ import type {
   FinanceSnapshot,
   Task,
   User,
+  Role,
 } from "./types";
 
 /**
@@ -677,6 +679,17 @@ export async function adsEFaturamento(
     ...params,
   );
   return { ads: Number(r?.ads ?? 0), faturamento: Number(r?.faturamento ?? 0) };
+}
+
+/** O que cada papel pode fazer hoje: o gravado na tela de Equipe, ou o padrão. */
+export async function permissoesDosPapeis(): Promise<Record<Role, Permission[]>> {
+  const linhas = await all<{ role: Role; permissions: string }>("SELECT role, permissions FROM role_permissions");
+  const gravado = (r: Role) => linhas.find((l) => l.role === r)?.permissions ?? null;
+  return {
+    admin: permissoesGravadas("admin", null),
+    gestor: permissoesGravadas("gestor", gravado("gestor")),
+    membro: permissoesGravadas("membro", gravado("membro")),
+  };
 }
 
 export async function clientOptions(scope?: Scope) {

@@ -1,14 +1,19 @@
 import Link from "next/link";
 import { listUsers, requireUser, visibleClientIds } from "@/lib/auth";
-import { can, permissionsOf, PERMISSION_LABEL, PERMISSION_ORDER } from "@/lib/permissions";
+import { can, PERMISSION_LABEL, PERMISSION_ORDER } from "@/lib/permissions";
 import { all } from "@/lib/db";
-import { clientRows, desempenhoEquipe, leaderboard, periodoDe, rankingMensal, tasks } from "@/lib/queries";
+import { clientRows, desempenhoEquipe, leaderboard, periodoDe, permissoesDosPapeis, rankingMensal, tasks } from "@/lib/queries";
 import { Ranking } from "@/components/ranking";
 import { DesempenhoEquipe } from "@/components/desempenho-equipe";
 import { brlShort, currentMonth, dateBR } from "@/lib/format";
 import { Avatar, Card, Chip, Field, PageHeader, Stat } from "@/components/ui";
 import { SaveBar, SubmitButton } from "@/components/submit";
-import { createTeamMemberAction, toggleTeamMemberAction, updateTeamMemberAction } from "@/lib/actions/team";
+import {
+  createTeamMemberAction,
+  salvarPapeisAction,
+  toggleTeamMemberAction,
+  updateTeamMemberAction,
+} from "@/lib/actions/team";
 import { ROLES } from "@/lib/types";
 
 const COLORS = ["#a855f7", "#7c3aed", "#f97316", "#fb923c", "#ec4899", "#22d3ee", "#34d399", "#facc15"];
@@ -16,11 +21,12 @@ const COLORS = ["#a855f7", "#7c3aed", "#f97316", "#fb923c", "#ec4899", "#22d3ee"
 export default async function EquipePage({
   searchParams,
 }: {
-  searchParams: Promise<{ u?: string; ok?: string; convite?: string; periodo?: string; mes?: string }>;
+  searchParams: Promise<{ u?: string; ok?: string; convite?: string; periodo?: string; mes?: string; papeis?: string }>;
 }) {
   const user = await requireUser();
   const sp = await searchParams;
   const manager = can(user, "equipe.gerenciar");
+  const papeis = await permissoesDosPapeis();
 
   // desempenho: o período vale para o que já aconteceu, não para a carga
   // atual, que é sempre "agora"
@@ -298,45 +304,97 @@ export default async function EquipePage({
             </form>
           )}
 
-          <Card title="Papéis do sistema" subtitle="O que cada papel pode fazer">
-            <div className="table-wrap">
-              <table className="data">
-                <thead>
-                  <tr>
-                    <th />
-                    {ROLES.map((r) => (
-                      <th key={r.value} className="num">
-                        {r.label}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {PERMISSION_ORDER.map((p) => (
-                    <tr key={p}>
-                      <td className="text-xs text-muted">{PERMISSION_LABEL[p]}</td>
-                      {ROLES.map((r) => {
-                        const tem = permissionsOf(r.value).includes(p);
-                        return (
-                          <td key={r.value} className={`num ${tem ? "text-ok" : "text-dim"}`} title={r.description}>
-                            {tem ? "sim" : "—"}
-                          </td>
-                        );
-                      })}
+          <form action={salvarPapeisAction}>
+            <Card
+              title="Papéis do sistema"
+              subtitle={
+                manager
+                  ? "Marque o que cada papel pode fazer. O admin tem tudo sempre."
+                  : "O que cada papel pode fazer"
+              }
+              bodyClassName="p-0"
+            >
+              {sp.papeis === "ok" && (
+                <p className="border-b border-line bg-ok-soft px-4 py-2 text-xs font-medium text-ok">
+                  Permissões salvas. Valem a partir da próxima tela que cada pessoa abrir.
+                </p>
+              )}
+              <div className="table-wrap">
+                <table className="data">
+                  <thead>
+                    <tr>
+                      <th />
+                      {ROLES.map((r) => (
+                        <th key={r.value} className="num">
+                          {r.label}
+                        </th>
+                      ))}
                     </tr>
-                  ))}
-                  <tr>
-                    <td className="text-xs text-muted">Ver clientes</td>
-                    {ROLES.map((r) => (
-                      <td key={r.value} className="num text-xs text-muted">
-                        {permissionsOf(r.value).includes("carteira.completa") ? "todos" : "só os dele"}
-                      </td>
+                  </thead>
+                  <tbody>
+                    {PERMISSION_ORDER.map((p) => (
+                      <tr key={p}>
+                        <td className="text-xs text-muted">{PERMISSION_LABEL[p]}</td>
+                        {ROLES.map((r) => {
+                          const tem = papeis[r.value].includes(p);
+                          if (r.value === "admin" || !manager) {
+                            return (
+                              <td
+                                key={r.value}
+                                className={`num ${tem ? "text-ok" : "text-dim"}`}
+                                title={r.value === "admin" ? "O admin tem tudo sempre" : r.description}
+                              >
+                                {tem ? "sim" : "—"}
+                              </td>
+                            );
+                          }
+                          return (
+                            <td key={r.value} className="num">
+                              <input
+                                type="checkbox"
+                                name={`${r.value}:${p}`}
+                                value="1"
+                                defaultChecked={tem}
+                                aria-label={`${r.label}: ${PERMISSION_LABEL[p]}`}
+                                className="h-4 w-4 cursor-pointer accent-[var(--primary)]"
+                              />
+                            </td>
+                          );
+                        })}
+                      </tr>
                     ))}
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </Card>
+                    <tr>
+                      <td className="text-xs text-muted">
+                        Ver clientes
+                        <span className="block text-[0.65rem] text-dim">segue "Ver a carteira inteira"</span>
+                      </td>
+                      {ROLES.map((r) => (
+                        <td key={r.value} className="num text-xs text-muted">
+                          {papeis[r.value].includes("carteira.completa") ? "todos" : "só os dele"}
+                        </td>
+                      ))}
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              {manager && (
+                <div className="flex flex-wrap items-center justify-end gap-2 border-t border-line px-4 py-3">
+                  <SubmitButton
+                    variant="ghost"
+                    size="sm"
+                    name="padrao"
+                    value="1"
+                    confirm="Voltar gestor e membro às permissões padrão?"
+                  >
+                    Voltar ao padrão
+                  </SubmitButton>
+                  <SubmitButton size="sm" pendingLabel="Salvando…">
+                    Salvar permissões
+                  </SubmitButton>
+                </div>
+              )}
+            </Card>
+          </form>
         </div>
       </div>
     </>

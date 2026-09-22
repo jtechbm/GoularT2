@@ -26,8 +26,12 @@ import {
   IconUsers,
 } from "./icons";
 import type { User } from "@/lib/types";
+import { can, type Permission } from "@/lib/permissions";
 
-const NAV: { href: string; label: string; Icon: typeof IconHome; exact?: boolean; roles?: string[] }[] = [
+// o item aparece para quem tem a permissão da tela, a mesma que a página
+// confere: com as permissões editáveis na Equipe, lista fixa de papéis
+// mostrava link para quem não entra e escondia de quem entra
+const NAV: { href: string; label: string; Icon: typeof IconHome; exact?: boolean; permissao?: Permission }[] = [
   { href: "/", label: "Dashboard", Icon: IconHome, exact: true },
   { href: "/clientes", label: "Clientes", Icon: IconUser },
   { href: "/alertas", label: "Atenção", Icon: IconAlert },
@@ -35,13 +39,13 @@ const NAV: { href: string; label: string; Icon: typeof IconHome; exact?: boolean
   { href: "/ads", label: "Ads", Icon: IconMegaphone },
   { href: "/precos", label: "Preços", Icon: IconTag },
   { href: "/analise", label: "Análise", Icon: IconBarChart },
-  { href: "/financeiro", label: "Financeiro", Icon: IconDollar, roles: ["admin", "gestor"] },
+  { href: "/financeiro", label: "Financeiro", Icon: IconDollar, permissao: "financeiro" },
   { href: "/tarefas", label: "Tarefas", Icon: IconCheckSquare },
   { href: "/equipe", label: "Equipe", Icon: IconUsers },
   { href: "/notificacoes", label: "Notificações", Icon: IconBell },
   { href: "/chat", label: "Chat", Icon: IconChat },
   // a tela das conexões é do admin; gestor e membro sincronizam pelo cliente
-  { href: "/integracoes", label: "Integrações", Icon: IconSync, roles: ["admin"] },
+  { href: "/integracoes", label: "Integrações", Icon: IconSync, permissao: "integracoes.gerenciar" },
 ];
 
 const ROLE_LABEL: Record<string, string> = { admin: "Admin", gestor: "Gestor", membro: "Membro" };
@@ -70,7 +74,7 @@ export function Sidebar({
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
 
-  const items = NAV.filter((i) => !i.roles || i.roles.includes(user.role)).map(({ href, label, Icon, exact }) => {
+  const items = NAV.filter((i) => !i.permissao || can(user, i.permissao)).map(({ href, label, Icon, exact }) => {
     const active = exact ? pathname === href : pathname === href || pathname.startsWith(`${href}/`);
     // o contador fica no item, não num sininho separado: um número no menu
     // que a pessoa já usa é mais visto do que um ícone a mais no topo
