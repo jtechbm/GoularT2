@@ -8,7 +8,7 @@ import { SaveBar, SubmitButton } from "@/components/submit";
 import { MonthPicker } from "@/components/month-picker";
 import { Procedencia } from "@/components/procedencia";
 import { createAdsAction, deleteAdsAction } from "@/lib/actions/ads";
-import { analisarCampanha, resumirAds, roasDoTotal, textoRoas } from "@/lib/ads-analise";
+import { analisarCampanha, EXPLICA_ROAS_GERAL, resumirAds, roasExibido } from "@/lib/ads-analise";
 import { MARKETPLACES, marketplaceLabel } from "@/lib/types";
 
 /**
@@ -61,7 +61,7 @@ export default async function AdsPage({
         ...c,
         investido,
         receita,
-        roas: roasDoTotal(investido, comRetorno, receita).roas,
+        roas: roasExibido(investido, comRetorno, receita, c.revenue),
         semRetorno: investido - comRetorno,
         naoLido: c.ads_permission === "pendente" && !doCanal.some((x) => !x.automatica),
       };
@@ -74,6 +74,13 @@ export default async function AdsPage({
   // pelo total punha os R$ 202 mil da Shopee (sem Ads lido) no denominador e
   // mostrava "0% do faturamento"
   const faturamentoLido = porCanal.filter((c) => !c.naoLido).reduce((s, c) => s + c.revenue, 0);
+
+  const roasTopo = roasExibido(
+    resumo.invested,
+    resumo.invested - resumo.semRetorno,
+    resumo.revenue,
+    porCanal.filter((c) => c.investido > 0).reduce((s, c) => s + c.revenue, 0),
+  );
 
   const diasComAds = dias.filter((d) => d.ads > 0);
   const maiorDia = Math.max(...dias.map((d) => d.ads), 0);
@@ -180,14 +187,20 @@ export default async function AdsPage({
           tone="accent"
         />
         <Stat
-          label="ROAS"
-          value={resumo.roas === null ? "—" : `${resumo.roas.toFixed(2)}x`}
-          hint={
-            resumo.roas === null
-              ? textoRoas(resumo.invested, resumo.invested - resumo.semRetorno, resumo.revenue)
-              : `cada R$ 1 investido virou ${brl(resumo.roas)} em vendas`
+          label={roasTopo?.geral ? "ROAS geral" : "ROAS"}
+          value={
+            roasTopo === null
+              ? "—"
+              : `${roasTopo.valor.toLocaleString("pt-BR", { maximumFractionDigits: roasTopo.geral ? 1 : 2, minimumFractionDigits: roasTopo.geral ? 1 : 2 })}x`
           }
-          tone={resumo.roas === null ? "neutral" : resumo.roas >= 4 ? "ok" : resumo.roas >= 2 ? "warn" : "bad"}
+          hint={
+            roasTopo === null
+              ? "sem investimento no mês"
+              : roasTopo.geral
+                ? `cada R$ 1 em Ads para ${brl(roasTopo.valor)} de faturamento total (a Shopee não informa a venda por anúncio)`
+                : `cada R$ 1 investido virou ${brl(roasTopo.valor)} em vendas`
+          }
+          tone={roasTopo === null || roasTopo.geral ? "neutral" : roasTopo.valor >= 4 ? "ok" : roasTopo.valor >= 2 ? "warn" : "bad"}
         />
         <Stat
           label="Cliques"
@@ -242,8 +255,17 @@ export default async function AdsPage({
                         <td className="num text-muted" data-label="Voltou em vendas">
                           {c.receita ? brl(c.receita) : c.semRetorno ? "não informado" : "—"}
                         </td>
-                        <td className={`num font-semibold ${roasTom(c.roas)}`} data-label="ROAS">
-                          {c.roas === null ? "—" : `${c.roas.toFixed(2)}x`}
+                        <td className={`num font-semibold ${c.roas?.geral ? "text-ink" : roasTom(c.roas?.valor ?? null)}`} data-label="ROAS">
+                          {c.roas === null ? (
+                            "—"
+                          ) : c.roas.geral ? (
+                            <span title={EXPLICA_ROAS_GERAL}>
+                              {c.roas.valor.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}x{" "}
+                              <span className="text-[0.65rem] font-normal text-dim">geral</span>
+                            </span>
+                          ) : (
+                            `${c.roas.valor.toFixed(2)}x`
+                          )}
                         </td>
                       </>
                     )}

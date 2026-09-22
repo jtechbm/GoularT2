@@ -188,6 +188,8 @@ export interface DerivadoLoja {
     acos: number | null;
     /** investido lançado à mão sem o retorno: fica fora do ROAS */
     semRetorno: number;
+    /** faturamento do canal ÷ investido: o número quando o ROAS dos anúncios não existe */
+    roasGeral: number | null;
     /** investimento sobre o faturamento do canal (TACOS): quanto da venda vai para anúncio */
     pctFaturamento: number | null;
     /** variação do investimento contra o mês anterior; null sem mês anterior */
@@ -227,6 +229,8 @@ export interface Dossie extends EntradaDossie {
       invested: number;
       revenue: number;
       roas: number | null;
+      /** faturamento dos canais com Ads ÷ investido */
+      roasGeral: number | null;
       pctFaturamento: number | null;
       /** algum canal não deixa ler Ads: o total está incompleto */
       incompleto: boolean;
@@ -390,6 +394,7 @@ function derivarLoja(l: LojaNoDossie, faturamentoDoCliente: number): DerivadoLoj
             roas: roasDoTotal(investido, comRetorno, receitaAds).roas,
             acos: receitaAds && comRetorno ? comRetorno / receitaAds : null,
             semRetorno: investido - comRetorno,
+            roasGeral: l.atual.revenue ? l.atual.revenue / investido : null,
             pctFaturamento: l.atual.revenue ? investido / l.atual.revenue : null,
             variacaoInvestido: antes?.invested ? diferencaRelativa(investido, antes.invested) : null,
             roasAnterior: antes?.invested ? antes.revenue / antes.invested : null,
@@ -443,6 +448,10 @@ export function montarDossie(e: EntradaDossie): Dossie {
               soma(porLoja.map((l) => (l.derivado.ads ? l.derivado.ads.invested - l.derivado.ads.semRetorno : 0))),
               receitaAds,
             ).roas,
+            roasGeral: (() => {
+              const fat = soma(porLoja.filter((l) => l.derivado.ads).map((l) => l.atual.revenue));
+              return fat ? fat / investido : null;
+            })(),
             pctFaturamento: atual.revenue ? investido / atual.revenue : null,
             incompleto: porLoja.some((l) => l.derivado.adsNaoMedido),
           }
@@ -549,7 +558,7 @@ export function linhasDoDossie(d: Dossie): LinhaDoDossie[] {
 
   if (dv.ads) {
     l.push(
-      `Anúncios somando os canais: investido R$ ${real(dv.ads.invested)}${dv.ads.pctFaturamento === null ? "" : ` (${porcento(dv.ads.pctFaturamento)} do faturamento)`}, receita atribuída R$ ${real(dv.ads.revenue)}, ROAS ${multiplo(dv.ads.roas)}.${dv.ads.incompleto ? " INCOMPLETO: falta o Ads de canal que o marketplace não deixa ler." : ""}`,
+      `Anúncios somando os canais: investido R$ ${real(dv.ads.invested)}${dv.ads.pctFaturamento === null ? "" : ` (${porcento(dv.ads.pctFaturamento)} do faturamento)`}, receita atribuída R$ ${real(dv.ads.revenue)}, ${dv.ads.roas !== null ? `ROAS ${multiplo(dv.ads.roas)}` : `ROAS dos anúncios indisponível; ROAS geral (faturamento ÷ anúncios) ${multiplo(dv.ads.roasGeral)}`}.${dv.ads.incompleto ? " INCOMPLETO: falta o Ads de canal que o marketplace não deixa ler." : ""}`,
     );
   }
 
@@ -608,6 +617,11 @@ export function linhasDoDossie(d: Dossie): LinhaDoDossie[] {
       l.push(
         `Anúncios pagos: investido R$ ${real(ld.ads.invested)}${ld.ads.pctFaturamento === null ? "" : ` (${porcento(ld.ads.pctFaturamento)} do faturamento do canal)`}, receita atribuída R$ ${real(ld.ads.revenue)}, ROAS ${multiplo(ld.ads.roas)}, ACOS ${ld.ads.acos === null ? (ld.ads.semRetorno ? "indefinido" : "indefinido (gastou e não vendeu)") : porcento(ld.ads.acos)}.`,
       );
+      if (ld.ads.roas === null && ld.ads.roasGeral !== null) {
+        l.push(
+          `ROAS geral do canal (faturamento total do canal ÷ investido em anúncios): ${multiplo(ld.ads.roasGeral)}. Inclui a venda orgânica; é o número a usar para este canal, deixando claro que é o geral e não o dos anúncios.`,
+        );
+      }
       if (ld.ads.semRetorno) {
         l.push(
           `Destes, R$ ${real(ld.ads.semRetorno)} não têm o retorno em vendas conhecido (recarga de crédito lida da carteira ou lançamento à mão): não é "não vendeu", é "não informado". Use esse valor para falar de quanto investe e do % do faturamento, não de desempenho; o ROAS acima não o inclui.`,

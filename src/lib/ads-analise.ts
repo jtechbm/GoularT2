@@ -59,15 +59,40 @@ export function roasDoTotal(
   return { roas: receita / comRetorno, cobertura };
 }
 
-/** Texto do ROAS para dica de cartão: o número, ou por que não há. */
-export function textoRoas(investido: number, comRetorno: number, receita: number): string {
-  const { roas, cobertura } = roasDoTotal(investido, comRetorno, receita);
-  if (roas !== null) return `ROAS ${roas.toFixed(2).replace(".", ",")}x`;
-  if (investido <= 0) return "sem investimento";
-  const parte = cobertura < 0.01 ? "menos de 1%" : `${Math.round(cobertura * 100)}%`;
-  return cobertura > 0
-    ? `sem ROAS: só ${parte} do investido informa vendas`
-    : "sem ROAS: o investido não informa vendas";
+/**
+ * O ROAS que a tela mostra: sempre um número quando há investimento.
+ *
+ * Com as vendas dos anúncios conhecidas (90% do investido ou mais), é o ROAS
+ * de verdade: vendas dos anúncios ÷ investido. Sem elas (recarga de crédito
+ * da Shopee, que diz o gasto mas não a venda), é o ROAS geral: faturamento
+ * total ÷ investido. O geral inclui a venda orgânica e sai maior; por isso
+ * vem marcado, e nunca é pintado de bom ou ruim com a régua do outro.
+ */
+export function roasExibido(
+  investido: number,
+  comRetorno: number,
+  receitaAds: number,
+  faturamento: number,
+): { valor: number; geral: boolean } | null {
+  if (investido <= 0) return null;
+  const { roas } = roasDoTotal(investido, comRetorno, receitaAds);
+  if (roas !== null) return { valor: roas, geral: false };
+  return faturamento > 0 ? { valor: faturamento / investido, geral: true } : null;
+}
+
+export const EXPLICA_ROAS_GERAL =
+  "ROAS geral = faturamento total ÷ investido em Ads. Usado quando o marketplace não informa quanto os anúncios venderam (recargas da Shopee). Inclui a venda orgânica, então é maior que o ROAS dos anúncios.";
+
+/** "ROAS 5,21x" ou "ROAS geral 25,7x": o número, sempre dizendo qual é. */
+export function formatarRoas(r: { valor: number; geral: boolean } | null): string {
+  if (!r) return "sem investimento";
+  const n = r.valor.toLocaleString("pt-BR", { maximumFractionDigits: r.geral ? 1 : 2, minimumFractionDigits: r.geral ? 1 : 2 });
+  return `ROAS${r.geral ? " geral" : ""} ${n}x`;
+}
+
+/** Texto do ROAS para dica de cartão. */
+export function textoRoas(investido: number, comRetorno: number, receitaAds: number, faturamento: number): string {
+  return formatarRoas(roasExibido(investido, comRetorno, receitaAds, faturamento));
 }
 
 export interface CampanhaAnalisada {

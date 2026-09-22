@@ -1,6 +1,6 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
-import { analisarCampanha, receitaInformada, resumirAds, roasDoTotal, textoRoas } from "./ads-analise.ts";
+import { analisarCampanha, receitaInformada, resumirAds, roasDoTotal, roasExibido, textoRoas } from "./ads-analise.ts";
 
 const linha = (x: Record<string, unknown>) =>
   ({ id: "x", client_id: "c", marketplace: "shopee", campaign: null, period_start: "2026-09-01", period_end: "2026-09-30",
@@ -35,13 +35,16 @@ test("recarga de crédito da carteira conta no investido e fica fora do ROAS", (
   const r = resumirAds([recarga, analisarCampanha(linha({ invested: 31.82, revenue: 165.89, clicks: 300, source: "api" }))]);
   assert.equal(r.invested, 7931.82);
   assert.equal(r.roas, null);
-  assert.equal(textoRoas(7931.82, 31.82, 165.89), "sem ROAS: só menos de 1% do investido informa vendas");
+  // sem as vendas dos anúncios, o número é o ROAS geral: faturamento ÷ investido
+  assert.equal(textoRoas(7931.82, 31.82, 165.89, 203912.61), "ROAS geral 25,7x");
 });
 
 test("ROAS do total só com 90% ou mais do investido informando vendas", () => {
   assert.equal(roasDoTotal(1000, 950, 4000).roas!.toFixed(2), "4.21");
   assert.equal(roasDoTotal(1000, 850, 4000).roas, null);
   assert.equal(roasDoTotal(0, 0, 0).roas, null);
-  assert.equal(textoRoas(1000, 1000, 4000), "ROAS 4,00x");
-  assert.equal(textoRoas(1000, 500, 4000), "sem ROAS: só 50% do investido informa vendas");
+  assert.equal(textoRoas(1000, 1000, 4000, 50000), "ROAS 4,00x");
+  assert.equal(textoRoas(1000, 500, 4000, 50000), "ROAS geral 50,0x");
+  assert.equal(textoRoas(0, 0, 0, 50000), "sem investimento");
+  assert.deepEqual(roasExibido(1000, 0, 0, 0), null);
 });

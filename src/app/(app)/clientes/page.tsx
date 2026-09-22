@@ -133,7 +133,7 @@ export default async function ClientesPage({
           value={brlShort(totais.ads)}
           hint={
             totais.ads
-              ? `${totais.revenue ? `${pct(totais.ads / totais.revenue)} do faturamento · ` : ""}${textoRoas(totais.ads, totais.comRetorno, totais.adsRevenue)}`
+              ? `${totais.revenue ? `${pct(totais.ads / totais.revenue)} do faturamento · ` : ""}${textoRoas(totais.ads, totais.comRetorno, totais.adsRevenue, linhas.reduce((s, c) => s + (c.ads ? c.revenue : 0), 0))}`
               : "nenhum investimento no mês"
           }
           tone="warn"

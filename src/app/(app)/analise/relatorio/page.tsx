@@ -93,9 +93,21 @@ export default async function RelatorioDaAnalise({ searchParams }: { searchParam
             }
           />
           <Numero
-            rotulo="ROAS"
-            valor={ads?.roas ? `${ads.roas.toFixed(2)}x` : "—"}
-            nota={ads?.roas ? `cada R$ 1 em anúncio trouxe ${brl(ads.roas)}` : "sem anúncio medido"}
+            rotulo={ads && ads.roas === null && ads.roasGeral != null ? "ROAS geral" : "ROAS"}
+            valor={
+              ads?.roas != null
+                ? `${ads.roas.toFixed(2)}x`
+                : ads?.roasGeral != null
+                  ? `${ads.roasGeral.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}x`
+                  : "—"
+            }
+            nota={
+              ads?.roas != null
+                ? `cada R$ 1 em anúncio trouxe ${brl(ads.roas)}`
+                : ads?.roasGeral != null
+                  ? `faturamento total ÷ investido em anúncios`
+                  : "sem anúncio medido"
+            }
           />
         </div>
 

@@ -1,6 +1,7 @@
 import { brl, pct } from "@/lib/format";
 import { linhasDoDossie, type Dossie } from "@/lib/analise/dossie";
 import type { FonteCitada, ResultadoAnalise } from "@/lib/analise/llm";
+import { EXPLICA_ROAS_GERAL } from "@/lib/ads-analise";
 import { Card, Chip } from "./ui";
 
 /**
@@ -110,10 +111,19 @@ export function BlocoAnuncios({ d, r }: { d: Dossie; r: ResultadoAnalise | null 
                     className={`num font-medium ${a.roas === null ? "text-dim" : a.roas >= 4 ? "text-ok" : a.roas >= 2 ? "text-warn" : "text-bad"}`}
                     data-label="ROAS"
                   >
-                    {a.roas === null ? "—" : `${a.roas.toFixed(2)}x`}
+                    {a.roas !== null ? (
+                      `${a.roas.toFixed(2)}x`
+                    ) : a.roasGeral != null ? (
+                      <span title={EXPLICA_ROAS_GERAL} className="text-ink">
+                        {a.roasGeral.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}x{" "}
+                        <span className="text-[0.65rem] font-normal text-dim">geral</span>
+                      </span>
+                    ) : (
+                      "—"
+                    )}
                   </td>
                   <td className="num" data-label="ACOS">
-                    {a.acos === null ? <span className="text-bad">sem venda</span> : pct(a.acos)}
+                    {a.acos !== null ? pct(a.acos) : a.semRetorno ? "—" : <span className="text-bad">sem venda</span>}
                   </td>
                   <td className="num" data-label="Investido vs. mês ant.">{variacao(a.variacaoInvestido)}</td>
                   <td className="num text-muted" data-label="ROAS mês ant.">
@@ -130,9 +140,15 @@ export function BlocoAnuncios({ d, r }: { d: Dossie; r: ResultadoAnalise | null 
                   {total.pctFaturamento === null ? "—" : pct(total.pctFaturamento)}
                 </td>
                 <td className="num" data-label="Receita atribuída">{brl(total.revenue)}</td>
-                <td className="num" data-label="ROAS">{total.roas === null ? "—" : `${total.roas.toFixed(2)}x`}</td>
+                <td className="num" data-label="ROAS">
+                  {total.roas !== null
+                    ? `${total.roas.toFixed(2)}x`
+                    : total.roasGeral != null
+                      ? `${total.roasGeral.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}x geral`
+                      : "—"}
+                </td>
                 <td className="num" data-label="ACOS">
-                  {total.revenue ? pct(total.invested / total.revenue) : "—"}
+                  {total.roas !== null && total.revenue ? pct(1 / total.roas) : "—"}
                 </td>
                 <td />
                 <td />

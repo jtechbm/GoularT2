@@ -4,7 +4,7 @@ import type { Score } from "@/lib/score";
 import { brlShort, currentMonth, dateBR, num, pct, variacaoMensal } from "@/lib/format";
 import { marketplaceLabel } from "@/lib/types";
 import { ordenarClientes, type Ordem } from "@/lib/ordem-clientes";
-import { roasDoTotal, textoRoas } from "@/lib/ads-analise";
+import { EXPLICA_ROAS_GERAL, roasExibido } from "@/lib/ads-analise";
 import { Avatar, Chip, Delta, MarketplaceChip, StatusChip } from "./ui";
 import { ColunaOrdenavel } from "./coluna-ordenavel";
 import { ScoreChip } from "./score-saude";
@@ -88,7 +88,7 @@ export function TabelaClientes({
         </thead>
         <tbody>
           {ordenadas.map((c) => {
-            const roas = roasDoTotal(c.ads, c.ads_com_retorno, c.ads_revenue).roas;
+            const roas = roasExibido(c.ads, c.ads_com_retorno, c.ads_revenue, c.revenue);
             const pctAds = c.ads && c.revenue ? c.ads / c.revenue : null;
             const sc = scores.get(c.id);
             return (
@@ -149,13 +149,18 @@ export function TabelaClientes({
                   {pctAds === null ? "—" : pct(pctAds)}
                 </td>
                 <td
-                  className={`num ${roas === null ? "text-dim" : roas >= 4 ? "text-ok" : roas >= 2 ? "text-warn" : "text-bad"}`}
+                  className={`num ${roas === null ? "text-dim" : roas.geral ? "text-ink" : roas.valor >= 4 ? "text-ok" : roas.valor >= 2 ? "text-warn" : "text-bad"}`}
                   data-label="ROAS"
                 >
                   {roas === null ? (
-                    <span title={c.ads ? textoRoas(c.ads, c.ads_com_retorno, c.ads_revenue) : undefined}>—</span>
+                    "—"
+                  ) : roas.geral ? (
+                    <span title={EXPLICA_ROAS_GERAL}>
+                      {roas.valor.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}x{" "}
+                      <span className="text-[0.65rem] text-dim">geral</span>
+                    </span>
                   ) : (
-                    `${roas.toFixed(2)}x`
+                    `${roas.valor.toFixed(2)}x`
                   )}
                 </td>
                 <td className="num" data-label="Vendas 30d">
