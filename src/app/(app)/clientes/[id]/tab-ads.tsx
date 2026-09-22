@@ -2,7 +2,7 @@ import { Card, Chip, Empty, Field, MarketplaceChip, Stat } from "@/components/ui
 import { SaveBar, SubmitButton } from "@/components/submit";
 import { createAdsAction, deleteAdsAction } from "@/lib/actions/ads";
 import { brl, lastMonths, monthLabel, num, pct } from "@/lib/format";
-import { analisarCampanha, resumirAds } from "@/lib/ads-analise";
+import { analisarCampanha, dicaRoas, resumirAds, roasDaTela, xRoas } from "@/lib/ads-analise";
 import { MARKETPLACES, type AdsEntry, type Client, type ClientMarketplace, type FinanceSnapshot } from "@/lib/types";
 
 /** A linha de Ads vale para o mês se o período dela cobre o mês. */
@@ -48,13 +48,21 @@ export function TabAds({
     .sort((a, b) => b.invested - a.invested);
   const resumo = resumirAds(campanhas);
   const faturamento = faturamentoDo(refMonth);
+  const roasMes = roasDaTela(resumo.invested, resumo.invested - resumo.semRetorno, resumo.revenue, faturamento);
 
   // mês a mês, os últimos 12 até o escolhido
   const meses = lastMonths(12, refMonth).reverse();
   const historico = meses.map((mes) => {
     const doMesAtual = entries.filter((e) => doMes(e, mes)).map(analisarCampanha);
     const r = resumirAds(doMesAtual);
-    return { mes, investido: r.invested, receita: r.revenue, roas: r.roas, faturamento: faturamentoDo(mes) };
+    const fat = faturamentoDo(mes);
+    return {
+      mes,
+      investido: r.invested,
+      receita: r.revenue,
+      roas: roasDaTela(r.invested, r.invested - r.semRetorno, r.revenue, fat),
+      faturamento: fat,
+    };
   });
   const tresMeses = historico.slice(0, 3);
   const media3m = (() => {
@@ -78,21 +86,7 @@ export function TabAds({
           hint={media3m !== null ? `média dos últimos 3 meses: ${pct(media3m)}` : "quanto do faturamento foi para anúncio"}
           tone="accent"
         />
-        {resumo.roas !== null ? (
-          <Stat
-            label="ROAS"
-            value={`${resumo.roas.toFixed(2).replace(".", ",")}x`}
-            hint={`cada R$ 1 investido virou ${brl(resumo.roas)} em vendas`}
-            tone={resumo.roas >= 4 ? "ok" : resumo.roas >= 2 ? "warn" : "bad"}
-          />
-        ) : (
-          <Stat
-            label="ROAS"
-            value="—"
-            hint={resumo.invested ? "a Shopee não informa quanto o anúncio vendeu" : "sem investimento no mês"}
-            tone="neutral"
-          />
-        )}
+        <Stat label="ROAS" value={roasMes ? xRoas(roasMes) : "—"} hint={dicaRoas(roasMes)} tone="ok" />
         <Stat
           label="Voltou em vendas"
           value={resumo.revenue ? brl(resumo.revenue) : "—"}
@@ -130,8 +124,8 @@ export function TabAds({
                   <td className="num font-semibold text-ink" data-label="Ads ÷ faturamento">
                     {h.investido && h.faturamento ? pct(h.investido / h.faturamento) : "—"}
                   </td>
-                  <td className="num text-muted" data-label="ROAS">
-                    {h.roas !== null ? `${h.roas.toFixed(2)}x` : "—"}
+                  <td className="num font-semibold text-ink" data-label="ROAS">
+                    {h.roas ? <span title={dicaRoas(h.roas)}>{xRoas(h.roas)}</span> : "—"}
                   </td>
                 </tr>
               ))}

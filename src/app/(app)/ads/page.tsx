@@ -8,7 +8,7 @@ import { SaveBar, SubmitButton } from "@/components/submit";
 import { MonthPicker } from "@/components/month-picker";
 import { Procedencia } from "@/components/procedencia";
 import { createAdsAction, deleteAdsAction } from "@/lib/actions/ads";
-import { analisarCampanha, resumirAds, roasDoTotal } from "@/lib/ads-analise";
+import { analisarCampanha, dicaRoas, resumirAds, roasDaTela, xRoas } from "@/lib/ads-analise";
 import { MARKETPLACES, marketplaceLabel } from "@/lib/types";
 
 /**
@@ -64,7 +64,7 @@ export default async function AdsPage({
         ...c,
         investido,
         receita,
-        roas: roasDoTotal(investido, comRetorno, receita).roas,
+        roas: roasDaTela(investido, comRetorno, receita, c.revenue),
         semRetorno: investido - comRetorno,
         naoLido: c.ads_permission === "pendente" && !doCanal.some((x) => !x.automatica),
       };
@@ -80,6 +80,7 @@ export default async function AdsPage({
 
   const faturamentoComAds = porCanal.filter((c) => c.investido > 0).reduce((s, c) => s + c.revenue, 0);
   const media3m = tresMeses.faturamento ? tresMeses.ads / tresMeses.faturamento : null;
+  const roasTopo = roasDaTela(resumo.invested, resumo.invested - resumo.semRetorno, resumo.revenue, faturamentoComAds);
 
   const diasComAds = dias.filter((d) => d.ads > 0);
   const maiorDia = Math.max(...dias.map((d) => d.ads), 0);
@@ -185,30 +186,12 @@ export default async function AdsPage({
           }
           tone="accent"
         />
-        {resumo.roas !== null ? (
-          <Stat
-            label="ROAS"
-            value={`${resumo.roas.toFixed(2).replace(".", ",")}x`}
-            hint={`cada R$ 1 investido virou ${brl(resumo.roas)} em vendas`}
-            tone={resumo.roas >= 4 ? "ok" : resumo.roas >= 2 ? "warn" : "bad"}
-          />
-        ) : (
-          <Stat
-            label="Ads ÷ faturamento"
-            value={faturamentoComAds && resumo.invested ? pct(resumo.invested / faturamentoComAds) : "—"}
-            hint={
-              media3m !== null
-                ? `média dos últimos 3 meses: ${pct(media3m)} · a Shopee não informa a venda por anúncio, então não há ROAS`
-                : "sem investimento no período"
-            }
-            tone="brand"
-          />
-        )}
+        <Stat label="ROAS" value={roasTopo ? xRoas(roasTopo) : "—"} hint={dicaRoas(roasTopo)} tone="ok" />
         <Stat
-          label="Cliques"
-          value={num(resumo.clicks)}
-          hint={resumo.cpc === null ? "—" : `${brl(resumo.cpc)} por clique`}
-          tone="info"
+          label="Ads ÷ faturamento"
+          value={faturamentoComAds && resumo.invested ? pct(resumo.invested / faturamentoComAds) : "—"}
+          hint={media3m !== null ? `média dos últimos 3 meses: ${pct(media3m)}` : "quanto do faturamento foi para anúncio"}
+          tone="accent"
         />
       </div>
 
@@ -257,12 +240,8 @@ export default async function AdsPage({
                         <td className="num text-muted" data-label="Voltou em vendas">
                           {c.receita ? brl(c.receita) : c.semRetorno ? "não informado" : "—"}
                         </td>
-                        <td className={`num font-semibold ${roasTom(c.roas)}`} data-label="ROAS">
-                          {c.roas === null ? (
-                            <span title={c.investido ? "Sem ROAS: o marketplace não informa quanto o anúncio vendeu. O % do faturamento ao lado é a medida." : undefined}>—</span>
-                          ) : (
-                            `${c.roas.toFixed(2)}x`
-                          )}
+                        <td className="num font-semibold text-ink" data-label="ROAS">
+                          {c.roas ? <span title={dicaRoas(c.roas)}>{xRoas(c.roas)}</span> : "—"}
                         </td>
                       </>
                     )}

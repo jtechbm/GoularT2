@@ -8,7 +8,7 @@ import { Card, Empty, PageHeader, Stat } from "@/components/ui";
 import { MonthPicker } from "@/components/month-picker";
 import { montarLinhas, TabelaClientes } from "@/components/tabela-clientes";
 import { lerOrdem } from "@/lib/ordem-clientes";
-import { roasDoTotal, textoAds } from "@/lib/ads-analise";
+import { roasDaTela, textoAds } from "@/lib/ads-analise";
 import { CLIENT_STATUS, MARKETPLACES } from "@/lib/types";
 
 /**
@@ -137,7 +137,7 @@ export default async function ClientesPage({
                   totais.ads,
                   totais.revenue,
                   { ads: linhas.reduce((s, c) => s + c.ads_3m, 0), faturamento: linhas.reduce((s, c) => s + c.fat_3m, 0) },
-                  roasDoTotal(totais.ads, totais.comRetorno, totais.adsRevenue).roas,
+                  roasDaTela(totais.ads, totais.comRetorno, totais.adsRevenue, linhas.reduce((s, c) => s + (c.ads ? c.revenue : 0), 0)),
                 )
               : "nenhum investimento no mês"
           }

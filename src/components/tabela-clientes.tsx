@@ -4,7 +4,7 @@ import type { Score } from "@/lib/score";
 import { brlShort, currentMonth, dateBR, num, pct, variacaoMensal } from "@/lib/format";
 import { marketplaceLabel } from "@/lib/types";
 import { ordenarClientes, type Ordem } from "@/lib/ordem-clientes";
-import { roasDoTotal } from "@/lib/ads-analise";
+import { dicaRoas, roasDaTela, xRoas } from "@/lib/ads-analise";
 import { Avatar, Chip, Delta, MarketplaceChip, StatusChip } from "./ui";
 import { ColunaOrdenavel } from "./coluna-ordenavel";
 import { ScoreChip } from "./score-saude";
@@ -90,7 +90,7 @@ export function TabelaClientes({
         </thead>
         <tbody>
           {ordenadas.map((c) => {
-            const roas = roasDoTotal(c.ads, c.ads_com_retorno, c.ads_revenue).roas;
+            const roas = roasDaTela(c.ads, c.ads_com_retorno, c.ads_revenue, c.revenue);
             const media3m = c.ads_3m && c.fat_3m ? c.ads_3m / c.fat_3m : null;
             const pctAds = c.ads && c.revenue ? c.ads / c.revenue : null;
             const sc = scores.get(c.id);
@@ -157,16 +157,10 @@ export function TabelaClientes({
                   )}
                 </td>
                 <td
-                  className={`num ${roas === null ? "text-dim" : roas >= 4 ? "text-ok" : roas >= 2 ? "text-warn" : "text-bad"}`}
+                  className={`num ${roas === null ? "text-dim" : "font-medium text-ink"}`}
                   data-label="ROAS"
                 >
-                  {roas === null ? (
-                    <span title={c.ads ? "Sem ROAS: a Shopee não informa quanto o anúncio vendeu. Veja o % do faturamento em Ads." : undefined}>
-                      —
-                    </span>
-                  ) : (
-                    `${roas.toFixed(2)}x`
-                  )}
+                  {roas === null ? "—" : <span title={dicaRoas(roas)}>{xRoas(roas)}</span>}
                 </td>
                 <td className="num" data-label="Vendas 30d">
                   <span className="text-ink">{num(c.vendas30)}</span>{" "}

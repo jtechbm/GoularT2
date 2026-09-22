@@ -610,7 +610,7 @@ export function linhasDoDossie(d: Dossie): LinhaDoDossie[] {
       );
       if (ld.ads.roas === null && ld.ads.pctFaturamento !== null) {
         l.push(
-          `Este canal não informa quanto o anúncio vendeu, então não tem ROAS. A medida de Ads aqui é o investido sobre o faturamento do canal: ${porcento(ld.ads.pctFaturamento)}. É assim que a agência acompanha.`,
+          `Este canal não informa quanto o anúncio vendeu. O ROAS usado pela agência aqui é faturamento do canal ÷ investido: ${multiplo(1 / ld.ads.pctFaturamento)} (anúncio = ${porcento(ld.ads.pctFaturamento)} do faturamento). Diga que é faturamento ÷ investido.`,
         );
       }
       if (ld.ads.semRetorno) {

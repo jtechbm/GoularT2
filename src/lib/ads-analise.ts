@@ -59,6 +59,39 @@ export function roasDoTotal(
   return { roas: receita / comRetorno, cobertura };
 }
 
+/**
+ * O ROAS que a tela mostra: sempre um número quando há investimento.
+ *
+ * Com a venda dos anúncios conhecida (90% do investido ou mais), é vendas
+ * dos anúncios ÷ investido. Sem ela (a Shopee não informa quanto o anúncio
+ * vendeu; o investido vem das recargas de crédito), é faturamento ÷
+ * investido. A dica ao lado diz qual das duas contas é.
+ */
+export function roasDaTela(
+  investido: number,
+  comRetorno: number,
+  receitaAds: number,
+  faturamento: number,
+): { valor: number; base: "anuncios" | "faturamento" } | null {
+  if (investido <= 0) return null;
+  const { roas } = roasDoTotal(investido, comRetorno, receitaAds);
+  if (roas !== null) return { valor: roas, base: "anuncios" };
+  return faturamento > 0 ? { valor: faturamento / investido, base: "faturamento" } : null;
+}
+
+/** "5,21x" / "25,7x" */
+export function xRoas(r: { valor: number; base: string }): string {
+  return `${r.valor.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}x`;
+}
+
+/** Dica do ROAS: de onde saiu a conta. */
+export function dicaRoas(r: { valor: number; base: string } | null): string {
+  if (!r) return "sem investimento no mês";
+  return r.base === "anuncios"
+    ? `vendas dos anúncios ÷ investido: cada R$ 1 virou R$ ${r.valor.toFixed(2).replace(".", ",")}`
+    : "faturamento ÷ investido (a Shopee não informa a venda por anúncio)";
+}
+
 function porcento(v: number): string {
   return `${(v * 100).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%`;
 }
@@ -76,14 +109,14 @@ export function textoAds(
   investido: number,
   faturamento: number,
   media3m?: { ads: number; faturamento: number } | null,
-  roas?: number | null,
+  roas?: { valor: number; base: string } | null,
 ): string {
   if (investido <= 0 && !media3m?.ads) return "nenhum investimento no mês";
   const partes = [faturamento > 0 ? `${porcento(investido / faturamento)} do faturamento` : "sem faturamento no mês"];
   if (media3m && media3m.faturamento > 0 && media3m.ads > 0) {
     partes.push(`média 3 meses ${porcento(media3m.ads / media3m.faturamento)}`);
   }
-  if (roas != null) partes.push(`ROAS ${roas.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}x`);
+  if (roas) partes.push(`ROAS ${xRoas(roas)}`);
   return partes.join(" · ");
 }
 

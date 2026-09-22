@@ -1,6 +1,6 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
-import { analisarCampanha, receitaInformada, resumirAds, roasDoTotal, textoAds } from "./ads-analise.ts";
+import { analisarCampanha, receitaInformada, resumirAds, roasDaTela, roasDoTotal, textoAds } from "./ads-analise.ts";
 
 const linha = (x: Record<string, unknown>) =>
   ({ id: "x", client_id: "c", marketplace: "shopee", campaign: null, period_start: "2026-09-01", period_end: "2026-09-30",
@@ -47,9 +47,17 @@ test("ROAS do total só com 90% ou mais do investido informando vendas", () => {
 test("Ads em % do faturamento, com a média de 3 meses e o ROAS só quando é real", () => {
   // Arnaldo: setembro e a média de jul–set, sem ROAS (a Shopee não informa a venda por anúncio)
   assert.equal(
-    textoAds(7931.82, 203912.61, { ads: 30140, faturamento: 678921 }, null),
-    "3,9% do faturamento · média 3 meses 4,4%",
+    textoAds(7931.82, 203912.61, { ads: 30140, faturamento: 678921 }, roasDaTela(7931.82, 31.82, 165.89, 203912.61)),
+    "3,9% do faturamento · média 3 meses 4,4% · ROAS 25,71x",
   );
-  assert.equal(textoAds(31.82, 1688.89, null, 5.21), "1,9% do faturamento · ROAS 5,21x");
+  assert.equal(textoAds(31.82, 1688.89, null, roasDaTela(31.82, 31.82, 165.89, 1688.89)), "1,9% do faturamento · ROAS 5,21x");
+});
+
+test("ROAS sempre aparece: dos anúncios quando se sabe a venda, senão faturamento ÷ investido", () => {
+  assert.deepEqual(roasDaTela(31.82, 31.82, 165.89, 1688.89)!.base, "anuncios");
+  const shopee = roasDaTela(7900, 0, 0, 202224)!;
+  assert.equal(shopee.base, "faturamento");
+  assert.equal(shopee.valor.toFixed(1), "25.6");
+  assert.equal(roasDaTela(0, 0, 0, 1000), null);
   assert.equal(textoAds(0, 50000, null, null), "nenhum investimento no mês");
 });

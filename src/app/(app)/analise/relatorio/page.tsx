@@ -96,9 +96,9 @@ export default async function RelatorioDaAnalise({ searchParams }: { searchParam
             <Numero rotulo="ROAS" valor={`${ads.roas.toFixed(2)}x`} nota={`cada R$ 1 em anúncio trouxe ${brl(ads.roas)}`} />
           ) : (
             <Numero
-              rotulo="Ads ÷ faturamento"
-              valor={ads?.pctFaturamento != null ? pct(ads.pctFaturamento) : "—"}
-              nota="quanto do faturamento foi para anúncio"
+              rotulo="ROAS"
+              valor={ads?.pctFaturamento ? `${(1 / ads.pctFaturamento).toFixed(2)}x` : "—"}
+              nota="faturamento ÷ investido em anúncios"
             />
           )}
         </div>

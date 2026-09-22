@@ -112,8 +112,12 @@ export function BlocoAnuncios({ d, r }: { d: Dossie; r: ResultadoAnalise | null 
                   >
                     {a.roas !== null ? (
                       `${a.roas.toFixed(2)}x`
+                    ) : a.pctFaturamento ? (
+                      <span title="faturamento ÷ investido (a Shopee não informa a venda por anúncio)" className="text-ink">
+                        {`${(1 / a.pctFaturamento).toFixed(2)}x`}
+                      </span>
                     ) : (
-                      <span title="O marketplace não informa quanto o anúncio vendeu. A medida é o % do faturamento.">—</span>
+                      "—"
                     )}
                   </td>
                   <td className="num" data-label="ACOS">
@@ -135,7 +139,11 @@ export function BlocoAnuncios({ d, r }: { d: Dossie; r: ResultadoAnalise | null 
                 </td>
                 <td className="num" data-label="Receita atribuída">{brl(total.revenue)}</td>
                 <td className="num" data-label="ROAS">
-                  {total.roas !== null ? `${total.roas.toFixed(2)}x` : "—"}
+                  {total.roas !== null
+                    ? `${total.roas.toFixed(2)}x`
+                    : total.pctFaturamento
+                      ? `${(1 / total.pctFaturamento).toFixed(2)}x`
+                      : "—"}
                 </td>
                 <td className="num" data-label="ACOS">
                   {total.roas !== null && total.revenue ? pct(1 / total.roas) : "—"}
