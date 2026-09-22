@@ -5,7 +5,15 @@ import { redirect } from "next/navigation";
 import { randomBytes } from "node:crypto";
 import { id, now, one, run } from "@/lib/db";
 import { hashPassword, requirePermission, requireUser } from "@/lib/auth";
-import { can, PAPEIS_EDITAVEIS, PERMISSION_LABEL, PERMISSION_ORDER, permissoesPadrao } from "@/lib/permissions";
+import {
+  can,
+  gravarPermissoes,
+  PAPEIS_EDITAVEIS,
+  PERMISSION_LABEL,
+  PERMISSION_ORDER,
+  permissoesGravadas,
+  permissoesPadrao,
+} from "@/lib/permissions";
 import { str, strOrNull } from "@/lib/format";
 import { validarSenha } from "@/lib/senha";
 import type { Role } from "@/lib/types";
@@ -252,7 +260,7 @@ export async function salvarPapeisAction(formData: FormData) {
 
   for (const role of PAPEIS_EDITAVEIS) {
     const antes = await one<{ permissions: string }>("SELECT permissions FROM role_permissions WHERE role = ?", role);
-    const anterior: string[] = antes ? (JSON.parse(antes.permissions) as string[]) : permissoesPadrao(role);
+    const anterior: string[] = permissoesGravadas(role, antes?.permissions ?? null);
     const marcadas = voltarAoPadrao
       ? permissoesPadrao(role)
       : PERMISSION_ORDER.filter((p) => formData.get(`${role}:${p}`) === "1");
@@ -266,7 +274,7 @@ export async function salvarPapeisAction(formData: FormData) {
        ON CONFLICT (role) DO UPDATE SET permissions = EXCLUDED.permissions,
          updated_by = EXCLUDED.updated_by, updated_at = EXCLUDED.updated_at`,
       role,
-      JSON.stringify(marcadas),
+      gravarPermissoes(marcadas),
       user.id,
       now(),
     );

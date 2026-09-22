@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { requireUser, visibleClientIds } from "@/lib/auth";
+import { visibleClientIds, requirePermission } from "@/lib/auth";
 import { brl, dateTimeBR, monthLabel, pct } from "@/lib/format";
 import { analisePorId } from "@/lib/analise/repositorio";
 import { Card, Chip, PageHeader, type Tone } from "@/components/ui";
@@ -19,7 +19,7 @@ const TOM_IMPACTO: Record<string, Tone> = { alto: "ok", medio: "info", baixo: "n
  * quando o cliente pergunta "de onde você tirou isso?".
  */
 export default async function RelatorioDaAnalise({ searchParams }: { searchParams: Promise<{ a?: string }> }) {
-  const user = await requireUser();
+  const user = await requirePermission("analise.ver");
   const sp = await searchParams;
   if (!sp.a) notFound();
 

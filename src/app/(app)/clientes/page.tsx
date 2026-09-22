@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { Suspense } from "react";
-import { requireUser, visibleClientIds } from "@/lib/auth";
+import { visibleClientIds, requirePermission } from "@/lib/auth";
 import { can } from "@/lib/permissions";
 import { avaliarOnboardingEmLote, clientRows, indicadoresDosClientes, scoresEmLote } from "@/lib/queries";
 import { brlShort, currentMonth, lastMonths, pct } from "@/lib/format";
@@ -37,7 +37,7 @@ export default async function ClientesPage({
     ads?: string;
   }>;
 }) {
-  const user = await requireUser();
+  const user = await requirePermission("clientes.ver");
   const params = await searchParams;
   const months = lastMonths(12);
   const ref = params.mes && months.includes(params.mes) ? params.mes : currentMonth();

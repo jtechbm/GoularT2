@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { canSeeClient, requireUser } from "@/lib/auth";
+import { canSeeClient, requirePermission } from "@/lib/auth";
 import {
   adsTotals,
   alertasDaCarteira,
@@ -26,7 +26,7 @@ export default async function RelatorioPage({
   params: Promise<{ id: string }>;
   searchParams: Promise<{ mes?: string }>;
 }) {
-  const user = await requireUser();
+  const user = await requirePermission("clientes.ver");
   const { id } = await params;
   const sp = await searchParams;
 

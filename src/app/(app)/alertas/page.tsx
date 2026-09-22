@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { Suspense } from "react";
-import { requireUser, visibleClientIds } from "@/lib/auth";
+import { visibleClientIds, requirePermission } from "@/lib/auth";
 import { alertasDaCarteira, clientOptions, penalidades } from "@/lib/queries";
 import { currentMonth, dateTimeBR, lastMonths, monthLabel } from "@/lib/format";
 import { Card, Chip, Empty, Field, PageHeader, Stat } from "@/components/ui";
@@ -16,7 +16,7 @@ export default async function AlertasPage({
 }: {
   searchParams: Promise<{ mes?: string; cliente?: string; tipo?: string; ver?: string }>;
 }) {
-  const user = await requireUser();
+  const user = await requirePermission("alertas.ver");
   const sp = await searchParams;
   const months = lastMonths(12);
   const ref = sp.mes && months.includes(sp.mes) ? sp.mes : currentMonth();

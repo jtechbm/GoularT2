@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { Suspense } from "react";
-import { requireUser, visibleClientIds } from "@/lib/auth";
+import { visibleClientIds, requirePermission } from "@/lib/auth";
 import { can } from "@/lib/permissions";
 import { brl, currentMonth, dateTimeBR, lastMonths, monthLabel, pct, relativeBR } from "@/lib/format";
 import { Card, Chip, Empty, Field, PageHeader, Stat, type Tone } from "@/components/ui";
@@ -27,7 +27,7 @@ export default async function AnalisePage({
 }: {
   searchParams: Promise<{ cliente?: string; mes?: string; a?: string; pronta?: string; erro?: string }>;
 }) {
-  const user = await requireUser();
+  const user = await requirePermission("analise.ver");
   const sp = await searchParams;
   const escopo = await visibleClientIds(user);
   const podeRodar = can(user, "analise.rodar");

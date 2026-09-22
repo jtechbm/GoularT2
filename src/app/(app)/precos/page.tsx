@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { requireUser, visibleClientIds } from "@/lib/auth";
+import { visibleClientIds, requirePermission } from "@/lib/auth";
 import { can } from "@/lib/permissions";
 import { clientOptions } from "@/lib/queries";
 import { brl, dateTimeBR, pct } from "@/lib/format";
@@ -36,7 +36,7 @@ export default async function PrecosPage({
     erro?: string;
   }>;
 }) {
-  const user = await requireUser();
+  const user = await requirePermission("precos.ver");
   const sp = await searchParams;
   const escopo = await visibleClientIds(user);
   const clientes = await clientOptions(escopo);

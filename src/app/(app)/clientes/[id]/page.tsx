@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { canSeeClient, listUsers, requireUser } from "@/lib/auth";
+import { canSeeClient, listUsers, requirePermission } from "@/lib/auth";
 import { Procedencia } from "@/components/procedencia";
 import { SerieDiaria } from "@/components/serie-diaria";
 import { calcularScore } from "@/lib/score";
@@ -71,7 +71,7 @@ export default async function ClientePage({
     ate?: string;
   }>;
 }) {
-  const user = await requireUser();
+  const user = await requirePermission("clientes.ver");
   const { id } = await params;
   const sp = await searchParams;
 

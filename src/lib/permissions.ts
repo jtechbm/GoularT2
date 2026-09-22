@@ -12,6 +12,18 @@ import type { Role } from "./types";
  *   Membro  opera os clientes atribuídos a ele e pega tarefas
  */
 export type Permission =
+  // --- telas: sem a permissão, some do menu e o endereço direto é barrado.
+  // Tarefas, Chat e Notificações são de todo mundo e não entram aqui.
+  /** o painel da carteira (tela inicial); sem ela, a tela inicial é a de pontos e tarefas */
+  | "painel.ver"
+  | "clientes.ver"
+  | "alertas.ver"
+  | "penalidades.ver"
+  | "ads.ver"
+  | "precos.ver"
+  | "analise.ver"
+  | "equipe.ver"
+  // --- ações
   /** criar pessoa, trocar papel, desativar acesso */
   | "equipe.gerenciar"
   /** conectar loja, pedir acesso ao lojista, desconectar, ver a tela de chaves */
@@ -37,7 +49,19 @@ export type Permission =
   /** mandar a IA analisar uma loja inteira; cada execução custa dinheiro */
   | "analise.rodar";
 
+const TELAS: Permission[] = [
+  "painel.ver",
+  "clientes.ver",
+  "alertas.ver",
+  "penalidades.ver",
+  "ads.ver",
+  "precos.ver",
+  "analise.ver",
+  "equipe.ver",
+];
+
 const TODAS: Permission[] = [
+  ...TELAS,
   "equipe.gerenciar",
   "integracoes.gerenciar",
   "integracoes.sincronizar",
@@ -60,6 +84,7 @@ const POR_PAPEL: Record<Role, Permission[]> = {
   // sincronizar uma conta já conectada, porque isso é ler número de cliente,
   // não administrar a conexão.
   gestor: [
+    ...TELAS,
     "integracoes.sincronizar",
     "clientes.gerenciar",
     "carteira.completa",
@@ -71,9 +96,10 @@ const POR_PAPEL: Record<Role, Permission[]> = {
     "precos.pesquisar",
   ],
 
-  // opera o que é dele: lança número, escreve anotação, pega tarefa e manda
-  // buscar os valores do mês. Cada uma dessas ações ainda passa por
-  // assertClientAccess, então o alcance para no cliente atribuído a ele.
+  // o membro trabalha nas tarefas: vê Tarefas, Chat e Notificações, e a
+  // tela inicial dele é a de pontos. O resto da operação o admin libera,
+  // tela por tela, na Equipe. "Buscar os números" fica porque, se ele
+  // ganhar a tela de clientes, sincronizar o que é dele faz parte do dia.
   membro: ["integracoes.sincronizar"],
 };
 
@@ -91,19 +117,45 @@ export function can(user: { role: Role; permissions?: readonly string[] | null }
 export const PAPEIS_EDITAVEIS: Role[] = ["gestor", "membro"];
 
 /**
- * Lê o que está gravado para um papel. Texto estragado ou permissão que não
- * existe mais é ignorado; sem nada gravado, vale o padrão.
+ * Lê o que está gravado para um papel.
+ *
+ * O gravado guarda também quais permissões existiam na hora de salvar.
+ * Permissão criada depois não estava na tela de quem salvou, então vale o
+ * padrão do papel para ela: sem isso, criar as permissões de tela tirou do
+ * gestor todas as telas, porque a lista salva antes não as tinha.
+ *
+ * Formato antigo (só a lista) é de antes das permissões de tela. Texto
+ * estragado ou permissão que não existe mais é ignorado; sem nada gravado,
+ * vale o padrão.
  */
 export function permissoesGravadas(role: Role, gravado: string | null | undefined): Permission[] {
   if (role === "admin") return TODAS;
-  if (!gravado) return POR_PAPEL[role] ?? [];
+  const padrao = POR_PAPEL[role] ?? [];
+  if (!gravado) return padrao;
   try {
-    const lista = JSON.parse(gravado) as unknown;
-    if (!Array.isArray(lista)) return POR_PAPEL[role] ?? [];
-    return TODAS.filter((p) => lista.includes(p));
+    const lido = JSON.parse(gravado) as unknown;
+    let tem: unknown[];
+    let conhecidas: unknown[];
+    if (Array.isArray(lido)) {
+      tem = lido;
+      conhecidas = TODAS.filter((p) => !TELAS.includes(p));
+    } else if (lido && typeof lido === "object" && Array.isArray((lido as { tem?: unknown }).tem)) {
+      tem = (lido as { tem: unknown[] }).tem;
+      conhecidas = Array.isArray((lido as { conhecidas?: unknown }).conhecidas)
+        ? (lido as { conhecidas: unknown[] }).conhecidas
+        : TODAS;
+    } else {
+      return padrao;
+    }
+    return TODAS.filter((p) => (conhecidas.includes(p) ? tem.includes(p) : padrao.includes(p)));
   } catch {
-    return POR_PAPEL[role] ?? [];
+    return padrao;
   }
+}
+
+/** Como gravar: o que o papel tem e o que existia na hora. */
+export function gravarPermissoes(tem: Permission[]): string {
+  return JSON.stringify({ tem, conhecidas: TODAS });
 }
 
 /** O padrão do código para o papel, para o botão "voltar ao padrão". */
@@ -118,6 +170,14 @@ export function permissoesPadrao(role: Role): Permission[] {
  * escrito à mão: assim a descrição não pode discordar do que o código faz.
  */
 export const PERMISSION_LABEL: Record<Permission, string> = {
+  "painel.ver": "Ver o painel da carteira",
+  "clientes.ver": "Ver clientes",
+  "alertas.ver": "Ver Atenção",
+  "penalidades.ver": "Ver Penalidades",
+  "ads.ver": "Ver Ads",
+  "precos.ver": "Ver Preços",
+  "analise.ver": "Ver Análise",
+  "equipe.ver": "Ver Equipe",
   "equipe.gerenciar": "Cadastrar pessoas e trocar papéis",
   "integracoes.gerenciar": "Conectar e desconectar marketplaces",
   "integracoes.sincronizar": "Buscar os números do mês",
@@ -134,6 +194,9 @@ export const PERMISSION_LABEL: Record<Permission, string> = {
 
 /** Ordem em que as permissões aparecem na tabela. */
 export const PERMISSION_ORDER: Permission[] = TODAS;
+
+/** As que são "ver uma tela", para a tabela separar das ações. */
+export const PERMISSOES_DE_TELA: readonly Permission[] = TELAS;
 
 export function permissionsOf(role: Role): Permission[] {
   return POR_PAPEL[role] ?? [];

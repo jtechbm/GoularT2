@@ -681,6 +681,37 @@ export async function adsEFaturamento(
   return { ads: Number(r?.ads ?? 0), faturamento: Number(r?.faturamento ?? 0) };
 }
 
+/**
+ * O que a tela inicial do membro precisa além do ranking e das tarefas:
+ * pontos de sempre (para o nível), os dias com entrega (para a sequência)
+ * e os últimos pontos ganhos, com o motivo de cada um.
+ */
+export async function jogoDoMembro(userId: string) {
+  const [total, dias, ultimos] = await Promise.all([
+    one<{ pontos: number }>(
+      `SELECT COALESCE(SUM(points),0) AS pontos FROM task_events
+        WHERE user_id = ? AND type IN ('aprovada','concluida')`,
+      userId,
+    ),
+    all<{ dia: string }>(
+      `SELECT DISTINCT to_char((created_at::timestamptz AT TIME ZONE 'America/Sao_Paulo'), 'YYYY-MM-DD') AS dia
+         FROM task_events
+        WHERE user_id = ? AND type IN ('enviada_revisao','aprovada','concluida')
+          AND created_at >= ?`,
+      userId,
+      new Date(Date.now() - 60 * 864e5).toISOString(),
+    ),
+    all<{ id: string; points: number; meta: string | null; created_at: string; title: string; task_id: string }>(
+      `SELECT e.id, e.points, e.meta, e.created_at, t.title, t.id AS task_id
+         FROM task_events e JOIN tasks t ON t.id = e.task_id
+        WHERE e.user_id = ? AND e.type IN ('aprovada','concluida') AND e.points > 0
+        ORDER BY e.created_at DESC LIMIT 6`,
+      userId,
+    ),
+  ]);
+  return { pontosTotais: Number(total?.pontos ?? 0), dias: dias.map((d) => d.dia), ultimos };
+}
+
 /** O que cada papel pode fazer hoje: o gravado na tela de Equipe, ou o padrão. */
 export async function permissoesDosPapeis(): Promise<Record<Role, Permission[]>> {
   const linhas = await all<{ role: Role; permissions: string }>("SELECT role, permissions FROM role_permissions");

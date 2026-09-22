@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { listUsers, requireUser, visibleClientIds } from "@/lib/auth";
+import { listUsers, visibleClientIds, requirePermission } from "@/lib/auth";
 import { can, PERMISSION_LABEL, PERMISSION_ORDER } from "@/lib/permissions";
 import { all } from "@/lib/db";
 import { clientRows, desempenhoEquipe, leaderboard, periodoDe, permissoesDosPapeis, rankingMensal, tasks } from "@/lib/queries";
@@ -23,7 +23,7 @@ export default async function EquipePage({
 }: {
   searchParams: Promise<{ u?: string; ok?: string; convite?: string; periodo?: string; mes?: string; papeis?: string }>;
 }) {
-  const user = await requireUser();
+  const user = await requirePermission("equipe.ver");
   const sp = await searchParams;
   const manager = can(user, "equipe.gerenciar");
   const papeis = await permissoesDosPapeis();

@@ -1,6 +1,6 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
-import { can, permissoesGravadas, permissoesPadrao } from "./permissions.ts";
+import { can, gravarPermissoes, permissoesGravadas, permissoesPadrao } from "./permissions.ts";
 
 test("o admin tem tudo, mesmo que alguém grave outra coisa para ele", () => {
   assert.equal(can({ role: "admin", permissions: [] }, "equipe.gerenciar"), true);
@@ -21,4 +21,16 @@ test("sem nada gravado, ou com texto estragado, vale o padrão; permissão que n
   // sessão antiga sem permissões carregadas: padrão do código
   assert.equal(can({ role: "membro" }, "financeiro"), false);
   assert.equal(can({ role: "gestor" }, "financeiro"), true);
+});
+
+test("permissão criada depois de salvar usa o padrão; o que foi escolhido continua", () => {
+  // lista salva antes das permissões de tela, sem "ver a carteira inteira"
+  const antigo = JSON.stringify(["clientes.gerenciar", "financeiro"]);
+  const gestor = permissoesGravadas("gestor", antigo);
+  assert.equal(gestor.includes("clientes.ver"), true); // tela nova: padrão do gestor
+  assert.equal(gestor.includes("carteira.completa"), false); // escolha de quem salvou
+  const membro = permissoesGravadas("membro", "[]");
+  assert.equal(membro.includes("clientes.ver"), false); // padrão do membro: sem telas
+  // salvo no formato novo, o que não está marcado não volta
+  assert.equal(permissoesGravadas("gestor", gravarPermissoes(["financeiro"])).includes("clientes.ver"), false);
 });

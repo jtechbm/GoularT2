@@ -39,6 +39,7 @@ import { Procedencia } from "@/components/procedencia";
 import { montarLinhas, TabelaClientes, type LinhaCliente } from "@/components/tabela-clientes";
 import { NIVEL_TOM, NIVEL_LABEL } from "@/lib/alertas";
 import { atrasada } from "@/components/prazo-tarefa";
+import { PainelMembro } from "@/components/painel-membro";
 import { marketplaceLabel } from "@/lib/types";
 
 export default async function DashboardPage({
@@ -51,6 +52,12 @@ export default async function DashboardPage({
   const months = lastMonths(12);
   const ref = params.mes && months.includes(params.mes) ? params.mes : currentMonth();
   const corrente = ref === currentMonth();
+
+  // sem o painel da carteira, a tela inicial é a do jogo das tarefas
+  if (!can(user, "painel.ver")) {
+    const falta = params.sem_acesso ? (PERMISSION_LABEL[params.sem_acesso as Permission] ?? "esta área") : null;
+    return <PainelMembro user={user} semAcesso={falta} />;
+  }
 
   // membro só enxerga os clientes atribuídos a ele; gestor e admin, a carteira toda
   const escopo = await visibleClientIds(user);

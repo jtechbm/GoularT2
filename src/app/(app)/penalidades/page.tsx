@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { requireUser, visibleClientIds } from "@/lib/auth";
+import { visibleClientIds, requirePermission } from "@/lib/auth";
 import { can } from "@/lib/permissions";
 import { avisosMarketplace, clientOptions, penalidades, saudeContasML, saudeLojasShopee } from "@/lib/queries";
 import { dateBR, dateTimeBR, pct, relativeBR } from "@/lib/format";
@@ -63,7 +63,7 @@ export default async function PenalidadesPage({
 }: {
   searchParams: Promise<{ cliente?: string; status?: string; tipo?: string; verificado?: string; erros?: string }>;
 }) {
-  const user = await requireUser();
+  const user = await requirePermission("penalidades.ver");
   const sp = await searchParams;
   const escopo = await visibleClientIds(user);
   const resolve = can(user, "penalidades.resolver");

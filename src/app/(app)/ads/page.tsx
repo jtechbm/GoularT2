@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { Suspense } from "react";
-import { requireUser, visibleClientIds } from "@/lib/auth";
+import { visibleClientIds, requirePermission } from "@/lib/auth";
 import { adsEFaturamento, adsRows, canaisDeAds, clientOptions, procedenciaDoMes, serieDiaria } from "@/lib/queries";
 import { addMonths, brl, currentMonth, lastMonths, monthLabel, num, pct } from "@/lib/format";
 import { Card, Chip, Empty, Field, MarketplaceChip, PageHeader, Stat } from "@/components/ui";
@@ -25,7 +25,7 @@ export default async function AdsPage({
 }: {
   searchParams: Promise<{ mes?: string; cliente?: string; canal?: string; ok?: string; erro?: string }>;
 }) {
-  const user = await requireUser();
+  const user = await requirePermission("ads.ver");
   const sp = await searchParams;
   const months = lastMonths(12);
   const ref = sp.mes && months.includes(sp.mes) ? sp.mes : currentMonth();

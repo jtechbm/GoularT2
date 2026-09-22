@@ -33,15 +33,15 @@ import { can, type Permission } from "@/lib/permissions";
 // mostrava link para quem não entra e escondia de quem entra
 const NAV: { href: string; label: string; Icon: typeof IconHome; exact?: boolean; permissao?: Permission }[] = [
   { href: "/", label: "Dashboard", Icon: IconHome, exact: true },
-  { href: "/clientes", label: "Clientes", Icon: IconUser },
-  { href: "/alertas", label: "Atenção", Icon: IconAlert },
-  { href: "/penalidades", label: "Penalidades", Icon: IconShield },
-  { href: "/ads", label: "Ads", Icon: IconMegaphone },
-  { href: "/precos", label: "Preços", Icon: IconTag },
-  { href: "/analise", label: "Análise", Icon: IconBarChart },
+  { href: "/clientes", label: "Clientes", Icon: IconUser, permissao: "clientes.ver" },
+  { href: "/alertas", label: "Atenção", Icon: IconAlert, permissao: "alertas.ver" },
+  { href: "/penalidades", label: "Penalidades", Icon: IconShield, permissao: "penalidades.ver" },
+  { href: "/ads", label: "Ads", Icon: IconMegaphone, permissao: "ads.ver" },
+  { href: "/precos", label: "Preços", Icon: IconTag, permissao: "precos.ver" },
+  { href: "/analise", label: "Análise", Icon: IconBarChart, permissao: "analise.ver" },
   { href: "/financeiro", label: "Financeiro", Icon: IconDollar, permissao: "financeiro" },
   { href: "/tarefas", label: "Tarefas", Icon: IconCheckSquare },
-  { href: "/equipe", label: "Equipe", Icon: IconUsers },
+  { href: "/equipe", label: "Equipe", Icon: IconUsers, permissao: "equipe.ver" },
   { href: "/notificacoes", label: "Notificações", Icon: IconBell },
   { href: "/chat", label: "Chat", Icon: IconChat },
   // a tela das conexões é do admin; gestor e membro sincronizam pelo cliente
@@ -74,7 +74,10 @@ export function Sidebar({
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
 
-  const items = NAV.filter((i) => !i.permissao || can(user, i.permissao)).map(({ href, label, Icon, exact }) => {
+  // sem o painel da carteira, a tela inicial é a de pontos e tarefas
+  const nomeDoInicio = can(user, "painel.ver") ? "Dashboard" : "Início";
+  const items = NAV.filter((i) => !i.permissao || can(user, i.permissao)).map(({ href, label: rotulo, Icon, exact }) => {
+    const label = href === "/" ? nomeDoInicio : rotulo;
     const active = exact ? pathname === href : pathname === href || pathname.startsWith(`${href}/`);
     // o contador fica no item, não num sininho separado: um número no menu
     // que a pessoa já usa é mais visto do que um ícone a mais no topo
