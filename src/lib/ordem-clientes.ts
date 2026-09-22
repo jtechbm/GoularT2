@@ -1,5 +1,5 @@
 import { variacaoMensal } from "./format.ts";
-import { roasExibido } from "./ads-analise.ts";
+import { roasDoTotal } from "./ads-analise.ts";
 
 /**
  * Colunas pelas quais a lista de clientes pode ser ordenada.
@@ -55,7 +55,7 @@ export function valorDaOrdem(l: LinhaOrdenavel, ordem: Ordem): number | string |
     case "investido":
       return l.ads || null;
     case "roas":
-      return roasExibido(l.ads, l.ads_com_retorno ?? l.ads, l.ads_revenue, l.revenue)?.valor ?? null;
+      return roasDoTotal(l.ads, l.ads_com_retorno ?? l.ads, l.ads_revenue).roas;
     case "pct_ads":
       return l.ads && l.revenue ? l.ads / l.revenue : null;
     case "vendas30":

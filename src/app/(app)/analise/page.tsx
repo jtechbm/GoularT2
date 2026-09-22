@@ -162,7 +162,7 @@ export default async function AnalisePage({
               value={d.derivado.ads ? brl(d.derivado.ads.invested) : "—"}
               hint={
                 d.derivado.ads
-                  ? `${d.derivado.ads.pctFaturamento === null ? "" : `${pct(d.derivado.ads.pctFaturamento)} do fat. · `}${d.derivado.ads.roas != null ? `ROAS ${d.derivado.ads.roas.toFixed(2)}x` : d.derivado.ads.roasGeral != null ? `ROAS geral ${d.derivado.ads.roasGeral.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}x` : "sem ROAS"}${d.derivado.ads.incompleto ? " · incompleto" : ""}`
+                  ? `${d.derivado.ads.pctFaturamento === null ? "" : `${pct(d.derivado.ads.pctFaturamento)} do fat. · `}${d.derivado.ads.roas != null ? `ROAS ${d.derivado.ads.roas.toFixed(2)}x` : "sem ROAS (use o %)"}${d.derivado.ads.incompleto ? " · incompleto" : ""}`
                   : d.porLoja.some((l) => l.derivado.adsNaoMedido)
                     ? "não medido em algum canal"
                     : "sem investimento no mês"
@@ -268,8 +268,8 @@ export default async function AnalisePage({
                           ? `${brl(l.derivado.ads.invested)} · ${
                               l.derivado.ads.roas !== null
                                 ? `ROAS ${l.derivado.ads.roas.toFixed(2)}`
-                                : l.derivado.ads.roasGeral != null
-                                  ? `ROAS geral ${l.derivado.ads.roasGeral.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}`
+                                : l.derivado.ads.pctFaturamento != null
+                                  ? `${pct(l.derivado.ads.pctFaturamento)} do fat.`
                                   : "ROAS —"
                             }`
                           : "—"}

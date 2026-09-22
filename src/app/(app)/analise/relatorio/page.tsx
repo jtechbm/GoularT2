@@ -92,23 +92,15 @@ export default async function RelatorioDaAnalise({ searchParams }: { searchParam
                   : "sem investimento"
             }
           />
-          <Numero
-            rotulo={ads && ads.roas === null && ads.roasGeral != null ? "ROAS geral" : "ROAS"}
-            valor={
-              ads?.roas != null
-                ? `${ads.roas.toFixed(2)}x`
-                : ads?.roasGeral != null
-                  ? `${ads.roasGeral.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}x`
-                  : "—"
-            }
-            nota={
-              ads?.roas != null
-                ? `cada R$ 1 em anúncio trouxe ${brl(ads.roas)}`
-                : ads?.roasGeral != null
-                  ? `faturamento total ÷ investido em anúncios`
-                  : "sem anúncio medido"
-            }
-          />
+          {ads?.roas != null ? (
+            <Numero rotulo="ROAS" valor={`${ads.roas.toFixed(2)}x`} nota={`cada R$ 1 em anúncio trouxe ${brl(ads.roas)}`} />
+          ) : (
+            <Numero
+              rotulo="Ads ÷ faturamento"
+              valor={ads?.pctFaturamento != null ? pct(ads.pctFaturamento) : "—"}
+              nota="quanto do faturamento foi para anúncio"
+            />
+          )}
         </div>
 
         <Card title="Diagnóstico">

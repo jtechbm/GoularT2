@@ -165,6 +165,9 @@ export interface IndicadoresCliente {
   ads_manual: number;
   /** investido com retorno conhecido: o denominador do ROAS */
   ads_com_retorno: number;
+  /** Ads e faturamento somando o mês e os dois anteriores: a média que absorve a recarga */
+  ads_3m: number;
+  fat_3m: number;
   /** pedidos nos últimos 30 dias até hoje, e nos 30 anteriores */
   vendas30: number;
   vendas30_ant: number;
@@ -200,7 +203,7 @@ export async function indicadoresDosClientes(
   const corrente = refMonth === currentMonth();
   const ateDia = `${anterior}-${String(hoje.getDate()).padStart(2, "0")}`;
 
-  const [ads, vendas, advertencias, comparavel] = await Promise.all([
+  const [ads, vendas, advertencias, comparavel, tresMeses] = await Promise.all([
     all<{ client_id: string; revenue: number; manual: number; com_retorno: number }>(
       `SELECT client_id, COALESCE(SUM(revenue),0) AS revenue,
               COALESCE(SUM(invested) FILTER (WHERE source <> 'api'),0) AS manual,
@@ -243,6 +246,15 @@ export async function indicadoresDosClientes(
           ...s.params,
         )
       : Promise.resolve(null),
+    all<{ client_id: string; ads: number; revenue: number }>(
+      `SELECT client_id, COALESCE(SUM(ads),0) AS ads, COALESCE(SUM(revenue),0) AS revenue
+         FROM finance_snapshots
+        WHERE ref_month >= ? AND ref_month <= ?${s.sql}
+        GROUP BY client_id`,
+      addMonths(refMonth, -2),
+      refMonth,
+      ...s.params,
+    ),
   ]);
 
   const mapa = new Map<string, IndicadoresCliente>();
@@ -253,6 +265,8 @@ export async function indicadoresDosClientes(
         ads_revenue: 0,
         ads_manual: 0,
         ads_com_retorno: 0,
+        ads_3m: 0,
+        fat_3m: 0,
         vendas30: 0,
         vendas30_ant: 0,
         faturamento30: 0,
@@ -282,6 +296,11 @@ export async function indicadoresDosClientes(
     i.advertencias_criticas = Number(p.criticas);
   }
   for (const c of comparavel ?? []) pegar(c.client_id).prev_revenue_comparavel = Number(c.revenue);
+  for (const t of tresMeses) {
+    const i = pegar(t.client_id);
+    i.ads_3m = Number(t.ads);
+    i.fat_3m = Number(t.revenue);
+  }
   return mapa;
 }
 
@@ -630,6 +649,34 @@ export async function canaisDeAds(
       ORDER BY cm.client_id, cm.marketplace, (cm.ads_permission = 'pendente') DESC`,
     ...params,
   );
+}
+
+/** Ads e faturamento de um intervalo de meses, com os mesmos filtros da tela de Ads. */
+export async function adsEFaturamento(
+  deMes: string,
+  ateMes: string,
+  filtro: { clientId?: string; marketplace?: string; scope?: Scope } = {},
+): Promise<{ ads: number; faturamento: number }> {
+  const where = ["ref_month >= ?", "ref_month <= ?"];
+  const params: unknown[] = [deMes, ateMes];
+  if (filtro.scope) {
+    where.push(filtro.scope.length ? `client_id IN (${filtro.scope.map(() => "?").join(",")})` : "1 = 0");
+    params.push(...filtro.scope);
+  }
+  if (filtro.clientId) {
+    where.push("client_id = ?");
+    params.push(filtro.clientId);
+  }
+  if (filtro.marketplace) {
+    where.push("marketplace = ?");
+    params.push(filtro.marketplace);
+  }
+  const r = await one<{ ads: number; faturamento: number }>(
+    `SELECT COALESCE(SUM(ads),0) AS ads, COALESCE(SUM(revenue),0) AS faturamento
+       FROM finance_snapshots WHERE ${where.join(" AND ")}`,
+    ...params,
+  );
+  return { ads: Number(r?.ads ?? 0), faturamento: Number(r?.faturamento ?? 0) };
 }
 
 export async function clientOptions(scope?: Scope) {

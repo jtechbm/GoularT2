@@ -1,14 +1,14 @@
 import Link from "next/link";
 import { Suspense } from "react";
 import { requireUser, visibleClientIds } from "@/lib/auth";
-import { adsRows, canaisDeAds, clientOptions, procedenciaDoMes, serieDiaria } from "@/lib/queries";
-import { brl, currentMonth, lastMonths, monthLabel, num, pct } from "@/lib/format";
+import { adsEFaturamento, adsRows, canaisDeAds, clientOptions, procedenciaDoMes, serieDiaria } from "@/lib/queries";
+import { addMonths, brl, currentMonth, lastMonths, monthLabel, num, pct } from "@/lib/format";
 import { Card, Chip, Empty, Field, MarketplaceChip, PageHeader, Stat } from "@/components/ui";
 import { SaveBar, SubmitButton } from "@/components/submit";
 import { MonthPicker } from "@/components/month-picker";
 import { Procedencia } from "@/components/procedencia";
 import { createAdsAction, deleteAdsAction } from "@/lib/actions/ads";
-import { analisarCampanha, EXPLICA_ROAS_GERAL, resumirAds, roasExibido } from "@/lib/ads-analise";
+import { analisarCampanha, resumirAds, roasDoTotal } from "@/lib/ads-analise";
 import { MARKETPLACES, marketplaceLabel } from "@/lib/types";
 
 /**
@@ -33,12 +33,15 @@ export default async function AdsPage({
   const filtro = { clientId: sp.cliente || undefined, marketplace: sp.canal || undefined, scope: escopo };
 
   const fimDoMes = new Date(Date.UTC(Number(ref.slice(0, 4)), Number(ref.slice(5, 7)), 0)).toISOString().slice(0, 10);
-  const [linhas, canais, clients, procedencia, dias] = await Promise.all([
+  const [linhas, canais, clients, procedencia, dias, tresMeses] = await Promise.all([
     adsRows({ refMonth: ref, ...filtro }),
     canaisDeAds(ref, filtro),
     clientOptions(escopo),
     procedenciaDoMes(ref, { scope: escopo }),
     serieDiaria(`${ref}-01`, fimDoMes, filtro),
+    // a recarga é comprada num mês e gasta no outro: a média de 3 meses
+    // é o número mais preciso de quanto do faturamento vai para anúncio
+    adsEFaturamento(addMonths(ref, -2), ref, filtro),
   ]);
 
   // lançamento sem valor nenhum não é campanha: só polui a lista
@@ -61,7 +64,7 @@ export default async function AdsPage({
         ...c,
         investido,
         receita,
-        roas: roasExibido(investido, comRetorno, receita, c.revenue),
+        roas: roasDoTotal(investido, comRetorno, receita).roas,
         semRetorno: investido - comRetorno,
         naoLido: c.ads_permission === "pendente" && !doCanal.some((x) => !x.automatica),
       };
@@ -75,12 +78,8 @@ export default async function AdsPage({
   // mostrava "0% do faturamento"
   const faturamentoLido = porCanal.filter((c) => !c.naoLido).reduce((s, c) => s + c.revenue, 0);
 
-  const roasTopo = roasExibido(
-    resumo.invested,
-    resumo.invested - resumo.semRetorno,
-    resumo.revenue,
-    porCanal.filter((c) => c.investido > 0).reduce((s, c) => s + c.revenue, 0),
-  );
+  const faturamentoComAds = porCanal.filter((c) => c.investido > 0).reduce((s, c) => s + c.revenue, 0);
+  const media3m = tresMeses.faturamento ? tresMeses.ads / tresMeses.faturamento : null;
 
   const diasComAds = dias.filter((d) => d.ads > 0);
   const maiorDia = Math.max(...dias.map((d) => d.ads), 0);
@@ -186,22 +185,25 @@ export default async function AdsPage({
           }
           tone="accent"
         />
-        <Stat
-          label={roasTopo?.geral ? "ROAS geral" : "ROAS"}
-          value={
-            roasTopo === null
-              ? "—"
-              : `${roasTopo.valor.toLocaleString("pt-BR", { maximumFractionDigits: roasTopo.geral ? 1 : 2, minimumFractionDigits: roasTopo.geral ? 1 : 2 })}x`
-          }
-          hint={
-            roasTopo === null
-              ? "sem investimento no mês"
-              : roasTopo.geral
-                ? `cada R$ 1 em Ads para ${brl(roasTopo.valor)} de faturamento total (a Shopee não informa a venda por anúncio)`
-                : `cada R$ 1 investido virou ${brl(roasTopo.valor)} em vendas`
-          }
-          tone={roasTopo === null || roasTopo.geral ? "neutral" : roasTopo.valor >= 4 ? "ok" : roasTopo.valor >= 2 ? "warn" : "bad"}
-        />
+        {resumo.roas !== null ? (
+          <Stat
+            label="ROAS"
+            value={`${resumo.roas.toFixed(2).replace(".", ",")}x`}
+            hint={`cada R$ 1 investido virou ${brl(resumo.roas)} em vendas`}
+            tone={resumo.roas >= 4 ? "ok" : resumo.roas >= 2 ? "warn" : "bad"}
+          />
+        ) : (
+          <Stat
+            label="Ads ÷ faturamento"
+            value={faturamentoComAds && resumo.invested ? pct(resumo.invested / faturamentoComAds) : "—"}
+            hint={
+              media3m !== null
+                ? `média dos últimos 3 meses: ${pct(media3m)} · a Shopee não informa a venda por anúncio, então não há ROAS`
+                : "sem investimento no período"
+            }
+            tone="brand"
+          />
+        )}
         <Stat
           label="Cliques"
           value={num(resumo.clicks)}
@@ -255,16 +257,11 @@ export default async function AdsPage({
                         <td className="num text-muted" data-label="Voltou em vendas">
                           {c.receita ? brl(c.receita) : c.semRetorno ? "não informado" : "—"}
                         </td>
-                        <td className={`num font-semibold ${c.roas?.geral ? "text-ink" : roasTom(c.roas?.valor ?? null)}`} data-label="ROAS">
+                        <td className={`num font-semibold ${roasTom(c.roas)}`} data-label="ROAS">
                           {c.roas === null ? (
-                            "—"
-                          ) : c.roas.geral ? (
-                            <span title={EXPLICA_ROAS_GERAL}>
-                              {c.roas.valor.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}x{" "}
-                              <span className="text-[0.65rem] font-normal text-dim">geral</span>
-                            </span>
+                            <span title={c.investido ? "Sem ROAS: o marketplace não informa quanto o anúncio vendeu. O % do faturamento ao lado é a medida." : undefined}>—</span>
                           ) : (
-                            `${c.roas.valor.toFixed(2)}x`
+                            `${c.roas.toFixed(2)}x`
                           )}
                         </td>
                       </>

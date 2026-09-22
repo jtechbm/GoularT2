@@ -59,40 +59,32 @@ export function roasDoTotal(
   return { roas: receita / comRetorno, cobertura };
 }
 
+function porcento(v: number): string {
+  return `${(v * 100).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%`;
+}
+
 /**
- * O ROAS que a tela mostra: sempre um número quando há investimento.
+ * Quanto do faturamento vai para anúncio, no mês e na média de 3 meses.
  *
- * Com as vendas dos anúncios conhecidas (90% do investido ou mais), é o ROAS
- * de verdade: vendas dos anúncios ÷ investido. Sem elas (recarga de crédito
- * da Shopee, que diz o gasto mas não a venda), é o ROAS geral: faturamento
- * total ÷ investido. O geral inclui a venda orgânica e sai maior; por isso
- * vem marcado, e nunca é pintado de bom ou ruim com a régua do outro.
+ * É o número com que o Kadu mede Ads ("5 a 10%"), e o único que existe para
+ * toda loja: a Shopee não informa quanto o anúncio vendeu, então o ROAS
+ * dela não existe, mas o investido (recargas de crédito) e o faturamento
+ * sim. A média de 3 meses absorve o descompasso da recarga, que é comprada
+ * num mês e gasta no seguinte. O ROAS em "x" entra só quando é real.
  */
-export function roasExibido(
+export function textoAds(
   investido: number,
-  comRetorno: number,
-  receitaAds: number,
   faturamento: number,
-): { valor: number; geral: boolean } | null {
-  if (investido <= 0) return null;
-  const { roas } = roasDoTotal(investido, comRetorno, receitaAds);
-  if (roas !== null) return { valor: roas, geral: false };
-  return faturamento > 0 ? { valor: faturamento / investido, geral: true } : null;
-}
-
-export const EXPLICA_ROAS_GERAL =
-  "ROAS geral = faturamento total ÷ investido em Ads. Usado quando o marketplace não informa quanto os anúncios venderam (recargas da Shopee). Inclui a venda orgânica, então é maior que o ROAS dos anúncios.";
-
-/** "ROAS 5,21x" ou "ROAS geral 25,7x": o número, sempre dizendo qual é. */
-export function formatarRoas(r: { valor: number; geral: boolean } | null): string {
-  if (!r) return "sem investimento";
-  const n = r.valor.toLocaleString("pt-BR", { maximumFractionDigits: r.geral ? 1 : 2, minimumFractionDigits: r.geral ? 1 : 2 });
-  return `ROAS${r.geral ? " geral" : ""} ${n}x`;
-}
-
-/** Texto do ROAS para dica de cartão. */
-export function textoRoas(investido: number, comRetorno: number, receitaAds: number, faturamento: number): string {
-  return formatarRoas(roasExibido(investido, comRetorno, receitaAds, faturamento));
+  media3m?: { ads: number; faturamento: number } | null,
+  roas?: number | null,
+): string {
+  if (investido <= 0 && !media3m?.ads) return "nenhum investimento no mês";
+  const partes = [faturamento > 0 ? `${porcento(investido / faturamento)} do faturamento` : "sem faturamento no mês"];
+  if (media3m && media3m.faturamento > 0 && media3m.ads > 0) {
+    partes.push(`média 3 meses ${porcento(media3m.ads / media3m.faturamento)}`);
+  }
+  if (roas != null) partes.push(`ROAS ${roas.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}x`);
+  return partes.join(" · ");
 }
 
 export interface CampanhaAnalisada {

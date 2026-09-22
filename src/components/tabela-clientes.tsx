@@ -4,7 +4,7 @@ import type { Score } from "@/lib/score";
 import { brlShort, currentMonth, dateBR, num, pct, variacaoMensal } from "@/lib/format";
 import { marketplaceLabel } from "@/lib/types";
 import { ordenarClientes, type Ordem } from "@/lib/ordem-clientes";
-import { EXPLICA_ROAS_GERAL, roasExibido } from "@/lib/ads-analise";
+import { roasDoTotal } from "@/lib/ads-analise";
 import { Avatar, Chip, Delta, MarketplaceChip, StatusChip } from "./ui";
 import { ColunaOrdenavel } from "./coluna-ordenavel";
 import { ScoreChip } from "./score-saude";
@@ -32,6 +32,8 @@ export function montarLinhas(
       ads_revenue: i?.ads_revenue ?? 0,
       ads_manual: i?.ads_manual ?? 0,
       ads_com_retorno: i?.ads_com_retorno ?? 0,
+      ads_3m: i?.ads_3m ?? 0,
+      fat_3m: i?.fat_3m ?? 0,
       vendas30: i?.vendas30 ?? 0,
       vendas30_ant: i?.vendas30_ant ?? 0,
       faturamento30: i?.faturamento30 ?? 0,
@@ -88,7 +90,8 @@ export function TabelaClientes({
         </thead>
         <tbody>
           {ordenadas.map((c) => {
-            const roas = roasExibido(c.ads, c.ads_com_retorno, c.ads_revenue, c.revenue);
+            const roas = roasDoTotal(c.ads, c.ads_com_retorno, c.ads_revenue).roas;
+            const media3m = c.ads_3m && c.fat_3m ? c.ads_3m / c.fat_3m : null;
             const pctAds = c.ads && c.revenue ? c.ads / c.revenue : null;
             const sc = scores.get(c.id);
             return (
@@ -147,20 +150,22 @@ export function TabelaClientes({
                 </td>
                 <td className="num text-muted" data-label="% Ads">
                   {pctAds === null ? "—" : pct(pctAds)}
+                  {media3m !== null && (
+                    <span className="block text-[0.65rem] text-dim" title="Média dos últimos 3 meses">
+                      3 meses: {pct(media3m)}
+                    </span>
+                  )}
                 </td>
                 <td
-                  className={`num ${roas === null ? "text-dim" : roas.geral ? "text-ink" : roas.valor >= 4 ? "text-ok" : roas.valor >= 2 ? "text-warn" : "text-bad"}`}
+                  className={`num ${roas === null ? "text-dim" : roas >= 4 ? "text-ok" : roas >= 2 ? "text-warn" : "text-bad"}`}
                   data-label="ROAS"
                 >
                   {roas === null ? (
-                    "—"
-                  ) : roas.geral ? (
-                    <span title={EXPLICA_ROAS_GERAL}>
-                      {roas.valor.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}x{" "}
-                      <span className="text-[0.65rem] text-dim">geral</span>
+                    <span title={c.ads ? "Sem ROAS: a Shopee não informa quanto o anúncio vendeu. Veja o % do faturamento em Ads." : undefined}>
+                      —
                     </span>
                   ) : (
-                    `${roas.valor.toFixed(2)}x`
+                    `${roas.toFixed(2)}x`
                   )}
                 </td>
                 <td className="num" data-label="Vendas 30d">
