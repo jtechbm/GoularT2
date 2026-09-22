@@ -25,8 +25,9 @@ import {
   serieDiaria,
   tasks,
   totalsForClient,
+  indicadoresDosClientes,
 } from "@/lib/queries";
-import { addMonths, brl, brlShort, currentMonth, dateBR, lastMonths, num, pct, variacaoMensal } from "@/lib/format";
+import { addMonths, brl, brlShort, currentMonth, dateBR, lastMonths, monthLabel, num, pct, variacaoMensal } from "@/lib/format";
 import { Avatar, Card, Chip, Delta, PageHeader, Stat, StatusChip } from "@/components/ui";
 import { RevenueProfitChart, ChartLegend } from "@/components/charts";
 import { integrationStatus } from "@/lib/integrations";
@@ -118,7 +119,7 @@ export default async function ClientePage({
     clientMarketplaces(client.id),
     clientSnapshots(client.id, 12),
     clientNotes(client.id),
-    clientAds(client.id),
+    clientAds(client.id, 300),
     tasks({ clientId: client.id }),
     marketplaceBreakdown(ref, client.id),
     procedenciaDoMes(ref, { clientId: client.id }),
@@ -132,6 +133,13 @@ export default async function ClientePage({
     listUsers(),
     integrationStatus(),
   ]);
+
+  // no mês corrente, o anterior só até o mesmo dia: meio mês contra o mês
+  // cheio punha o cliente "em queda" até o dia 30
+  const corrente = ref === currentMonth();
+  const anteriorComparavel = corrente
+    ? ((await indicadoresDosClientes(ref, [client.id])).get(client.id)?.prev_revenue_comparavel ?? null)
+    : prev.revenue;
 
   const metaGeral = metas.find((m) => m.marketplace === null);
   const realizado = {
@@ -229,9 +237,10 @@ export default async function ClientePage({
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <Stat
-          label={`Faturamento · ${ref}`}
+          label={`Faturamento · ${monthLabel(ref)}`}
           value={brl(totals.revenue)}
-          delta={variacaoMensal(totals.revenue, prev.revenue)}
+          delta={anteriorComparavel === null ? null : variacaoMensal(totals.revenue, anteriorComparavel)}
+          hint={corrente ? "vs. mesmo período do mês anterior" : "vs. mês anterior"}
           tone="brand"
         />
         <Stat label="Lucro" value={brl(totals.profit)} hint={`margem ${pct(margin)}`} tone="accent" />
@@ -311,7 +320,9 @@ export default async function ClientePage({
           <TabFinanceiro client={client} snapshots={snapshots} accounts={accounts} refMonth={ref} months={months} />
         )}
         {tab === "marketplaces" && <TabMarketplaces client={client} accounts={accounts} refMonth={ref} manager={manager} />}
-        {tab === "ads" && <TabAds client={client} entries={ads} accounts={accounts} />}
+        {tab === "ads" && (
+          <TabAds client={client} entries={ads} accounts={accounts} snapshots={snapshots} refMonth={ref} />
+        )}
         {tab === "metas" && (
           <TabMetas
             client={client}

@@ -1,194 +1,242 @@
 import { Card, Chip, Empty, Field, MarketplaceChip, Stat } from "@/components/ui";
 import { SaveBar, SubmitButton } from "@/components/submit";
 import { createAdsAction, deleteAdsAction } from "@/lib/actions/ads";
-import { brl, currentMonth, dateBR, num, origemLabel, pct } from "@/lib/format";
-import { MARKETPLACES, marketplaceLabel, type AdsEntry, type Client, type ClientMarketplace } from "@/lib/types";
+import { brl, lastMonths, monthLabel, num, pct } from "@/lib/format";
+import { analisarCampanha, resumirAds } from "@/lib/ads-analise";
+import { MARKETPLACES, type AdsEntry, type Client, type ClientMarketplace, type FinanceSnapshot } from "@/lib/types";
 
+/** A linha de Ads vale para o mês se o período dela cobre o mês. */
+function doMes(e: AdsEntry, mes: string): boolean {
+  return e.period_start.slice(0, 7) <= mes && e.period_end.slice(0, 7) >= mes;
+}
+
+/**
+ * Ads do cliente: o mês escolhido, o histórico mês a mês e as campanhas.
+ *
+ * A versão anterior somava o histórico inteiro no topo ("R$ 138 mil
+ * investidos") e dividia a pouca venda atribuída do Mercado Livre por todo
+ * esse investido, dando "ROAS 0,03x · ACOS 3.998%". Agora o topo é do mês,
+ * a medida é o % do faturamento (a Shopee não informa a venda por anúncio),
+ * e o ROAS só aparece onde é real.
+ */
 export function TabAds({
   client,
   entries,
   accounts,
+  snapshots,
+  refMonth,
 }: {
   client: Client;
   entries: (AdsEntry & { author: string | null })[];
   accounts: ClientMarketplace[];
+  snapshots: FinanceSnapshot[];
+  refMonth: string;
 }) {
   const channels = accounts.length
     ? MARKETPLACES.filter((m) => accounts.some((a) => a.marketplace === m.value))
     : MARKETPLACES;
+  const back = `/clientes/${client.id}?tab=ads&mes=${refMonth}`;
 
-  const totals = entries.reduce(
-    (a, e) => ({
-      invested: a.invested + e.invested,
-      revenue: a.revenue + e.revenue,
-      clicks: a.clicks + e.clicks,
-      orders: a.orders + e.orders,
-    }),
-    { invested: 0, revenue: 0, clicks: 0, orders: 0 },
-  );
-  const roas = totals.invested ? totals.revenue / totals.invested : 0;
-  // a tela chamava tudo de "lançamento" mesmo quando ninguém digitou nada
-  const automaticos = entries.filter((e) => e.source === "api").length;
-  const manuais = entries.length - automaticos;
-  const back = `/clientes/${client.id}?tab=ads`;
-  const today = new Date().toISOString().slice(0, 10);
-  const firstOfMonth = `${currentMonth()}-01`;
+  const faturamentoDo = (mes: string) =>
+    snapshots.filter((s) => s.ref_month === mes).reduce((t, s) => t + s.revenue, 0);
 
-  const semLeitura = accounts.filter((a) => a.ads_permission === "pendente");
+  // o mês escolhido
+  const campanhas = entries
+    .filter((e) => doMes(e, refMonth))
+    .map(analisarCampanha)
+    .filter((c) => c.invested > 0 || c.revenue > 0)
+    .sort((a, b) => b.invested - a.invested);
+  const resumo = resumirAds(campanhas);
+  const faturamento = faturamentoDo(refMonth);
+
+  // mês a mês, os últimos 12 até o escolhido
+  const meses = lastMonths(12, refMonth).reverse();
+  const historico = meses.map((mes) => {
+    const doMesAtual = entries.filter((e) => doMes(e, mes)).map(analisarCampanha);
+    const r = resumirAds(doMesAtual);
+    return { mes, investido: r.invested, receita: r.revenue, roas: r.roas, faturamento: faturamentoDo(mes) };
+  });
+  const tresMeses = historico.slice(0, 3);
+  const media3m = (() => {
+    const ads = tresMeses.reduce((t, h) => t + h.investido, 0);
+    const fat = tresMeses.reduce((t, h) => t + h.faturamento, 0);
+    return ads && fat ? ads / fat : null;
+  })();
 
   return (
     <div className="space-y-3">
-      {semLeitura.length > 0 && (
-        <div className="rounded-[12px] border border-warn/30 bg-warn-soft px-4 py-3 text-xs">
-          <span className="font-semibold">
-            O Ads de {semLeitura.map((a) => marketplaceLabel(a.marketplace)).join(" e ")} não entra nestes números.
-          </span>{" "}
-          O marketplace ainda não liberou a leitura de anúncios para o app da agência. Até liberar, lance o
-          investimento desse canal à mão no formulário abaixo.
-        </div>
-      )}
-
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <Stat
-          label="Investido (histórico)"
-          value={brl(totals.invested)}
-          hint={origemLabel(automaticos, manuais)}
-          tone="warn"
+          label={`Investido · ${monthLabel(refMonth)}`}
+          value={brl(resumo.invested)}
+          hint={resumo.invested ? `${campanhas.length} ${campanhas.length === 1 ? "campanha" : "campanhas"}` : "nenhum investimento no mês"}
+          tone="brand"
         />
-        <Stat label="Receita atribuída" value={brl(totals.revenue)} tone="brand" />
         <Stat
-          label="ROAS"
-          value={roas ? `${roas.toFixed(2)}x` : "—"}
-          hint={roas ? `ACOS ${pct(1 / roas)}` : "sem receita atribuída"}
-          tone={roas >= 4 ? "ok" : roas >= 2 ? "warn" : "bad"}
+          label="Ads ÷ faturamento"
+          value={resumo.invested && faturamento ? pct(resumo.invested / faturamento) : "—"}
+          hint={media3m !== null ? `média dos últimos 3 meses: ${pct(media3m)}` : "quanto do faturamento foi para anúncio"}
+          tone="accent"
         />
-        <Stat label="Pedidos via Ads" value={num(totals.orders)} hint={`${num(totals.clicks)} cliques`} tone="info" />
+        {resumo.roas !== null ? (
+          <Stat
+            label="ROAS"
+            value={`${resumo.roas.toFixed(2).replace(".", ",")}x`}
+            hint={`cada R$ 1 investido virou ${brl(resumo.roas)} em vendas`}
+            tone={resumo.roas >= 4 ? "ok" : resumo.roas >= 2 ? "warn" : "bad"}
+          />
+        ) : (
+          <Stat
+            label="ROAS"
+            value="—"
+            hint={resumo.invested ? "a Shopee não informa quanto o anúncio vendeu" : "sem investimento no mês"}
+            tone="neutral"
+          />
+        )}
+        <Stat
+          label="Voltou em vendas"
+          value={resumo.revenue ? brl(resumo.revenue) : "—"}
+          hint={
+            resumo.semRetorno
+              ? `sem o retorno de ${brl(resumo.semRetorno)} (recargas da Shopee)`
+              : resumo.orders
+                ? `${num(resumo.orders)} vendas · ${num(resumo.clicks)} cliques`
+                : "vendas atribuídas ao anúncio"
+          }
+          tone="info"
+        />
       </div>
 
-      <div className="grid gap-3 lg:grid-cols-3">
-        <form action={createAdsAction} className="lg:col-span-1">
+      <Card title="Mês a mês" subtitle="Quanto investiu e quanto isso pesou no faturamento" bodyClassName="p-0">
+        <div className="table-wrap">
+          <table className="data responsiva">
+            <thead>
+              <tr>
+                <th>Mês</th>
+                <th className="num">Investido</th>
+                <th className="num">Faturamento</th>
+                <th className="num">Ads ÷ faturamento</th>
+                <th className="num">ROAS</th>
+              </tr>
+            </thead>
+            <tbody>
+              {historico.map((h) => (
+                <tr key={h.mes} className={h.mes === refMonth ? "bg-surface-2" : undefined}>
+                  <td data-label="Mês" className="font-medium text-ink">
+                    {monthLabel(h.mes)}
+                  </td>
+                  <td className="num" data-label="Investido">{h.investido ? brl(h.investido) : "—"}</td>
+                  <td className="num text-muted" data-label="Faturamento">{h.faturamento ? brl(h.faturamento) : "—"}</td>
+                  <td className="num font-semibold text-ink" data-label="Ads ÷ faturamento">
+                    {h.investido && h.faturamento ? pct(h.investido / h.faturamento) : "—"}
+                  </td>
+                  <td className="num text-muted" data-label="ROAS">
+                    {h.roas !== null ? `${h.roas.toFixed(2)}x` : "—"}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+
+      <Card title={`Campanhas · ${monthLabel(refMonth)}`} bodyClassName="p-0">
+        {campanhas.length ? (
+          <div className="table-wrap">
+            <table className="data responsiva">
+              <thead>
+                <tr>
+                  <th>Campanha</th>
+                  <th className="num">Investido</th>
+                  <th className="num">Voltou em vendas</th>
+                  <th className="num">ROAS</th>
+                  <th className="num">Vendas</th>
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                {campanhas.map((c) => {
+                  const roas = c.revenue ? c.roas : null;
+                  return (
+                    <tr key={c.id}>
+                      <td data-label="Campanha">
+                        <span className="flex flex-wrap items-center gap-1.5">
+                          <MarketplaceChip value={c.marketplace} />
+                          <span className="text-sm text-ink">{c.nome}</span>
+                          {c.recarga && <Chip tone="info">recarga de crédito</Chip>}
+                          {!c.automatica && <Chip tone="neutral">lançado à mão</Chip>}
+                        </span>
+                      </td>
+                      <td className="num font-semibold text-ink" data-label="Investido">{brl(c.invested)}</td>
+                      <td className="num text-muted" data-label="Voltou em vendas">
+                        {c.revenue ? brl(c.revenue) : c.receitaInformada ? "—" : "não informado"}
+                      </td>
+                      <td className="num text-muted" data-label="ROAS">{roas !== null ? `${roas.toFixed(2)}x` : "—"}</td>
+                      <td className="num text-muted" data-label="Vendas">{c.orders ? num(c.orders) : "—"}</td>
+                      <td className="num">
+                        {/* apagar linha automática não adianta: a próxima
+                            sincronização traz a campanha de volta */}
+                        {!c.automatica && (
+                          <form action={deleteAdsAction}>
+                            <input type="hidden" name="entry_id" value={c.id} />
+                            <input type="hidden" name="client_id" value={client.id} />
+                            <input type="hidden" name="redirect_to" value={back} />
+                            <SubmitButton variant="ghost" size="sm" confirm="Excluir este lançamento?">
+                              Excluir
+                            </SubmitButton>
+                          </form>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className="p-5">
+            <Empty title="Nenhuma campanha no mês" hint="Com a loja conectada, o Ads entra sozinho na sincronização diária." />
+          </div>
+        )}
+      </Card>
+
+      <details className="rounded-[var(--radius-card)] border border-line bg-surface">
+        <summary className="cursor-pointer px-5 py-4 text-sm font-medium text-ink">
+          Lançar investimento à mão
+          <span className="ml-2 text-xs font-normal text-dim">para loja que não informa o Ads sozinha</span>
+        </summary>
+        <form action={createAdsAction} className="border-t border-line px-5 pt-4">
           <input type="hidden" name="client_id" value={client.id} />
           <input type="hidden" name="redirect_to" value={back} />
-          <Card
-            title="Lançar à mão"
-            subtitle="Para loja sem conexão ou para completar o que ela não devolve"
-            bodyClassName="p-5 pb-0"
-          >
-            <div className="space-y-3">
-              <Field label="Marketplace">
-                <select name="marketplace" className="select">
-                  {channels.map((m) => (
-                    <option key={m.value} value={m.value}>
-                      {m.label}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-              <Field label="Campanha / praça">
-                <input name="campaign" className="input" placeholder="nome da campanha" />
-              </Field>
-              <div className="grid grid-cols-2 gap-3">
-                <Field label="Início">
-                  <input name="period_start" type="date" defaultValue={firstOfMonth} required className="input" />
-                </Field>
-                <Field label="Fim">
-                  <input name="period_end" type="date" defaultValue={today} className="input" />
-                </Field>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <Field label="Investido (R$)">
-                  <input name="invested" inputMode="decimal" className="input" placeholder="0,00" />
-                </Field>
-                <Field label="Receita atribuída (R$)">
-                  <input name="revenue" inputMode="decimal" className="input" placeholder="0,00" />
-                </Field>
-                <Field label="Cliques">
-                  <input name="clicks" inputMode="numeric" className="input" />
-                </Field>
-                <Field label="Pedidos">
-                  <input name="orders" inputMode="numeric" className="input" />
-                </Field>
-              </div>
-              <Field label="Observações">
-                <textarea name="notes" rows={2} className="textarea" />
-              </Field>
-            </div>
-            <SaveBar label="Registrar investimento" hint="" />
-          </Card>
+          <input type="hidden" name="period_start" value={`${refMonth}-01`} />
+          <input
+            type="hidden"
+            name="period_end"
+            value={new Date(Date.UTC(Number(refMonth.slice(0, 4)), Number(refMonth.slice(5, 7)), 0)).toISOString().slice(0, 10)}
+          />
+          <div className="grid gap-3 sm:grid-cols-4">
+            <Field label="Loja">
+              <select name="marketplace" className="select">
+                {channels.map((m) => (
+                  <option key={m.value} value={m.value}>
+                    {m.label}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label="Campanha">
+              <input name="campaign" className="input" placeholder="opcional" />
+            </Field>
+            <Field label="Investido (R$) *">
+              <input name="invested" inputMode="decimal" required className="input" placeholder="0,00" />
+            </Field>
+            <Field label="Voltou em vendas (R$)">
+              <input name="revenue" inputMode="decimal" className="input" placeholder="0,00" />
+            </Field>
+          </div>
+          <SaveBar label="Lançar investimento" hint={`Vale para ${monthLabel(refMonth)} inteiro.`} />
         </form>
-
-        <Card className="lg:col-span-2" title="Campanhas de Ads" bodyClassName="p-0">
-          {entries.length ? (
-            <div className="table-wrap">
-              <table className="data">
-                <thead>
-                  <tr>
-                    <th>Período</th>
-                    <th>Canal</th>
-                    <th>Campanha</th>
-                    <th className="num">Investido</th>
-                    <th className="num">Receita</th>
-                    <th className="num">ROAS</th>
-                    <th className="num">Pedidos</th>
-                    <th />
-                  </tr>
-                </thead>
-                <tbody>
-                  {entries.map((e) => {
-                    const r = e.invested ? e.revenue / e.invested : 0;
-                    return (
-                      <tr key={e.id}>
-                        <td className="text-xs text-muted">
-                          {dateBR(e.period_start)}
-                          {e.period_end !== e.period_start && ` → ${dateBR(e.period_end)}`}
-                        </td>
-                        <td>
-                          <MarketplaceChip value={e.marketplace} />
-                        </td>
-                        <td className="text-xs text-muted">
-                          {e.campaign ?? "—"}
-                          {e.source === "api" && (
-                            <span className="ml-1.5 align-middle">
-                              <Chip tone="info">automático</Chip>
-                            </span>
-                          )}
-                        </td>
-                        <td className="num font-semibold text-ink">{brl(e.invested)}</td>
-                        <td className="num text-muted">{brl(e.revenue)}</td>
-                        <td className={`num font-semibold ${r >= 3 ? "text-ok" : r > 0 ? "text-warn" : "text-dim"}`}>
-                          {r ? `${r.toFixed(2)}x` : "—"}
-                        </td>
-                        <td className="num text-muted">{num(e.orders)}</td>
-                        <td className="num">
-                          {/* apagar linha automática não adianta: a próxima
-                              sincronização traz a campanha de volta */}
-                          {e.source !== "api" && (
-                            <form action={deleteAdsAction}>
-                              <input type="hidden" name="entry_id" value={e.id} />
-                              <input type="hidden" name="client_id" value={client.id} />
-                              <input type="hidden" name="redirect_to" value={back} />
-                              <SubmitButton variant="ghost" size="sm" confirm="Excluir este lançamento?">
-                                ✕
-                              </SubmitButton>
-                            </form>
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <div className="p-5">
-              <Empty
-                title="Nenhuma campanha no período"
-                hint="Com a loja conectada, as campanhas entram sozinhas todo dia. Enquanto isso, dá para lançar à mão."
-              />
-            </div>
-          )}
-        </Card>
-      </div>
+      </details>
     </div>
   );
 }
