@@ -33,6 +33,43 @@ export function eRecarga(e: { external_id?: string | null }): boolean {
   return (e.external_id ?? "").startsWith("recargas-");
 }
 
+/**
+ * Parte mínima do investido que precisa ter retorno conhecido para o ROAS
+ * valer como o ROAS daquele investimento.
+ */
+export const COBERTURA_MINIMA_ROAS = 0.9;
+
+/**
+ * ROAS de um total que mistura investido com e sem retorno conhecido.
+ *
+ * ROAS é vendas dos anúncios ÷ investido. Quando só parte do investido
+ * informa vendas (recarga de crédito da Shopee, lançamento à mão), o ROAS
+ * dessa parte ao lado do investido total engana: a tela mostrava R$ 7.931
+ * investidos e "ROAS 5,21x", que era o ROAS de R$ 31 do Mercado Livre. Abaixo
+ * de 90% de cobertura não há ROAS do total, e a tela diz a cobertura.
+ */
+export function roasDoTotal(
+  investido: number,
+  comRetorno: number,
+  receita: number,
+): { roas: number | null; cobertura: number } {
+  if (investido <= 0) return { roas: null, cobertura: 0 };
+  const cobertura = comRetorno / investido;
+  if (cobertura < COBERTURA_MINIMA_ROAS || comRetorno <= 0) return { roas: null, cobertura };
+  return { roas: receita / comRetorno, cobertura };
+}
+
+/** Texto do ROAS para dica de cartão: o número, ou por que não há. */
+export function textoRoas(investido: number, comRetorno: number, receita: number): string {
+  const { roas, cobertura } = roasDoTotal(investido, comRetorno, receita);
+  if (roas !== null) return `ROAS ${roas.toFixed(2).replace(".", ",")}x`;
+  if (investido <= 0) return "sem investimento";
+  const parte = cobertura < 0.01 ? "menos de 1%" : `${Math.round(cobertura * 100)}%`;
+  return cobertura > 0
+    ? `sem ROAS: só ${parte} do investido informa vendas`
+    : "sem ROAS: o investido não informa vendas";
+}
+
 export interface CampanhaAnalisada {
   id: string;
   nome: string;
@@ -141,7 +178,7 @@ export function resumirAds(
     ...soma,
     prints,
     semRetorno: soma.invested - comRetorno,
-    roas: comRetorno > 0 ? soma.revenue / comRetorno : null,
+    roas: roasDoTotal(soma.invested, comRetorno, soma.revenue).roas,
     acos: soma.revenue > 0 ? comRetorno / soma.revenue : null,
     // custo por clique só de quem informou cliques: o lançado à mão sem
     // clique dividia R$ 2.500 por 300 cliques de outra campanha

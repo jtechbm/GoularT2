@@ -8,7 +8,7 @@ import { SaveBar, SubmitButton } from "@/components/submit";
 import { MonthPicker } from "@/components/month-picker";
 import { Procedencia } from "@/components/procedencia";
 import { createAdsAction, deleteAdsAction } from "@/lib/actions/ads";
-import { analisarCampanha, resumirAds } from "@/lib/ads-analise";
+import { analisarCampanha, resumirAds, roasDoTotal, textoRoas } from "@/lib/ads-analise";
 import { MARKETPLACES, marketplaceLabel } from "@/lib/types";
 
 /**
@@ -61,7 +61,7 @@ export default async function AdsPage({
         ...c,
         investido,
         receita,
-        roas: comRetorno ? receita / comRetorno : null,
+        roas: roasDoTotal(investido, comRetorno, receita).roas,
         semRetorno: investido - comRetorno,
         naoLido: c.ads_permission === "pendente" && !doCanal.some((x) => !x.automatica),
       };
@@ -184,10 +184,8 @@ export default async function AdsPage({
           value={resumo.roas === null ? "—" : `${resumo.roas.toFixed(2)}x`}
           hint={
             resumo.roas === null
-              ? resumo.semRetorno
-                ? "retorno não informado"
-                : "sem investimento no mês"
-              : `cada R$ 1 investido virou ${brl(resumo.roas)} em vendas${resumo.semRetorno ? " (só o que tem retorno)" : ""}`
+              ? textoRoas(resumo.invested, resumo.invested - resumo.semRetorno, resumo.revenue)
+              : `cada R$ 1 investido virou ${brl(resumo.roas)} em vendas`
           }
           tone={resumo.roas === null ? "neutral" : resumo.roas >= 4 ? "ok" : resumo.roas >= 2 ? "warn" : "bad"}
         />

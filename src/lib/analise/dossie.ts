@@ -1,5 +1,6 @@
 import { diferencaRelativa, numerosDoTrecho } from "../precos/analise.ts";
 import { avaliarIndicador, INDICADOR_LABEL, type Indicador } from "../penalidades/regras.ts";
+import { roasDoTotal } from "../ads-analise.ts";
 
 /**
  * O dossiê do cliente: a parte que só faz conta.
@@ -386,7 +387,7 @@ function derivarLoja(l: LojaNoDossie, faturamentoDoCliente: number): DerivadoLoj
         ? {
             invested: investido,
             revenue: receitaAds,
-            roas: comRetorno ? receitaAds / comRetorno : null,
+            roas: roasDoTotal(investido, comRetorno, receitaAds).roas,
             acos: receitaAds && comRetorno ? comRetorno / receitaAds : null,
             semRetorno: investido - comRetorno,
             pctFaturamento: l.atual.revenue ? investido / l.atual.revenue : null,
@@ -437,7 +438,11 @@ export function montarDossie(e: EntradaDossie): Dossie {
         ? {
             invested: investido,
             revenue: receitaAds,
-            roas: receitaAds / investido,
+            roas: roasDoTotal(
+              investido,
+              soma(porLoja.map((l) => (l.derivado.ads ? l.derivado.ads.invested - l.derivado.ads.semRetorno : 0))),
+              receitaAds,
+            ).roas,
             pctFaturamento: atual.revenue ? investido / atual.revenue : null,
             incompleto: porLoja.some((l) => l.derivado.adsNaoMedido),
           }

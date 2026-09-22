@@ -18,6 +18,7 @@ import {
 } from "@/lib/queries";
 import { brl, brlShort, currentMonth, dateBR, lastMonths, num, pct, variacaoMensal } from "@/lib/format";
 import { lerOrdem } from "@/lib/ordem-clientes";
+import { roasDoTotal, textoRoas } from "@/lib/ads-analise";
 import {
   Avatar,
   Card,
@@ -101,7 +102,7 @@ export default async function DashboardPage({
   const vendas30Ant = soma((l) => l.vendas30_ant);
   const advertencias = soma((l) => l.advertencias);
   const criticas = soma((l) => l.advertencias_criticas);
-  const roasCarteira = investidoComRetorno ? receitaAds / investidoComRetorno : 0;
+  const roasCarteira = roasDoTotal(investido, investidoComRetorno, receitaAds).roas ?? 0;
   // canal sem leitura mas com valor lançado à mão já não está faltando
   const adsIncompleto = linhas.some((l) => l.ads_pendente && !l.ads_manual);
 
@@ -187,7 +188,7 @@ export default async function DashboardPage({
           value={brl(investido)}
           hint={
             investido
-              ? `${faturamento ? `${pct(investido / faturamento)} do faturamento · ` : ""}ROAS ${roasCarteira.toFixed(2)}x${adsIncompleto ? " · falta canal" : ""}`
+              ? `${faturamento ? `${pct(investido / faturamento)} do faturamento · ` : ""}${textoRoas(investido, investidoComRetorno, receitaAds)}${adsIncompleto ? " · falta canal" : ""}`
               : adsIncompleto
                 ? "falta ler o Ads de algum canal"
                 : "nenhum investimento no mês"

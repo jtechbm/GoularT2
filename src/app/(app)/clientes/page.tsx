@@ -8,6 +8,7 @@ import { Card, Empty, PageHeader, Stat } from "@/components/ui";
 import { MonthPicker } from "@/components/month-picker";
 import { montarLinhas, TabelaClientes } from "@/components/tabela-clientes";
 import { lerOrdem } from "@/lib/ordem-clientes";
+import { textoRoas } from "@/lib/ads-analise";
 import { CLIENT_STATUS, MARKETPLACES } from "@/lib/types";
 
 /**
@@ -80,7 +81,6 @@ export default async function ClientesPage({
     }),
     { revenue: 0, profit: 0, ads: 0, adsRevenue: 0, comRetorno: 0, fee: 0 },
   );
-  const roas = totais.comRetorno ? totais.adsRevenue / totais.comRetorno : 0;
 
   /** URL da lista com os filtros atuais, trocando só o que vier em `extra` */
   const base = (extra: Record<string, string>) => {
@@ -133,7 +133,7 @@ export default async function ClientesPage({
           value={brlShort(totais.ads)}
           hint={
             totais.ads
-              ? `${totais.revenue ? `${pct(totais.ads / totais.revenue)} do faturamento · ` : ""}ROAS ${roas.toFixed(2)}x`
+              ? `${totais.revenue ? `${pct(totais.ads / totais.revenue)} do faturamento · ` : ""}${textoRoas(totais.ads, totais.comRetorno, totais.adsRevenue)}`
               : "nenhum investimento no mês"
           }
           tone="warn"
