@@ -124,18 +124,18 @@ export function assertCan(user: User, permission: Permission, message?: string):
  * O admin vê tudo. Gestor e membro veem o que cadastraram, aquilo de que são
  * responsáveis e o que foi atribuído a eles na tela de Equipe.
  */
-export const visibleClientIds = cache(async function visibleClientIds(user: User): Promise<string[] | null> {
-  if (user.role === "admin") return null;
-  const rows = await all<{ client_id: string }>(
-    `SELECT c.id AS client_id
-       FROM clients c
-      WHERE c.created_by = ? OR c.owner_id = ?
-         OR EXISTS (SELECT 1 FROM client_team ct WHERE ct.client_id = c.id AND ct.user_id = ?)`,
-    user.id,
-    user.id,
-    user.id,
-  );
-  return rows.map((r) => r.client_id);
+/**
+ * Quais clientes a pessoa enxerga. `null` significa a carteira inteira.
+ *
+ * Hoje é a carteira inteira para todo mundo, por decisão do Kadu: a operação
+ * é pequena, todos atendem todos, e esconder cliente de quem trabalha nele
+ * só atrapalhava. Quem abre a tela de Clientes é controlado pela permissão
+ * "Abrir a tela de Clientes", na Equipe; responsável e equipe do cliente
+ * continuam existindo para dizer quem responde pela conta, não para limitar
+ * o que se vê.
+ */
+export const visibleClientIds = cache(async function visibleClientIds(_user: User): Promise<string[] | null> {
+  return null;
 });
 
 export async function canSeeClient(user: User, clientId: string): Promise<boolean> {

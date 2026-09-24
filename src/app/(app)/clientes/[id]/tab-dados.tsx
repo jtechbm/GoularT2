@@ -1,6 +1,6 @@
 import { Card, Field } from "@/components/ui";
-import { SaveBar } from "@/components/submit";
-import { updateClientAction } from "@/lib/actions/clients";
+import { SaveBar, SubmitButton } from "@/components/submit";
+import { deleteClientAction, updateClientAction } from "@/lib/actions/clients";
 import { CLIENT_STATUS, type Client, type User } from "@/lib/types";
 
 export function TabDados({
@@ -8,11 +8,14 @@ export function TabDados({
   users,
   manager,
   admin,
+  erroExclusao,
 }: {
   client: Client;
   users: User[];
   manager: boolean;
   admin: boolean;
+  /** o nome digitado não confere com o do cliente */
+  erroExclusao?: boolean;
 }) {
   if (!manager) {
     return (
@@ -23,7 +26,8 @@ export function TabDados({
   }
 
   return (
-    <form action={updateClientAction}>
+    <>
+      <form action={updateClientAction}>
       <input type="hidden" name="client_id" value={client.id} />
       <Card className="max-w-4xl" title="Dados cadastrais" bodyClassName="p-5 pb-0">
         <div className="grid gap-4 sm:grid-cols-2">
@@ -118,6 +122,39 @@ export function TabDados({
 
         <SaveBar />
       </Card>
-    </form>
+      </form>
+
+      {/* apagar cliente é do admin: gestor e membro podem editar cadastro e
+          nem por isso devem poder sumir com anos de histórico */}
+      {admin && (
+        <form action={deleteClientAction} className="mt-3">
+          <input type="hidden" name="client_id" value={client.id} />
+          <Card title="Excluir cliente" subtitle="Não tem volta">
+            <p className="text-sm text-muted">
+              Apaga <strong className="text-ink">{client.name}</strong> e tudo que é dele: lojas conectadas,
+              fechamentos, histórico diário, Ads, anotações, metas, penalidades, análises e cobranças. As tarefas
+              ficam no sistema, sem cliente.
+            </p>
+            {erroExclusao && (
+              <p className="mt-3 rounded-lg border border-bad/30 bg-bad-soft px-3 py-2 text-xs text-bad">
+                O nome digitado não confere. Nada foi apagado.
+              </p>
+            )}
+            <div className="mt-3 flex flex-wrap items-end gap-3">
+              <Field label={`Digite "${client.name}" para confirmar`} className="min-w-64 flex-1">
+                <input name="confirmacao" className="input" placeholder={client.name} autoComplete="off" />
+              </Field>
+              <SubmitButton
+                variant="danger"
+                pendingLabel="Excluindo…"
+                confirm={`Excluir ${client.name} e todo o histórico dele? Isso não tem volta.`}
+              >
+                Excluir cliente
+              </SubmitButton>
+            </div>
+          </Card>
+        </form>
+      )}
+    </>
   );
 }

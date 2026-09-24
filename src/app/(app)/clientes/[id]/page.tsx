@@ -338,7 +338,15 @@ export default async function ClientePage({
         )}
         {tab === "historico" && <TabHistorico client={client} notes={notes} currentUserId={user.id} manager={manager} />}
         {tab === "equipe" && <TabEquipe client={client} team={team} users={allUsers} manager={manager} />}
-        {tab === "dados" && <TabDados client={client} users={allUsers} manager={manager} admin={admin} />}
+        {tab === "dados" && (
+          <TabDados
+            client={client}
+            users={allUsers}
+            manager={manager}
+            admin={admin}
+            erroExclusao={sp.erro === "nome"}
+          />
+        )}
       </div>
 
       <p className="mt-6 flex flex-wrap items-center justify-center gap-2 text-center text-[0.7rem] text-dim">

@@ -35,6 +35,7 @@ export default async function ClientesPage({
     canal?: string;
     ordem?: string;
     ads?: string;
+    ok?: string;
   }>;
 }) {
   const user = await requirePermission("clientes.ver");
@@ -125,6 +126,12 @@ export default async function ClientesPage({
           </>
         }
       />
+
+      {params.ok === "excluido" && (
+        <div className="flash mb-4 rounded-lg border border-ok/30 bg-ok-soft px-4 py-2.5 text-sm font-medium text-ok">
+          Cliente excluído.
+        </div>
+      )}
 
       <div className="mb-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <Stat label="Faturamento (filtro)" value={brlShort(totais.revenue)} tone="brand" />

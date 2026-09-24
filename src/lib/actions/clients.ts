@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { all, id, now, one, run } from "@/lib/db";
-import { assertCan, assertClientAccess, requirePermission, requireUser } from "@/lib/auth";
+import { assertCan, assertClientAccess, requirePermission, requireRole, requireUser } from "@/lib/auth";
 import { can } from "@/lib/permissions";
 import { str, strOrNull, toNumber } from "@/lib/format";
 import { avaliarOnboardingDoCliente } from "@/lib/queries";
@@ -152,6 +152,36 @@ export async function updateClientAction(formData: FormData) {
  * pessoa atende. Sem esse vínculo, quem não enxerga a carteira inteira abre
  * a tela de Clientes vazia, mesmo com a permissão de ver.
  */
+/**
+ * Exclui o cliente e tudo que é dele.
+ *
+ * Some junto: lojas conectadas, fechamentos, histórico diário, Ads,
+ * anotações, metas, penalidades, análises, produtos e cobranças. As tarefas
+ * ficam, sem cliente, para o histórico da equipe não sumir.
+ *
+ * Só admin: gestor e membro podem ter "cadastrar e editar clientes" e nem
+ * por isso devem poder apagar a conta inteira de um cliente.
+ */
+export async function deleteClientAction(formData: FormData) {
+  await requireRole("admin");
+  const clientId = str(formData.get("client_id"));
+  const confirmacao = str(formData.get("confirmacao"));
+
+  const alvo = await one<{ name: string }>("SELECT name FROM clients WHERE id = ?", clientId);
+  if (!alvo) throw new Error("Cliente não encontrado.");
+
+  // digitar o nome é a trava: um clique errado não apaga anos de histórico
+  if (confirmacao.trim().toLowerCase() !== alvo.name.trim().toLowerCase()) {
+    redirect(`/clientes/${clientId}?tab=dados&erro=nome`);
+  }
+
+  await run("DELETE FROM clients WHERE id = ?", clientId);
+
+  revalidatePath("/clientes");
+  revalidatePath("/");
+  redirect("/clientes?ok=excluido");
+}
+
 export async function salvarClientesDaPessoaAction(formData: FormData) {
   const actor = await requirePermission("equipe.gerenciar");
   if (actor.role !== "admin") throw new Error("Apenas o super admin pode atribuir clientes.");
