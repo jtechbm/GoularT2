@@ -10,6 +10,7 @@ import { Avatar, Card, Chip, Field, PageHeader, Stat } from "@/components/ui";
 import { SaveBar, SubmitButton } from "@/components/submit";
 import {
   createTeamMemberAction,
+  deleteTeamMemberAction,
   salvarPapeisAction,
   toggleTeamMemberAction,
   updateTeamMemberAction,
@@ -75,7 +76,12 @@ export default async function EquipePage({
         </div>
       )}
 
-      {sp.ok && (
+      {sp.ok === "excluido" && (
+        <div className="flash mb-4 rounded-lg border border-ok/30 bg-ok-soft px-4 py-2.5 text-sm font-medium text-ok">
+          Acesso excluído.
+        </div>
+      )}
+      {sp.ok && sp.ok !== "excluido" && (
         <div className="flash mb-4 rounded-lg border border-ok/30 bg-ok-soft px-4 py-2.5 text-sm font-medium text-ok">
           Alterações salvas.
         </div>
@@ -246,16 +252,29 @@ export default async function EquipePage({
                 )}
 
                 {isOpen && manager && u.id !== user.id && (
-                  <form action={toggleTeamMemberAction} className="-mx-5 -mb-5 border-t border-line px-5 py-3">
-                    <input type="hidden" name="user_id" value={u.id} />
-                    <SubmitButton
-                      variant="ghost"
-                      size="sm"
-                      confirm={u.active ? "Desativar este usuário? As sessões abertas caem." : "Reativar este usuário?"}
-                    >
-                      {u.active ? "Desativar acesso" : "Reativar acesso"}
-                    </SubmitButton>
-                  </form>
+                  <div className="-mx-5 -mb-5 flex flex-wrap items-center justify-between gap-3 border-t border-line px-5 py-3">
+                    <form action={toggleTeamMemberAction}>
+                      <input type="hidden" name="user_id" value={u.id} />
+                      <SubmitButton
+                        variant="ghost"
+                        size="sm"
+                        confirm={u.active ? "Desativar este usuário? As sessões abertas caem." : "Reativar este usuário?"}
+                      >
+                        {u.active ? "Desativar acesso" : "Reativar acesso"}
+                      </SubmitButton>
+                    </form>
+                    <form action={deleteTeamMemberAction}>
+                      <input type="hidden" name="user_id" value={u.id} />
+                      <SubmitButton
+                        variant="danger"
+                        size="sm"
+                        pendingLabel="Excluindo…"
+                        confirm={`Excluir o acesso de ${u.name} para sempre? Isso não tem volta. As tarefas, os pontos e as anotações dele continuam gravados, mas sem o nome. Para tirar o acesso sem perder o nome no histórico, use Desativar.`}
+                      >
+                        Excluir acesso
+                      </SubmitButton>
+                    </form>
+                  </div>
                 )}
               </Card>
             );

@@ -217,6 +217,46 @@ export async function toggleTeamMemberAction(formData: FormData) {
 }
 
 /** A pessoa define a própria senha a partir do link de convite. */
+/**
+ * Exclui um acesso de vez.
+ *
+ * Desativar é o caminho normal e é reversível; isto aqui é para o cadastro
+ * que não deveria existir (teste, pessoa criada errada). O histórico não
+ * some junto: tarefas, pontos, anotações e cobranças ficam gravados, só
+ * deixam de ter o nome, porque o banco desliga a referência em vez de
+ * apagar a linha. O que é pessoal — sessões e as notificações dele — sai.
+ */
+export async function deleteTeamMemberAction(formData: FormData) {
+  const actor = await requirePermission("equipe.gerenciar");
+  const userId = str(formData.get("user_id"));
+
+  if (userId === actor.id) throw new Error("Você não pode excluir o próprio acesso.");
+
+  const alvo = await one<{ name: string; email: string; role: string }>(
+    "SELECT name, email, role FROM users WHERE id = ?",
+    userId,
+  );
+  if (!alvo) throw new Error("Usuário não encontrado.");
+
+  if (alvo.role === "admin") {
+    const outros = await one<{ n: number }>(
+      "SELECT COUNT(*) AS n FROM users WHERE role = 'admin' AND active = 1 AND id <> ?",
+      userId,
+    );
+    if ((outros?.n ?? 0) === 0) {
+      throw new Error("Este é o último admin. Promova outra pessoa antes de excluir este acesso.");
+    }
+  }
+
+  await run("DELETE FROM sessions WHERE user_id = ?", userId);
+  await run("DELETE FROM users WHERE id = ?", userId);
+  // a trilha do excluído cai junto com ele; o registro fica na de quem excluiu
+  await registrar(actor.id, actor.id, "excluiu_acesso", `${alvo.name} (${alvo.email})`);
+
+  refresh();
+  redirect("/equipe?ok=excluido");
+}
+
 export async function definirSenhaAction(formData: FormData) {
   const token = str(formData.get("token"));
   const senha = String(formData.get("password") ?? "");
