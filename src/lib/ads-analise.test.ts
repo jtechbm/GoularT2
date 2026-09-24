@@ -15,6 +15,14 @@ test("lançado à mão sem retorno é 'não informado', não 'não vendeu'", () 
   assert.equal(c.receitaInformada, false);
 });
 
+test("campanha preserva a loja individual, mesmo quando há outra da mesma plataforma", () => {
+  const c = analisarCampanha(
+    linha({ client_marketplace_id: "loja-2", store_name: "Filial Centro", invested: 100 }),
+  );
+  assert.equal(c.accountId, "loja-2");
+  assert.equal(c.storeName, "Filial Centro");
+});
+
 test("sem retorno em quase todo o investido, não há ROAS do total; o custo por clique ignora quem não tem clique", () => {
   const r = resumirAds([
     analisarCampanha(linha({ invested: 2500 })),

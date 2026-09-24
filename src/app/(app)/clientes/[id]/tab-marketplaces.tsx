@@ -1,4 +1,4 @@
-import { Card, Chip, Empty, Field, MarketplaceChip } from "@/components/ui";
+import { Card, Chip, Empty, Field, StoreChip } from "@/components/ui";
 import { SaveBar, SubmitButton } from "@/components/submit";
 import {
   addMarketplaceAction,
@@ -34,7 +34,12 @@ export function TabMarketplaces({
           accounts.map((a) => (
             <Card
               key={a.id}
-              title={<MarketplaceChip value={a.marketplace} />}
+              title={
+                <StoreChip
+                  marketplace={a.marketplace}
+                  name={a.nickname || a.external_id || marketplaceLabel(a.marketplace)}
+                />
+              }
               subtitle={null}
               bodyClassName="p-5 pb-0"
             >
@@ -51,8 +56,8 @@ export function TabMarketplaces({
                 <input type="hidden" name="client_id" value={client.id} />
                 <input type="hidden" name="marketplace_id" value={a.id} />
                 <div className="grid gap-3 sm:grid-cols-3">
-                  <Field label="Apelido da conta">
-                    <input name="nickname" defaultValue={a.nickname ?? ""} className="input" placeholder="como a equipe chama esta conta" />
+                  <Field label="Nome da loja">
+                    <input name="nickname" defaultValue={a.nickname ?? ""} className="input" placeholder="ex.: Loja Centro" required />
                   </Field>
                   <Field label="ID externo" hint="Seller ID (ML) ou Shop ID (Shopee).">
                     <input name="external_id" defaultValue={a.external_id ?? ""} className="input" />
@@ -164,7 +169,7 @@ export function TabMarketplaces({
         {manager && (
           <form action={addMarketplaceAction}>
             <input type="hidden" name="client_id" value={client.id} />
-            <Card title="Adicionar canal" bodyClassName="p-5 pb-0">
+            <Card title="Adicionar loja" bodyClassName="p-5 pb-0">
               <div className="space-y-3">
                 <Field label="Marketplace">
                   <select name="marketplace" className="select">
@@ -175,14 +180,14 @@ export function TabMarketplaces({
                     ))}
                   </select>
                 </Field>
-                <Field label="Apelido">
-                  <input name="nickname" className="input" placeholder="como a equipe chama esta conta" />
+                <Field label="Nome da loja">
+                  <input name="nickname" className="input" placeholder="ex.: Loja Centro" required />
                 </Field>
                 <Field label="ID externo">
                   <input name="external_id" className="input" placeholder="opcional" />
                 </Field>
               </div>
-              <SaveBar label="Adicionar canal" hint="" />
+              <SaveBar label="Adicionar loja" hint="Você pode cadastrar quantas lojas quiser, inclusive da mesma plataforma." />
             </Card>
           </form>
         )}

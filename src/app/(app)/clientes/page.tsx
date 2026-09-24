@@ -66,7 +66,12 @@ export default async function ClientesPage({
     if (canal && !c.marketplaces.split(",").includes(canal)) return false;
     if (onlyMine && c.owner_id !== user.id) return false;
     if (soAds && !c.ads) return false;
-    if (query && ![c.name, c.trade_name, c.segment, c.owner_name].some((v) => v?.toLowerCase().includes(query)))
+    if (
+      query &&
+      ![c.name, c.trade_name, c.segment, c.owner_name, ...c.stores.map((store) => store.name)].some((v) =>
+        v?.toLowerCase().includes(query),
+      )
+    )
       return false;
     return true;
   });
@@ -175,7 +180,7 @@ export default async function ClientesPage({
             </select>
           </div>
           <div className="w-40">
-            <label className="label">Canal</label>
+            <label className="label">Loja</label>
             <select name="canal" defaultValue={canal} className="select">
               <option value="">Todos</option>
               {MARKETPLACES.map((m) => (

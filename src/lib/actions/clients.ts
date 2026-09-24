@@ -217,13 +217,15 @@ export async function addMarketplaceAction(formData: FormData) {
   const actor = await assertManager();
   const clientId = str(formData.get("client_id"));
   await assertClientAccess(actor, clientId);
+  const nickname = str(formData.get("nickname"));
+  if (!nickname) throw new Error("Informe o nome da loja.");
   await run(
     `INSERT INTO client_marketplaces (id, client_id, marketplace, nickname, external_id, status, created_at)
      VALUES (?,?,?,?,?,?,?)`,
     id(),
     clientId,
     str(formData.get("marketplace")),
-    strOrNull(formData.get("nickname")),
+    nickname,
     strOrNull(formData.get("external_id")),
     "pendente",
     now(),
@@ -237,9 +239,11 @@ export async function updateMarketplaceAction(formData: FormData) {
   const clientId = str(formData.get("client_id"));
   await assertClientAccess(actor, clientId);
   const rowId = str(formData.get("marketplace_id"));
+  const nickname = str(formData.get("nickname"));
+  if (!nickname) throw new Error("Informe o nome da loja.");
   await run(
     "UPDATE client_marketplaces SET nickname=?, external_id=?, status=? WHERE id=? AND client_id=?",
-    strOrNull(formData.get("nickname")),
+    nickname,
     strOrNull(formData.get("external_id")),
     str(formData.get("status")),
     rowId,
@@ -266,7 +270,16 @@ export async function saveFinanceAction(formData: FormData) {
   const user = await requireUser();
   const clientId = str(formData.get("client_id"));
   const refMonth = str(formData.get("ref_month"));
-  const marketplace = str(formData.get("marketplace"));
+  const accountId = strOrNull(formData.get("client_marketplace_id"));
+  const account = accountId
+    ? await one<{ marketplace: string }>(
+        "SELECT marketplace FROM client_marketplaces WHERE id = ? AND client_id = ?",
+        accountId,
+        clientId,
+      )
+    : null;
+  if (accountId && !account) throw new Error("Loja não encontrada para este cliente.");
+  const marketplace = account?.marketplace ?? str(formData.get("marketplace"));
   if (!clientId || !refMonth || !marketplace) throw new Error("Cliente, mês e marketplace são obrigatórios.");
   await assertClientAccess(user, clientId);
 
@@ -280,12 +293,19 @@ export async function saveFinanceAction(formData: FormData) {
   // lucro em branco = calculado a partir dos custos informados
   const profit = profitField === "" ? revenue - cogs - fees - shipping - tax - ads : toNumber(formData.get("profit"));
 
-  const existing = await one<{ id: string }>(
-    "SELECT id FROM finance_snapshots WHERE client_id=? AND marketplace=? AND ref_month=?",
-    clientId,
-    marketplace,
-    refMonth,
-  );
+  const existing = accountId
+    ? await one<{ id: string }>(
+        "SELECT id FROM finance_snapshots WHERE client_marketplace_id=? AND ref_month=?",
+        accountId,
+        refMonth,
+      )
+    : await one<{ id: string }>(
+        `SELECT id FROM finance_snapshots
+          WHERE client_id=? AND marketplace=? AND ref_month=? AND client_marketplace_id IS NULL`,
+        clientId,
+        marketplace,
+        refMonth,
+      );
 
   if (existing) {
     await run(
@@ -306,11 +326,12 @@ export async function saveFinanceAction(formData: FormData) {
     );
   } else {
     await run(
-      `INSERT INTO finance_snapshots (id, client_id, marketplace, ref_month, revenue, orders, units, cogs, fees,
-                                      shipping, tax, ads, profit, source, updated_by, updated_at)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,'manual',?,?)`,
+      `INSERT INTO finance_snapshots (id, client_id, client_marketplace_id, marketplace, ref_month, revenue, orders,
+                                      units, cogs, fees, shipping, tax, ads, profit, source, updated_by, updated_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,'manual',?,?)`,
       id(),
       clientId,
+      accountId,
       marketplace,
       refMonth,
       revenue,

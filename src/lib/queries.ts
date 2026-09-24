@@ -24,6 +24,21 @@ import type {
 } from "./types";
 
 /**
+ * Compatibilidade durante o deploy da migração de múltiplas lojas. O código
+ * novo pode subir antes das colunas sem derrubar as telas de leitura.
+ */
+let storeScopeColumnsPromise: Promise<boolean> | undefined;
+function hasStoreScopeColumns(): Promise<boolean> {
+  return (storeScopeColumnsPromise ??= one<{ n: number }>(
+    `SELECT COUNT(DISTINCT table_name) AS n
+       FROM information_schema.columns
+      WHERE table_schema = 'public'
+        AND table_name IN ('finance_snapshots', 'finance_daily', 'ads_entries')
+        AND column_name = 'client_marketplace_id'`,
+  ).then((row) => Number(row?.n ?? 0) === 3));
+}
+
+/**
  * Limite efetivo de uma tarefa em SQL: o que vencer primeiro entre a data
  * (fim do dia em Brasília) e o prazo em horas. É o mesmo cálculo de
  * limiteDaTarefa, em prazo-tarefa.ts; LEAST ignora o que for nulo.
@@ -102,6 +117,8 @@ export interface ClientRow extends Client {
   prev_revenue: number;
   prev_profit: number;
   marketplaces: string;
+  /** Lojas individuais; duas contas Shopee aparecem como duas lojas. */
+  stores: { id: string; marketplace: string; name: string }[];
   /** canais cujo Ads o marketplace não deixa ler: o valor de Ads está incompleto */
   ads_pendente: string;
   team_size: number;
@@ -129,6 +146,7 @@ export async function clientRows(
             COALESCE(p.revenue,0)  AS prev_revenue,
             COALESCE(p.profit,0)   AS prev_profit,
             COALESCE(m.list,'')    AS marketplaces,
+            COALESCE(m.stores,'[]'::json) AS stores,
             COALESCE(m.ads_pendente,'') AS ads_pendente,
             COALESCE(t.n,0)        AS team_size,
             COALESCE(k.n,0)        AS open_tasks,
@@ -141,6 +159,14 @@ export async function clientRows(
        LEFT JOIN (SELECT client_id, SUM(revenue) revenue, SUM(profit) profit
                     FROM finance_snapshots WHERE ref_month = ? GROUP BY client_id) p ON p.client_id = c.id
        LEFT JOIN (SELECT client_id, string_agg(DISTINCT marketplace, ',') list,
+                         json_agg(
+                           json_build_object(
+                             'id', id,
+                             'marketplace', marketplace,
+                             'name', COALESCE(NULLIF(nickname, ''), NULLIF(external_id, ''),
+                               CASE marketplace WHEN 'shopee' THEN 'Shopee' ELSE 'Mercado Livre' END)
+                           ) ORDER BY created_at, id
+                         ) AS stores,
                          string_agg(DISTINCT marketplace, ',') FILTER (WHERE ads_permission = 'pendente') ads_pendente
                     FROM client_marketplaces WHERE status <> 'desativado' GROUP BY client_id) m ON m.client_id = c.id
        LEFT JOIN (SELECT client_id, COUNT(*) n FROM client_team GROUP BY client_id) t ON t.client_id = c.id
@@ -386,8 +412,22 @@ export async function clientMarketplaces(clientId: string): Promise<ClientMarket
 
 export async function clientSnapshots(clientId: string, months = 6): Promise<FinanceSnapshot[]> {
   const refs = lastMonths(months);
+  if (!(await hasStoreScopeColumns())) {
+    return all<FinanceSnapshot>(
+      `SELECT f.*, NULL::text AS client_marketplace_id, NULL::text AS store_name
+         FROM finance_snapshots f
+        WHERE f.client_id = ? AND f.ref_month >= ?
+        ORDER BY f.ref_month DESC, f.marketplace`,
+      clientId,
+      refs[0],
+    );
+  }
   return all<FinanceSnapshot>(
-    "SELECT * FROM finance_snapshots WHERE client_id = ? AND ref_month >= ? ORDER BY ref_month DESC, marketplace",
+    `SELECT f.*, COALESCE(cm.nickname, cm.external_id) AS store_name
+       FROM finance_snapshots f
+       LEFT JOIN client_marketplaces cm ON cm.id = f.client_marketplace_id
+      WHERE f.client_id = ? AND f.ref_month >= ?
+      ORDER BY f.ref_month DESC, f.marketplace, lower(COALESCE(cm.nickname, ''))`,
     clientId,
     refs[0],
   );
@@ -405,8 +445,19 @@ export async function clientNotes(clientId: string, limit = 50) {
 }
 
 export async function clientAds(clientId: string, limit = 50) {
+  if (!(await hasStoreScopeColumns())) {
+    return all<AdsEntry & { author: string | null }>(
+      `SELECT a.*, NULL::text AS client_marketplace_id, NULL::text AS store_name, u.name AS author
+         FROM ads_entries a
+         LEFT JOIN users u ON u.id = a.created_by
+        WHERE a.client_id = ? ORDER BY a.period_start DESC, a.created_at DESC LIMIT ?`,
+      clientId,
+      limit,
+    );
+  }
   return all<AdsEntry & { author: string | null }>(
-    `SELECT a.*, u.name AS author FROM ads_entries a
+    `SELECT a.*, COALESCE(cm.nickname, cm.external_id) AS store_name, u.name AS author FROM ads_entries a
+       LEFT JOIN client_marketplaces cm ON cm.id = a.client_marketplace_id
        LEFT JOIN users u ON u.id = a.created_by
       WHERE a.client_id = ? ORDER BY a.period_start DESC, a.created_at DESC LIMIT ?`,
     clientId,
@@ -598,10 +649,12 @@ export async function adsRows(
     where.push("a.marketplace = ?");
     params.push(filter.marketplace);
   }
+  const storeScope = await hasStoreScopeColumns();
   return all<AdsEntry & { client_name: string; author: string | null }>(
-    `SELECT a.*, c.name AS client_name, u.name AS author
+    `SELECT a.*, c.name AS client_name, COALESCE(cm.nickname, cm.external_id) AS store_name, u.name AS author
        FROM ads_entries a
        JOIN clients c ON c.id = a.client_id
+       ${storeScope ? "LEFT JOIN client_marketplaces cm ON cm.id = a.client_marketplace_id" : "LEFT JOIN client_marketplaces cm ON false"}
        LEFT JOIN users u ON u.id = a.created_by
       ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
       ORDER BY a.period_start DESC, lower(c.name)`,
@@ -633,22 +686,32 @@ export async function canaisDeAds(
     where.push("cm.marketplace = ?");
     params.push(filtro.marketplace);
   }
+  const storeScope = await hasStoreScopeColumns();
   return all<{
+    store_id: string;
+    store_name: string | null;
     client_id: string;
     client_name: string;
     marketplace: string;
     revenue: number;
     ads_permission: string | null;
   }>(
-    `SELECT DISTINCT ON (cm.client_id, cm.marketplace)
+    `SELECT ${storeScope ? "cm.id" : "MIN(cm.id)"} AS store_id,
+            ${storeScope ? "COALESCE(cm.nickname, cm.external_id)" : "COALESCE(MIN(cm.nickname), MIN(cm.external_id))"} AS store_name,
             cm.client_id, c.name AS client_name, cm.marketplace,
-            COALESCE(f.revenue, 0) AS revenue, cm.ads_permission
+            COALESCE(f.revenue, 0) AS revenue,
+            ${storeScope
+              ? "cm.ads_permission"
+              : "CASE WHEN COUNT(*) FILTER (WHERE cm.ads_permission = 'pendente') > 0 THEN 'pendente' ELSE MAX(cm.ads_permission) END"} AS ads_permission
        FROM client_marketplaces cm
        JOIN clients c ON c.id = cm.client_id
-       LEFT JOIN finance_snapshots f
-              ON f.client_id = cm.client_id AND f.marketplace = cm.marketplace AND f.ref_month = ?
+       LEFT JOIN finance_snapshots f ON ${storeScope
+         ? "f.client_marketplace_id = cm.id AND f.ref_month = ?"
+         : "f.client_id = cm.client_id AND f.marketplace = cm.marketplace AND f.ref_month = ?"}
       WHERE ${where.join(" AND ")}
-      ORDER BY cm.client_id, cm.marketplace, (cm.ads_permission = 'pendente') DESC`,
+      ${storeScope
+        ? "ORDER BY lower(c.name), lower(COALESCE(cm.nickname, '')), cm.created_at"
+        : "GROUP BY cm.client_id, c.name, cm.marketplace, f.revenue ORDER BY lower(c.name), cm.marketplace"}`,
     ...params,
   );
 }

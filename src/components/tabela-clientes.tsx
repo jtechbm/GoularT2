@@ -5,7 +5,7 @@ import { brlShort, currentMonth, dateBR, num, pct, variacaoMensal } from "@/lib/
 import { marketplaceLabel } from "@/lib/types";
 import { ordenarClientes, type Ordem } from "@/lib/ordem-clientes";
 import { dicaRoas, roasDaTela, xRoas } from "@/lib/ads-analise";
-import { Avatar, Chip, Delta, MarketplaceChip, StatusChip } from "./ui";
+import { Avatar, Chip, Delta, StoreChip, StatusChip } from "./ui";
 import { ColunaOrdenavel } from "./coluna-ordenavel";
 import { ScoreChip } from "./score-saude";
 
@@ -57,7 +57,7 @@ export function TabelaClientes({
   ordem: { ordem: Ordem; asc: boolean };
   href: (ordem: string) => string;
   scores: Map<string, Score>;
-  /** a página Clientes mostra também responsável, canais, tarefas e última nota */
+  /** a página Clientes mostra também responsável, lojas, tarefas e última nota */
   completa?: boolean;
   onboardings?: Map<string, { progresso: number }>;
 }) {
@@ -75,7 +75,7 @@ export function TabelaClientes({
           <tr>
             {col("nome", "Cliente", "")}
             {completa && <th>Responsável</th>}
-            {completa && <th>Canais</th>}
+            {completa && <th>Lojas</th>}
             {col("faturamento", "Faturamento")}
             {col("crescimento", "vs. ant.")}
             {col("investido", "Investido")}
@@ -121,10 +121,12 @@ export function TabelaClientes({
                   </td>
                 )}
                 {completa && (
-                  <td data-label="Canais">
+                  <td data-label="Lojas">
                     <span className="flex flex-wrap gap-1">
-                      {c.marketplaces ? (
-                        c.marketplaces.split(",").map((m) => <MarketplaceChip key={m} value={m} />)
+                      {c.stores.length ? (
+                        c.stores.map((store) => (
+                          <StoreChip key={store.id} marketplace={store.marketplace} name={store.name} />
+                        ))
                       ) : (
                         <span className="text-xs text-dim">—</span>
                       )}

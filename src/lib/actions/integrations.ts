@@ -50,38 +50,31 @@ export async function generateAuthLinkAction(formData: FormData) {
 }
 
 /**
- * Caminho curto: um clique na página do cliente e o link fica pronto.
- * Cria a conta do marketplace se ainda não existir — quem usa não precisa
- * saber que existe um cadastro de "canal" por trás.
+ * Cadastra uma nova loja e já deixa o link de autorização pronto. Cada
+ * chamada cria uma conta independente, mesmo que a plataforma seja igual.
  */
 export async function requestAccessAction(formData: FormData) {
   const user = await requirePermission("integracoes.gerenciar");
   const clientId = str(formData.get("client_id"));
   const marketplace = str(formData.get("marketplace"));
+  const nickname = str(formData.get("nickname"));
+  if (!nickname) throw new Error("Informe o nome da loja.");
 
   const adapter = adapterFor(marketplace);
   if (!adapter.isConfigured()) {
     redirect(`/clientes/${clientId}?erro=env&mk=${marketplace}`);
   }
 
-  let conta = await one<{ id: string }>(
-    "SELECT id FROM client_marketplaces WHERE client_id = ? AND marketplace = ? ORDER BY created_at LIMIT 1",
+  const conta = { id: id() };
+  await run(
+    `INSERT INTO client_marketplaces (id, client_id, marketplace, nickname, status, created_at)
+     VALUES (?,?,?,?,'pendente',?)`,
+    conta.id,
     clientId,
     marketplace,
+    nickname,
+    now(),
   );
-
-  if (!conta) {
-    const novo = id();
-    await run(
-      `INSERT INTO client_marketplaces (id, client_id, marketplace, status, created_at)
-       VALUES (?,?,?,'pendente',?)`,
-      novo,
-      clientId,
-      marketplace,
-      now(),
-    );
-    conta = { id: novo };
-  }
 
   const token = randomBytes(32).toString("hex");
   await run(
@@ -96,7 +89,7 @@ export async function requestAccessAction(formData: FormData) {
 
   revalidatePath(`/clientes/${clientId}`);
   revalidatePath("/integracoes");
-  redirect(`/clientes/${clientId}?acesso=${marketplace}`);
+  redirect(`/clientes/${clientId}?acesso=${conta.id}`);
 }
 
 /** Invalida o link sem mexer na conexão já feita. */

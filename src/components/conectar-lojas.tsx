@@ -1,15 +1,11 @@
 import { AuthLink } from "./auth-link";
-import { Card, Chip } from "./ui";
+import { Card, Chip, StoreChip } from "./ui";
 import { SubmitButton } from "./submit";
-import { requestAccessAction, syncAccountAction } from "@/lib/actions/integrations";
+import { generateAuthLinkAction, requestAccessAction, syncAccountAction } from "@/lib/actions/integrations";
 import { relativeBR } from "@/lib/format";
-import { MARKETPLACES, type Client, type ClientMarketplace } from "@/lib/types";
+import { MARKETPLACES, marketplaceLabel, type Client, type ClientMarketplace } from "@/lib/types";
 
-/**
- * Caminho principal para ligar as lojas do cliente: um botão por marketplace.
- * Sem jargão de "canal", "conta" ou "OAuth" — quem usa só precisa saber que
- * está pedindo acesso ao cliente.
- */
+/** Liga quantas lojas o cliente operar, inclusive várias na mesma plataforma. */
 export function ConectarLojas({
   client,
   accounts,
@@ -21,48 +17,43 @@ export function ConectarLojas({
   client: Client;
   accounts: ClientMarketplace[];
   manager: boolean;
-  /** marketplace cujo link acabou de ser gerado */
+  /** id da loja cujo link acabou de ser gerado */
   destaque?: string;
-  /** lojas cujo app já está liberado para conectar */
+  /** plataformas cujo app já está liberado para conectar */
   disponiveis: string[];
   refMonth: string;
 }) {
   if (!manager) return null;
 
-  const porMarketplace = new Map(accounts.map((a) => [a.marketplace, a]));
-  const tudoConectado = MARKETPLACES.every((m) => porMarketplace.get(m.value)?.status === "conectado");
+  const conectadas = accounts.filter((a) => a.status === "conectado").length;
 
   return (
     <Card
       title="Lojas do cliente"
-      subtitle={
-        tudoConectado
-          ? "Os números chegam sozinhos das lojas conectadas."
-          : "Peça acesso ao cliente para os números entrarem automaticamente."
-      }
+      subtitle={`${accounts.length} ${accounts.length === 1 ? "loja cadastrada" : "lojas cadastradas"} · ${conectadas} conectada${conectadas === 1 ? "" : "s"}`}
     >
       <div className="space-y-3">
-        {MARKETPLACES.map((m) => {
-          const conta = porMarketplace.get(m.value);
-          const conectado = conta?.status === "conectado";
-          const temLink = Boolean(conta?.auth_token);
-          const disponivel = disponiveis.includes(m.value);
+        {accounts.map((conta) => {
+          const conectado = conta.status === "conectado";
+          const temLink = Boolean(conta.auth_token);
+          const disponivel = disponiveis.includes(conta.marketplace);
+          const nome = conta.nickname || conta.external_id || marketplaceLabel(conta.marketplace);
 
           return (
-            <div key={m.value} className="space-y-3">
+            <div key={conta.id} className="space-y-3">
               <div className="flex flex-wrap items-center justify-between gap-3 rounded-[10px] border border-line bg-surface-2 px-4 py-3">
-                <div className="min-w-0">
-                  <div className="text-sm font-medium text-ink">{m.label}</div>
+                <div className="min-w-0 space-y-1">
+                  <StoreChip marketplace={conta.marketplace} name={nome} />
                   <div className="text-xs text-muted">
                     {!disponivel
                       ? "Conexão ainda não liberada"
                       : conectado
-                      ? conta?.last_sync_at
-                        ? `Conectada · atualizada ${relativeBR(conta.last_sync_at)}`
-                        : "Conectada · ainda não sincronizada"
-                      : temLink
-                        ? "Link enviado, aguardando o cliente aprovar"
-                        : "Ainda não conectada"}
+                        ? conta.last_sync_at
+                          ? `Conectada · atualizada ${relativeBR(conta.last_sync_at)}`
+                          : "Conectada · ainda não sincronizada"
+                        : temLink
+                          ? "Link enviado, aguardando o cliente aprovar"
+                          : "Ainda não conectada"}
                   </div>
                 </div>
 
@@ -72,39 +63,63 @@ export function ConectarLojas({
                   <span className="flex items-center gap-2">
                     <Chip tone="ok">Conectada</Chip>
                     <form action={syncAccountAction}>
-                      <input type="hidden" name="account_id" value={conta!.id} />
+                      <input type="hidden" name="account_id" value={conta.id} />
                       <input type="hidden" name="ref_month" value={refMonth} />
                       <input type="hidden" name="redirect_to" value={`/clientes/${client.id}`} />
-                      <SubmitButton
-                        variant={conta?.last_sync_at ? "ghost" : "primary"}
-                        pendingLabel="Buscando…"
-                      >
-                        {conta?.last_sync_at ? "Atualizar números" : "Buscar números agora"}
+                      <SubmitButton variant={conta.last_sync_at ? "ghost" : "primary"} pendingLabel="Buscando…">
+                        {conta.last_sync_at ? "Atualizar números" : "Buscar números agora"}
                       </SubmitButton>
                     </form>
                   </span>
                 ) : (
-                  <form action={requestAccessAction}>
-                    <input type="hidden" name="client_id" value={client.id} />
-                    <input type="hidden" name="marketplace" value={m.value} />
+                  <form action={generateAuthLinkAction}>
+                    <input type="hidden" name="account_id" value={conta.id} />
+                    <input type="hidden" name="redirect_to" value={`/clientes/${client.id}`} />
                     <SubmitButton variant={temLink ? "ghost" : "primary"} pendingLabel="Gerando…">
-                      {temLink ? "Gerar link novo" : `Pedir acesso ${m.prep} ${m.label}`}
+                      {temLink ? "Gerar link novo" : "Gerar link de acesso"}
                     </SubmitButton>
                   </form>
                 )}
               </div>
 
-              {disponivel && temLink && !conectado && (destaque === m.value || !destaque) && conta?.auth_token && (
+              {disponivel && temLink && !conectado && (destaque === conta.id || !destaque) && conta.auth_token && (
                 <AuthLink
                   token={conta.auth_token}
                   expiresAt={conta.auth_expires_at}
-                  marketplaceLabel={m.label}
+                  marketplaceLabel={nome}
                   clientPhone={client.contact_phone}
                 />
               )}
             </div>
           );
         })}
+
+        <div className="border-t border-line pt-3">
+          <p className="mb-2 text-xs font-medium text-ink">Cadastrar outra loja</p>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {MARKETPLACES.filter((m) => disponiveis.includes(m.value)).map((m) => (
+              <form
+                key={m.value}
+                action={requestAccessAction}
+                className="rounded-[10px] border border-line bg-surface-2 p-3"
+              >
+                <input type="hidden" name="client_id" value={client.id} />
+                <input type="hidden" name="marketplace" value={m.value} />
+                <StoreChip marketplace={m.value} name={m.label} />
+                <input
+                  name="nickname"
+                  className="input my-2"
+                  placeholder="Nome da loja"
+                  aria-label={`Nome da nova loja ${m.label}`}
+                  required
+                />
+                <SubmitButton variant="primary" size="sm" pendingLabel="Cadastrando…">
+                  + Cadastrar loja
+                </SubmitButton>
+              </form>
+            ))}
+          </div>
+        </div>
       </div>
     </Card>
   );

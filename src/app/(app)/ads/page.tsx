@@ -3,7 +3,7 @@ import { Suspense } from "react";
 import { visibleClientIds, requirePermission } from "@/lib/auth";
 import { adsEFaturamento, adsRows, canaisDeAds, clientOptions, procedenciaDoMes, serieDiaria } from "@/lib/queries";
 import { addMonths, brl, currentMonth, lastMonths, monthLabel, num, pct } from "@/lib/format";
-import { Card, Chip, Empty, Field, MarketplaceChip, PageHeader, Stat } from "@/components/ui";
+import { Card, Chip, Empty, Field, PageHeader, Stat, StoreChip } from "@/components/ui";
 import { SaveBar, SubmitButton } from "@/components/submit";
 import { MonthPicker } from "@/components/month-picker";
 import { Procedencia } from "@/components/procedencia";
@@ -56,7 +56,7 @@ export default async function AdsPage({
   // isso pesa no faturamento daquele canal
   const porCanal = canais
     .map((c) => {
-      const doCanal = campanhas.filter((x) => x.clientId === c.client_id && x.marketplace === c.marketplace);
+      const doCanal = campanhas.filter((x) => x.accountId === c.store_id);
       const investido = doCanal.reduce((s, x) => s + x.invested, 0);
       const receita = doCanal.reduce((s, x) => s + x.revenue, 0);
       const comRetorno = doCanal.filter((x) => x.receitaInformada).reduce((s, x) => s + x.invested, 0);
@@ -154,7 +154,7 @@ export default async function AdsPage({
         <div className="mb-3 rounded-[12px] border border-warn/30 bg-warn-soft px-4 py-3 text-sm">
           <p className="font-medium text-ink">
             Os números abaixo estão sem o Ads de{" "}
-            {naoLidos.map((c) => `${c.client_name} (${marketplaceLabel(c.marketplace)})`).join(", ")}.
+            {naoLidos.map((c) => `${c.client_name} (${c.store_name || marketplaceLabel(c.marketplace)})`).join(", ")}.
           </p>
           <p className="mt-1 text-xs text-muted">
             O marketplace ainda não liberou a leitura de anúncios para o app da agência. Até liberar, lance o valor à
@@ -216,14 +216,14 @@ export default async function AdsPage({
               </thead>
               <tbody>
                 {porCanal.map((c) => (
-                  <tr key={`${c.client_id}-${c.marketplace}`}>
+                  <tr key={c.store_id}>
                     <td data-label="Cliente">
                       <Link href={`/clientes/${c.client_id}?tab=ads`} className="font-medium text-ink hover:text-brand">
                         {c.client_name}
                       </Link>
                     </td>
                     <td data-label="Loja">
-                      <MarketplaceChip value={c.marketplace} />
+                      <StoreChip marketplace={c.marketplace} name={c.store_name || marketplaceLabel(c.marketplace)} />
                     </td>
                     {c.naoLido ? (
                       <td colSpan={4} className="text-right" data-label="Ads">
@@ -296,7 +296,8 @@ export default async function AdsPage({
                         )}
                       </span>
                       <span className="mt-0.5 flex items-center gap-1.5 text-[0.7rem] text-dim">
-                        {c.clientName} · <MarketplaceChip value={c.marketplace} />
+                        {c.clientName} ·{" "}
+                        <StoreChip marketplace={c.marketplace} name={c.storeName || marketplaceLabel(c.marketplace)} />
                       </span>
                     </td>
                     <td className="num font-semibold text-ink" data-label="Investido">{brl(c.invested)}</td>
@@ -387,21 +388,12 @@ export default async function AdsPage({
         <form action={createAdsAction} className="border-t border-line px-5 pt-4">
           <input type="hidden" name="redirect_to" value={link({})} />
           <div className="grid gap-3 sm:grid-cols-3">
-            <Field label="Cliente *">
-              <select name="client_id" required className="select" defaultValue={sp.cliente ?? ""}>
+            <Field label="Cliente / loja *">
+              <select name="store_selection" required className="select" defaultValue="">
                 <option value="">Selecione…</option>
-                {clients.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
-            </Field>
-            <Field label="Loja">
-              <select name="marketplace" className="select" defaultValue={sp.canal || naoLidos[0]?.marketplace || "mercado_livre"}>
-                {MARKETPLACES.map((m) => (
-                  <option key={m.value} value={m.value}>
-                    {m.label}
+                {canais.map((c) => (
+                  <option key={c.store_id} value={`${c.client_id}|${c.store_id}`}>
+                    {c.client_name} · {c.store_name || marketplaceLabel(c.marketplace)}
                   </option>
                 ))}
               </select>

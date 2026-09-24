@@ -1,6 +1,6 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { Avatar, Card, Chip, Empty, MARKETPLACE_COLOR, MarketplaceChip, StatusChip } from "@/components/ui";
+import { Avatar, Card, Chip, Empty, MARKETPLACE_COLOR, MarketplaceChip, StatusChip, StoreChip } from "@/components/ui";
 import { SplitBar } from "@/components/charts";
 import { ConectarLojas } from "@/components/conectar-lojas";
 import { OnboardingCard } from "@/components/onboarding-card";
@@ -163,17 +163,17 @@ export function TabVisao({
           )}
         </Card>
 
-        <Card title="Marketplaces">
+        <Card title="Lojas">
           {accounts.length ? (
             <ul className="space-y-2">
               {accounts.map((a) => (
                 <li key={a.id} className="rounded-lg border border-line bg-surface-2 px-3 py-2.5">
                   <div className="flex items-center justify-between gap-2">
-                    <MarketplaceChip value={a.marketplace} />
+                    <StoreChip marketplace={a.marketplace} name={a.nickname || a.external_id || marketplaceLabel(a.marketplace)} />
                     <StatusChip value={a.status} />
                   </div>
                   <div className="mt-1.5 text-xs text-muted">
-                    {a.nickname ?? "conta sem apelido"}
+                    {marketplaceLabel(a.marketplace)}
                     {a.last_sync_at ? ` · sincronizada ${relativeBR(a.last_sync_at)}` : " · nunca sincronizada"}
                   </div>
                 </li>
@@ -181,10 +181,10 @@ export function TabVisao({
             </ul>
           ) : (
             <Empty
-              title="Nenhum canal cadastrado"
+              title="Nenhuma loja cadastrada"
               action={
                 <Link href={`/clientes/${client.id}?tab=marketplaces`} className="btn btn-primary btn-sm">
-                  Adicionar canal
+                  Adicionar loja
                 </Link>
               }
             />
@@ -234,7 +234,7 @@ export function TabVisao({
           <div className="grid grid-cols-2 gap-2 text-center">
             <Mini label="Tarefas abertas" value={num(openTasks.length)} />
             <Mini label="Pessoas no time" value={num(team.length)} />
-            <Mini label="Canais ativos" value={num(accounts.filter((a) => a.status !== "desativado").length)} />
+            <Mini label="Lojas ativas" value={num(accounts.filter((a) => a.status !== "desativado").length)} />
             <Mini label="Anotações" value={num(notes.length)} />
           </div>
         </Card>

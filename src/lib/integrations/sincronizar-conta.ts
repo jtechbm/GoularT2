@@ -73,6 +73,7 @@ async function log(
  * corrigido pelo marketplace ficaria somando duas vezes.
  */
 async function saveAdsCampaigns(
+  accountId: string,
   clientId: string,
   marketplace: string,
   refMonth: string,
@@ -86,9 +87,8 @@ async function saveAdsCampaigns(
 
   const anteriores = await all<{ id: string; external_id: string | null }>(
     `SELECT id, external_id FROM ads_entries
-      WHERE client_id=? AND marketplace=? AND source='api' AND period_start=?`,
-    clientId,
-    marketplace,
+      WHERE client_marketplace_id=? AND source='api' AND period_start=?`,
+    accountId,
     periodStart,
   );
 
@@ -102,10 +102,10 @@ async function saveAdsCampaigns(
       );
     } else {
       await run(
-        `INSERT INTO ads_entries (id, client_id, marketplace, campaign, period_start, period_end, invested, revenue,
-                                  clicks, orders, notes, source, external_id, created_by, created_at, updated_at)
-         VALUES (?,?,?,?,?,?,?,?,?,?,NULL,'api',?,?,?,?)`,
-        id(), clientId, marketplace, c.name, periodStart, periodEnd, c.invested, c.revenue,
+        `INSERT INTO ads_entries (id, client_id, client_marketplace_id, marketplace, campaign, period_start, period_end,
+                                  invested, revenue, clicks, orders, notes, source, external_id, created_by, created_at, updated_at)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,NULL,'api',?,?,?,?)`,
+        id(), clientId, accountId, marketplace, c.name, periodStart, periodEnd, c.invested, c.revenue,
         c.clicks, c.orders, c.external_id, userId, now(), now(),
       );
     }
@@ -133,6 +133,7 @@ async function saveAdsCampaigns(
  * que a rodada completa tinha lido.
  */
 async function saveDailyHistory(
+  accountId: string,
   clientId: string,
   marketplace: string,
   dias: DailyResult[],
@@ -145,14 +146,14 @@ async function saveDailyHistory(
   let gravados = 0;
   for (const d of dias) {
     await run(
-      `INSERT INTO finance_daily (id, client_id, marketplace, day, revenue, orders, units, fees, shipping, tax,
-                                  ads, ads_revenue, clicks, prints, source, updated_at)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,'api',?)
-       ON CONFLICT (client_id, marketplace, day) DO UPDATE SET
+      `INSERT INTO finance_daily (id, client_id, client_marketplace_id, marketplace, day, revenue, orders, units,
+                                  fees, shipping, tax, ads, ads_revenue, clicks, prints, source, updated_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'api',?)
+       ON CONFLICT (client_marketplace_id, day) WHERE client_marketplace_id IS NOT NULL DO UPDATE SET
          revenue = EXCLUDED.revenue, orders = EXCLUDED.orders, units = EXCLUDED.units,
          fees = EXCLUDED.fees, shipping = EXCLUDED.shipping, tax = EXCLUDED.tax,
          ${colunasAds}updated_at = EXCLUDED.updated_at`,
-      id(), clientId, marketplace, d.day, d.revenue, d.orders, d.units, d.fees, d.shipping,
+      id(), clientId, accountId, marketplace, d.day, d.revenue, d.orders, d.units, d.fees, d.shipping,
       d.tax, d.ads, d.ads_revenue, d.clicks, d.prints, now(),
     );
     gravados += 1;
@@ -222,9 +223,8 @@ export async function gravarResultado(
   userId: string | null,
 ): Promise<{ ads: number; diasGravados: number }> {
   const existing = await one<{ id: string; cogs: number; ads: number; shipping: number }>(
-    "SELECT id, cogs, ads, shipping FROM finance_snapshots WHERE client_id=? AND marketplace=? AND ref_month=?",
-    row.client_id,
-    row.marketplace,
+    "SELECT id, cogs, ads, shipping FROM finance_snapshots WHERE client_marketplace_id=? AND ref_month=?",
+    row.id,
     refMonth,
   );
 
@@ -243,10 +243,10 @@ export async function gravarResultado(
     );
   } else {
     await run(
-      `INSERT INTO finance_snapshots (id, client_id, marketplace, ref_month, revenue, orders, units, cogs, fees,
-                                      shipping, tax, ads, profit, source, updated_by, updated_at)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,'api',?,?)`,
-      id(), row.client_id, row.marketplace, refMonth, result.revenue, result.orders,
+      `INSERT INTO finance_snapshots (id, client_id, client_marketplace_id, marketplace, ref_month, revenue, orders,
+                                      units, cogs, fees, shipping, tax, ads, profit, source, updated_by, updated_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,'api',?,?)`,
+      id(), row.client_id, row.id, row.marketplace, refMonth, result.revenue, result.orders,
       result.units, cogs, result.fees, shipping, result.tax, ads, profit, userId, now(),
     );
   }
@@ -254,12 +254,12 @@ export async function gravarResultado(
   // undefined = a API de Ads não respondeu; array vazio = respondeu e não há
   // campanha. Só o segundo caso pode limpar o que estava gravado.
   if (result.adsCampaigns) {
-    await saveAdsCampaigns(row.client_id, row.marketplace, refMonth, result.adsCampaigns, userId);
+    await saveAdsCampaigns(row.id, row.client_id, row.marketplace, refMonth, result.adsCampaigns, userId);
   }
 
   const leuAds = result.adsPermissao === "liberada";
   const diasGravados = result.days?.length
-    ? await saveDailyHistory(row.client_id, row.marketplace, result.days, leuAds)
+    ? await saveDailyHistory(row.id, row.client_id, row.marketplace, result.days, leuAds)
     : 0;
   const ultimoDia = result.days?.length ? result.days[result.days.length - 1].day : null;
 

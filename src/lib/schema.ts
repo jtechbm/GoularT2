@@ -65,6 +65,7 @@ CREATE TABLE IF NOT EXISTS client_marketplaces (
 CREATE TABLE IF NOT EXISTS finance_snapshots (
   id          text PRIMARY KEY,
   client_id   text NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+  client_marketplace_id text REFERENCES client_marketplaces(id) ON DELETE SET NULL,
   marketplace text NOT NULL,
   ref_month   text NOT NULL,
   revenue     double precision NOT NULL DEFAULT 0,
@@ -78,13 +79,13 @@ CREATE TABLE IF NOT EXISTS finance_snapshots (
   profit      double precision NOT NULL DEFAULT 0,
   source      text NOT NULL DEFAULT 'manual',
   updated_by  text REFERENCES users(id) ON DELETE SET NULL,
-  updated_at  text NOT NULL,
-  UNIQUE (client_id, marketplace, ref_month)
+  updated_at  text NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS ads_entries (
   id           text PRIMARY KEY,
   client_id    text NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+  client_marketplace_id text REFERENCES client_marketplaces(id) ON DELETE SET NULL,
   marketplace  text NOT NULL,
   campaign     text,
   period_start text NOT NULL,
@@ -163,7 +164,7 @@ CREATE TABLE IF NOT EXISTS chat_reads (
 
 CREATE TABLE IF NOT EXISTS sync_logs (
   id                    text PRIMARY KEY,
-  client_marketplace_id text REFERENCES client_marketplaces(id) ON DELETE CASCADE,
+  client_marketplace_id text REFERENCES client_marketplaces(id) ON DELETE SET NULL,
   marketplace           text NOT NULL,
   ref_month             text,
   status                text NOT NULL,
@@ -313,6 +314,7 @@ CREATE INDEX IF NOT EXISTS idx_coment_task  ON task_comments(task_id, created_at
 CREATE TABLE IF NOT EXISTS finance_daily (
   id          text PRIMARY KEY,
   client_id   text NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+  client_marketplace_id text REFERENCES client_marketplaces(id) ON DELETE CASCADE,
   marketplace text NOT NULL,
   day         text NOT NULL,
   revenue     double precision NOT NULL DEFAULT 0,
@@ -326,8 +328,7 @@ CREATE TABLE IF NOT EXISTS finance_daily (
   clicks      integer NOT NULL DEFAULT 0,
   prints      integer NOT NULL DEFAULT 0,
   source      text NOT NULL DEFAULT 'api',
-  updated_at  text NOT NULL,
-  UNIQUE (client_id, marketplace, day)
+  updated_at  text NOT NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_daily_cliente ON finance_daily(client_id, day);
@@ -813,9 +814,64 @@ ALTER TABLE ads_entries ADD COLUMN IF NOT EXISTS source      text NOT NULL DEFAU
 ALTER TABLE ads_entries ADD COLUMN IF NOT EXISTS external_id text;
 ALTER TABLE ads_entries ADD COLUMN IF NOT EXISTS updated_at  text;
 
+-- Cada loja do mesmo marketplace precisa ter fechamento e histÃ³rico prÃ³prios.
+-- Os dados antigos eram Ãºnicos apenas por cliente + plataforma; eles ficam
+-- associados Ã  primeira conta equivalente para nÃ£o perder o histÃ³rico.
+ALTER TABLE finance_snapshots ADD COLUMN IF NOT EXISTS client_marketplace_id text
+  REFERENCES client_marketplaces(id) ON DELETE SET NULL;
+ALTER TABLE finance_daily ADD COLUMN IF NOT EXISTS client_marketplace_id text
+  REFERENCES client_marketplaces(id) ON DELETE SET NULL;
+ALTER TABLE ads_entries ADD COLUMN IF NOT EXISTS client_marketplace_id text
+  REFERENCES client_marketplaces(id) ON DELETE SET NULL;
+
+ALTER TABLE finance_snapshots DROP CONSTRAINT IF EXISTS finance_snapshots_client_marketplace_id_fkey;
+ALTER TABLE finance_snapshots ADD CONSTRAINT finance_snapshots_client_marketplace_id_fkey
+  FOREIGN KEY (client_marketplace_id) REFERENCES client_marketplaces(id) ON DELETE SET NULL;
+ALTER TABLE finance_daily DROP CONSTRAINT IF EXISTS finance_daily_client_marketplace_id_fkey;
+ALTER TABLE finance_daily ADD CONSTRAINT finance_daily_client_marketplace_id_fkey
+  FOREIGN KEY (client_marketplace_id) REFERENCES client_marketplaces(id) ON DELETE SET NULL;
+ALTER TABLE ads_entries DROP CONSTRAINT IF EXISTS ads_entries_client_marketplace_id_fkey;
+ALTER TABLE ads_entries ADD CONSTRAINT ads_entries_client_marketplace_id_fkey
+  FOREIGN KEY (client_marketplace_id) REFERENCES client_marketplaces(id) ON DELETE SET NULL;
+
+UPDATE finance_snapshots f
+   SET client_marketplace_id = (
+     SELECT cm.id FROM client_marketplaces cm
+      WHERE cm.client_id = f.client_id AND cm.marketplace = f.marketplace
+      ORDER BY cm.created_at, cm.id LIMIT 1
+   )
+ WHERE f.client_marketplace_id IS NULL;
+UPDATE finance_daily f
+   SET client_marketplace_id = (
+     SELECT cm.id FROM client_marketplaces cm
+      WHERE cm.client_id = f.client_id AND cm.marketplace = f.marketplace
+      ORDER BY cm.created_at, cm.id LIMIT 1
+   )
+ WHERE f.client_marketplace_id IS NULL;
+UPDATE ads_entries a
+   SET client_marketplace_id = (
+     SELECT cm.id FROM client_marketplaces cm
+      WHERE cm.client_id = a.client_id AND cm.marketplace = a.marketplace
+      ORDER BY cm.created_at, cm.id LIMIT 1
+   )
+ WHERE a.client_marketplace_id IS NULL;
+
+ALTER TABLE finance_snapshots DROP CONSTRAINT IF EXISTS finance_snapshots_client_id_marketplace_ref_month_key;
+ALTER TABLE finance_daily DROP CONSTRAINT IF EXISTS finance_daily_client_id_marketplace_day_key;
+DROP INDEX IF EXISTS idx_ads_api;
+DROP INDEX IF EXISTS idx_finance_manual_mes;
+DROP INDEX IF EXISTS idx_daily_manual_dia;
+DROP INDEX IF EXISTS idx_ads_api_legado;
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_finance_loja_mes
+  ON finance_snapshots(client_marketplace_id, ref_month)
+  WHERE client_marketplace_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_daily_loja_dia
+  ON finance_daily(client_marketplace_id, day)
+  WHERE client_marketplace_id IS NOT NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_ads_api
-  ON ads_entries(client_id, marketplace, external_id, period_start)
-  WHERE source = 'api';
+  ON ads_entries(client_marketplace_id, external_id, period_start)
+  WHERE source = 'api' AND client_marketplace_id IS NOT NULL;
 
 CREATE INDEX IF NOT EXISTS idx_fin_client   ON finance_snapshots(client_id, ref_month);
 CREATE INDEX IF NOT EXISTS idx_ads_client   ON ads_entries(client_id, period_start);

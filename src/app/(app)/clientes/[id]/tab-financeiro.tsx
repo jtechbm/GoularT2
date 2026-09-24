@@ -1,4 +1,4 @@
-import { Card, Chip, Empty, Field, MarketplaceChip } from "@/components/ui";
+import { Card, Chip, Empty, Field, StoreChip } from "@/components/ui";
 import { SaveBar } from "@/components/submit";
 import { MonthPicker } from "@/components/month-picker";
 import { saveFinanceAction } from "@/lib/actions/clients";
@@ -19,12 +19,21 @@ export function TabFinanceiro({
   refMonth: string;
   months: string[];
 }) {
-  // canais do cliente; se ainda não houver, oferece os dois marketplaces suportados
-  const channels = accounts.length
-    ? [...new Set(accounts.map((a) => a.marketplace))]
-    : MARKETPLACES.map((m) => m.value);
+  // Cada conta é uma loja independente. Sem conta cadastrada, ainda oferecemos
+  // um lançamento manual genérico por plataforma para preservar o fluxo antigo.
+  const stores = accounts.length
+    ? accounts.map((account) => ({
+        id: account.id as string | null,
+        marketplace: account.marketplace,
+        name: account.nickname || account.external_id || marketplaceLabel(account.marketplace),
+      }))
+    : MARKETPLACES.map((m) => ({ id: null, marketplace: m.value, name: m.label }));
 
-  const forMonth = new Map(snapshots.filter((s) => s.ref_month === refMonth).map((s) => [s.marketplace, s]));
+  const forMonth = new Map(
+    snapshots
+      .filter((s) => s.ref_month === refMonth)
+      .map((s) => [s.client_marketplace_id ?? s.marketplace, s]),
+  );
 
   const byMonth = new Map<string, FinanceSnapshot[]>();
   for (const s of snapshots) {
@@ -39,7 +48,7 @@ export function TabFinanceiro({
         <div>
           <h2 className="text-lg font-semibold text-ink">Fechamento de {monthLabel(refMonth)}</h2>
           <p className="text-xs text-dim">
-            Valores finais por marketplace. A sincronização das APIs preenche faturamento, taxas e impostos; custo de
+            Valores finais por loja. A sincronização das APIs preenche faturamento, taxas e impostos; custo de
             produto e Ads continuam com a equipe.
           </p>
         </div>
@@ -49,15 +58,16 @@ export function TabFinanceiro({
       </div>
 
       <div className="grid gap-3 lg:grid-cols-2">
-        {channels.map((mk) => {
-          const snap = forMonth.get(mk);
+        {stores.map((store) => {
+          const snap = forMonth.get(store.id ?? store.marketplace);
           return (
-            <form key={mk} action={saveFinanceAction}>
+            <form key={store.id ?? store.marketplace} action={saveFinanceAction}>
               <input type="hidden" name="client_id" value={client.id} />
               <input type="hidden" name="ref_month" value={refMonth} />
-              <input type="hidden" name="marketplace" value={mk} />
+              <input type="hidden" name="marketplace" value={store.marketplace} />
+              {store.id && <input type="hidden" name="client_marketplace_id" value={store.id} />}
               <Card
-                title={<MarketplaceChip value={mk} />}
+                title={<StoreChip marketplace={store.marketplace} name={store.name} />}
                 subtitle={
                   snap
                     ? `${snap.source === "api" ? "Direto da loja" : "Lançado à mão"} · atualizado ${dateTimeBR(snap.updated_at)}`
@@ -109,7 +119,7 @@ export function TabFinanceiro({
                 </div>
 
                 <SaveBar
-                  label={`Salvar ${marketplaceLabel(mk)}`}
+                  label={`Salvar ${store.name}`}
                   hint={
                     snap
                       ? `Margem atual: ${snap.revenue ? pct(snap.profit / snap.revenue) : "—"}`
@@ -129,7 +139,7 @@ export function TabFinanceiro({
               <thead>
                 <tr>
                   <th>Mês</th>
-                  <th>Canal</th>
+                  <th>Loja</th>
                   <th className="num">Faturamento</th>
                   <th className="num">Taxas</th>
                   <th className="num">Impostos</th>
@@ -158,7 +168,10 @@ export function TabFinanceiro({
                       <tr key={s.id}>
                         <td className="text-xs text-dim">{monthLabel(s.ref_month)}</td>
                         <td>
-                          <MarketplaceChip value={s.marketplace} />
+                          <StoreChip
+                            marketplace={s.marketplace}
+                            name={s.store_name || marketplaceLabel(s.marketplace)}
+                          />
                         </td>
                         <td className="num">{brl(s.revenue)}</td>
                         <td className="num text-muted">{brl(s.fees)}</td>

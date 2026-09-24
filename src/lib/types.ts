@@ -86,6 +86,10 @@ export interface ClientMarketplace {
 export interface FinanceSnapshot {
   id: string;
   client_id: string;
+  /** Loja que originou o fechamento. Null apenas nos lançamentos antigos/manuais sem loja cadastrada. */
+  client_marketplace_id: string | null;
+  /** Nome da loja, preenchido pelas consultas que juntam client_marketplaces. */
+  store_name?: string | null;
   marketplace: Marketplace;
   ref_month: string;
   revenue: number;
@@ -105,6 +109,8 @@ export interface FinanceSnapshot {
 export interface AdsEntry {
   id: string;
   client_id: string;
+  client_marketplace_id: string | null;
+  store_name?: string | null;
   marketplace: Marketplace;
   campaign: string | null;
   period_start: string;

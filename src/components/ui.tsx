@@ -120,17 +120,22 @@ export function StatusChip({ value }: { value: string }) {
 /** Cor de cada marketplace nas listas e nos gráficos. */
 export const MARKETPLACE_COLOR: Record<string, string> = {
   mercado_livre: "#facc15",
-  shopee: "var(--primary)",
+  shopee: "#f97316",
 };
 
 export function MarketplaceChip({ value }: { value: string }) {
+  return <StoreChip marketplace={value} name={marketplaceLabel(value)} />;
+}
+
+/** Nome da loja com a cor da plataforma, sem trocar o nome pela plataforma. */
+export function StoreChip({ marketplace, name }: { marketplace: string; name: string }) {
   return (
     <span className="chip bg-surface-3 text-muted">
       <span
         className="h-2 w-2 shrink-0 rounded-full"
-        style={{ background: MARKETPLACE_COLOR[value] ?? "var(--text-dim)" }}
+        style={{ background: MARKETPLACE_COLOR[marketplace] ?? "var(--text-dim)" }}
       />
-      {marketplaceLabel(value)}
+      {name}
     </span>
   );
 }

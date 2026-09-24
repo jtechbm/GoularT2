@@ -1,12 +1,13 @@
 import type { NextConfig } from "next";
+import { PHASE_DEVELOPMENT_SERVER } from "next/constants";
 
-const nextConfig: NextConfig = {
-  // permite gerar um build de medição fora do .next, sem corromper o servidor
-  // de desenvolvimento que estiver rodando ao mesmo tempo
-  distDir: process.env.NEXT_DIST_DIR || ".next",
-  experimental: {
-    serverActions: { bodySizeLimit: "4mb" },
-  },
-};
-
-export default nextConfig;
+export default function nextConfig(phase: string): NextConfig {
+  return {
+    // O dev e o build não podem compartilhar chunks. Isso evita "Cannot find
+    // module ./xxxx.js" quando um build roda com o localhost aberto.
+    distDir: process.env.NEXT_DIST_DIR || (phase === PHASE_DEVELOPMENT_SERVER ? ".next-dev" : ".next"),
+    experimental: {
+      serverActions: { bodySizeLimit: "4mb" },
+    },
+  };
+}

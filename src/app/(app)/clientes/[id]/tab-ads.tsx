@@ -1,9 +1,9 @@
-import { Card, Chip, Empty, Field, MarketplaceChip, Stat } from "@/components/ui";
+import { Card, Chip, Empty, Field, Stat, StoreChip } from "@/components/ui";
 import { SaveBar, SubmitButton } from "@/components/submit";
 import { createAdsAction, deleteAdsAction } from "@/lib/actions/ads";
 import { brl, lastMonths, monthLabel, num, pct } from "@/lib/format";
 import { analisarCampanha, dicaRoas, resumirAds, roasDaTela, xRoas } from "@/lib/ads-analise";
-import { MARKETPLACES, type AdsEntry, type Client, type ClientMarketplace, type FinanceSnapshot } from "@/lib/types";
+import { MARKETPLACES, marketplaceLabel, type AdsEntry, type Client, type ClientMarketplace, type FinanceSnapshot } from "@/lib/types";
 
 /** A linha de Ads vale para o mês se o período dela cobre o mês. */
 function doMes(e: AdsEntry, mes: string): boolean {
@@ -32,9 +32,15 @@ export function TabAds({
   snapshots: FinanceSnapshot[];
   refMonth: string;
 }) {
-  const channels = accounts.length
-    ? MARKETPLACES.filter((m) => accounts.some((a) => a.marketplace === m.value))
-    : MARKETPLACES;
+  const stores = accounts.map((account) => ({
+    id: account.id,
+    marketplace: account.marketplace,
+    name:
+      account.nickname ||
+      account.external_id ||
+      MARKETPLACES.find((m) => m.value === account.marketplace)?.label ||
+      account.marketplace,
+  }));
   const back = `/clientes/${client.id}?tab=ads&mes=${refMonth}`;
 
   const faturamentoDo = (mes: string) =>
@@ -155,7 +161,7 @@ export function TabAds({
                     <tr key={c.id}>
                       <td data-label="Campanha">
                         <span className="flex flex-wrap items-center gap-1.5">
-                          <MarketplaceChip value={c.marketplace} />
+                          <StoreChip marketplace={c.marketplace} name={c.storeName || marketplaceLabel(c.marketplace)} />
                           <span className="text-sm text-ink">{c.nome}</span>
                           {c.recarga && <Chip tone="info">recarga de crédito</Chip>}
                           {!c.automatica && <Chip tone="neutral">lançado à mão</Chip>}
@@ -210,13 +216,23 @@ export function TabAds({
           />
           <div className="grid gap-3 sm:grid-cols-4">
             <Field label="Loja">
-              <select name="marketplace" className="select">
-                {channels.map((m) => (
-                  <option key={m.value} value={m.value}>
-                    {m.label}
-                  </option>
-                ))}
-              </select>
+              {stores.length ? (
+                <select name="client_marketplace_id" className="select">
+                  {stores.map((store) => (
+                    <option key={store.id} value={store.id}>
+                      {store.name}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <select name="marketplace" className="select">
+                  {MARKETPLACES.map((m) => (
+                    <option key={m.value} value={m.value}>
+                      {m.label}
+                    </option>
+                  ))}
+                </select>
+              )}
             </Field>
             <Field label="Campanha">
               <input name="campaign" className="input" placeholder="opcional" />

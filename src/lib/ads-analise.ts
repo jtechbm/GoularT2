@@ -124,6 +124,8 @@ export interface CampanhaAnalisada {
   id: string;
   nome: string;
   marketplace: string;
+  accountId: string | null;
+  storeName: string | null;
   clientId: string;
   clientName: string;
   automatica: boolean;
@@ -155,6 +157,8 @@ export function analisarCampanha(
     id: e.id,
     nome: e.campaign ?? "sem nome",
     marketplace: e.marketplace,
+    accountId: e.client_marketplace_id,
+    storeName: e.store_name ?? null,
     clientId: e.client_id,
     clientName: e.client_name ?? "",
     automatica: e.source === "api",
