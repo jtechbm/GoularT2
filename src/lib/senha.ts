@@ -62,4 +62,4 @@ export function validarSenha(senha: string, contexto: { nome?: string; email?: s
   return { ok: true };
 }
 
-export const REGRA_SENHA = `Pelo menos ${MINIMO} caracteres. Uma frase que só você saiba funciona melhor do que uma palavra com símbolos.`;
+export const REGRA_SENHA = `Pelo menos ${MINIMO} caracteres, sem o seu nome nem o seu e-mail dentro. Uma frase que só você saiba funciona melhor do que uma palavra com símbolos.`;

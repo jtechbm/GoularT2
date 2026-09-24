@@ -271,9 +271,12 @@ export async function definirSenhaAction(formData: FormData) {
     redirect("/convite/expirado");
   }
 
-  if (senha !== confirmacao) throw new Error("As duas senhas não são iguais.");
+  // senha recusada volta para a mesma tela com o motivo: lançar erro aqui
+  // dava a tela genérica do Next, e a pessoa não sabia o que corrigir
+  const recusa = (motivo: string) => redirect(`/convite/${token}?erro=${encodeURIComponent(motivo)}`);
+  if (senha !== confirmacao) recusa("As duas senhas não são iguais.");
   const v = validarSenha(senha, { nome: alvo.name, email: alvo.email });
-  if (!v.ok) throw new Error(v.erro!);
+  if (!v.ok) recusa(v.erro!);
 
   await run(
     `UPDATE users SET password_hash=?, must_change_password=0, password_changed_at=?,

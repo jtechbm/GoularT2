@@ -12,8 +12,15 @@ import { SubmitButton } from "@/components/submit";
  * tem conta utilizável. O token é a única credencial, é de uso único e
  * vence em sete dias.
  */
-export default async function ConvitePage({ params }: { params: Promise<{ token: string }> }) {
+export default async function ConvitePage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ token: string }>;
+  searchParams: Promise<{ erro?: string }>;
+}) {
   const { token } = await params;
+  const { erro } = await searchParams;
 
   const alvo = await one<{ name: string; email: string; invite_expires_at: string | null }>(
     "SELECT name, email, invite_expires_at FROM users WHERE invite_token = ? AND active = 1",
@@ -38,6 +45,10 @@ export default async function ConvitePage({ params }: { params: Promise<{ token:
           <p className="mt-1 text-sm text-muted">
             Escolha uma senha para entrar com <strong>{alvo.email}</strong>.
           </p>
+
+          {erro && (
+            <p className="mt-4 rounded-lg border border-bad/30 bg-bad-soft px-3 py-2 text-xs text-bad">{erro}</p>
+          )}
 
           <form action={definirSenhaAction} className="mt-5 space-y-3">
             <input type="hidden" name="token" value={token} />
