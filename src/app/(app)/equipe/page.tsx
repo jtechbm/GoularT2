@@ -11,6 +11,7 @@ import { SaveBar, SubmitButton } from "@/components/submit";
 import {
   createTeamMemberAction,
   deleteTeamMemberAction,
+  reenviarConviteAction,
   salvarPapeisAction,
   toggleTeamMemberAction,
   updateTeamMemberAction,
@@ -228,9 +229,11 @@ export default async function EquipePage({
                           ))}
                         </div>
                       </Field>
-                      <Field label="Nova senha" hint="Deixe em branco para manter a atual.">
-                        <input name="password" type="password" className="input" autoComplete="new-password" />
-                      </Field>
+                      {u.id === user.id && (
+                        <Field label="Nova senha" hint="Deixe em branco para manter a atual.">
+                          <input name="password" type="password" className="input" autoComplete="new-password" />
+                        </Field>
+                      )}
                       {manager && (
                         <label className="flex items-center gap-2 self-end pb-2 text-sm text-muted">
                           <input
@@ -249,6 +252,27 @@ export default async function EquipePage({
                       <SubmitButton>Salvar alterações</SubmitButton>
                     </div>
                   </form>
+                )}
+
+                {/* ninguém escolhe a senha de outra pessoa: manda-se um link e ela escolhe */}
+                {isOpen && manager && u.id !== user.id && (
+                  <div className="-mx-5 mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-line px-5 pt-3">
+                    <span className="text-xs text-muted">
+                      Senha é sempre escolhida pela própria pessoa. Para quem esqueceu ou ainda não entrou, gere um
+                      convite novo e mande o link.
+                    </span>
+                    <form action={reenviarConviteAction}>
+                      <input type="hidden" name="user_id" value={u.id} />
+                      <SubmitButton
+                        variant="ghost"
+                        size="sm"
+                        pendingLabel="Gerando…"
+                        confirm={`Gerar um convite novo para ${u.name}? O link antigo para de valer e as sessões abertas caem.`}
+                      >
+                        Gerar convite de senha
+                      </SubmitButton>
+                    </form>
+                  </div>
                 )}
 
                 {isOpen && manager && u.id !== user.id && (
