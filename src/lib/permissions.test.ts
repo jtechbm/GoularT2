@@ -24,7 +24,12 @@ test("sem nada gravado, ou com texto estragado, vale o padrão; permissão que n
   ]);
   // sessão antiga sem permissões carregadas: padrão do código
   assert.equal(can({ role: "membro" }, "financeiro"), false);
-  assert.equal(can({ role: "gestor" }, "financeiro"), true);
+  // o financeiro da agência e as lojas do Kadu não são da equipe
+  assert.equal(can({ role: "gestor" }, "financeiro"), false);
+  assert.equal(can({ role: "gestor" }, "lojas.proprias"), false);
+  // o financeiro das lojas dos clientes continua sendo trabalho dele
+  assert.equal(can({ role: "gestor" }, "clientes.ver"), true);
+  assert.equal(can({ role: "admin" }, "financeiro"), true);
 });
 
 test("permissão criada depois de salvar usa o padrão; o que foi escolhido continua", () => {

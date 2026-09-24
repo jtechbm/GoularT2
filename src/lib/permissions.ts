@@ -95,9 +95,10 @@ const POR_PAPEL: Record<Role, Permission[]> = {
     "integracoes.sincronizar",
     "clientes.gerenciar",
     "clientes.cadastrar",
-    "lojas.proprias",
+    // o dinheiro da agência e as lojas do próprio Kadu não são da equipe:
+    // funcionário vê o financeiro das lojas dos clientes, que é o trabalho
+    // dele, não o que a agência cobra, gasta e ganha
     "tarefas.gerenciar",
-    "financeiro",
     "chat.gerenciar",
     "penalidades.resolver",
     "precos.pesquisar",
@@ -191,9 +192,9 @@ export const PERMISSION_LABEL: Record<Permission, string> = {
   "integracoes.sincronizar": "Buscar os números do mês",
   "clientes.gerenciar": "Editar dados, contas e equipe dos clientes",
   "clientes.cadastrar": "Cadastrar novos clientes",
-  "lojas.proprias": "Ver as lojas próprias",
+  "lojas.proprias": "Ver as lojas do próprio Kadu",
   "tarefas.gerenciar": "Criar e distribuir tarefas",
-  financeiro: "Cobranças, despesas e resultado",
+  financeiro: "Financeiro da agência (cobranças, despesas e resultado)",
   "chat.gerenciar": "Criar e remover canais",
   "penalidades.resolver": "Resolver penalidades",
   "precos.pesquisar": "Pesquisar preços de concorrentes",
