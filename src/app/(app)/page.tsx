@@ -168,7 +168,7 @@ export default async function DashboardPage({
             <Suspense fallback={null}>
               <MonthPicker months={months} value={ref} />
             </Suspense>
-            {can(user, "clientes.gerenciar") && (
+            {can(user, "clientes.cadastrar") && (
               <Link href="/clientes/novo" className="btn btn-primary">
                 <IconPlus size={16} />
                 Novo cliente

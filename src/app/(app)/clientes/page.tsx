@@ -50,9 +50,7 @@ export default async function ClientesPage({
   const ordem = lerOrdem(params.ordem);
 
   const escopo = await visibleClientIds(user);
-  // carteira limitada e vazia não é "cadastre o primeiro cliente": é
-  // "ninguém te atribuiu nenhum ainda"
-  const semAtribuicao = escopo !== null && escopo.length === 0;
+  const semClientesVisiveis = escopo !== null && escopo.length === 0;
   const [todos, indicadores] = await Promise.all([
     clientRows(ref, "cliente", escopo),
     indicadoresDosClientes(ref, escopo),
@@ -114,7 +112,7 @@ export default async function ClientesPage({
             <Suspense fallback={null}>
               <MonthPicker months={months} value={ref} />
             </Suspense>
-            {can(user, "clientes.gerenciar") && (
+            {can(user, "clientes.cadastrar") && (
               <Link href="/clientes/novo" className="btn btn-primary">
                 + Novo cliente
               </Link>
@@ -227,8 +225,8 @@ export default async function ClientesPage({
               title={
                 todos.length
                   ? "Nenhum cliente para este filtro"
-                  : semAtribuicao
-                    ? "Nenhum cliente atribuído a você"
+                  : semClientesVisiveis
+                    ? "Nenhum cliente seu ainda"
                     : "Carteira vazia"
               }
               hint={
@@ -236,12 +234,12 @@ export default async function ClientesPage({
                   ? soAds
                     ? "Nenhum cliente com investimento em Ads neste mês e filtro."
                     : "Ajuste a busca, o status ou o canal para ver outros clientes."
-                  : semAtribuicao
-                    ? "Você enxerga só os clientes que forem atribuídos a você. Peça ao admin para atribuir em Equipe, no seu cartão."
+                  : semClientesVisiveis
+                    ? "Cadastre um cliente ou peça ao super admin para atribuir um cliente existente a você."
                     : "Cadastre o primeiro cliente para começar."
               }
               action={
-                can(user, "clientes.gerenciar") && !todos.length ? (
+                can(user, "clientes.cadastrar") && !todos.length ? (
                   <Link href="/clientes/novo" className="btn btn-primary btn-sm">
                     Cadastrar cliente
                   </Link>

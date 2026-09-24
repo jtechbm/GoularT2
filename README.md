@@ -40,8 +40,13 @@ Se acontecer, pare o dev, apague a pasta `.next` e suba de novo.
 | Papel | Pode |
 | --- | --- |
 | `admin` | tudo, inclusive integrações e gestão de acessos |
-| `gestor` | carteira, cadastro de clientes, tarefas, equipe |
-| `membro` | opera clientes atribuídos, pega tarefas, lança financeiro e anotações |
+| `gestor` | cadastra clientes e opera os que criou ou recebeu, além de tarefas e financeiro |
+| `membro` | cadastra clientes, opera os que criou ou recebeu, pega tarefas, lança financeiro e anotações |
+
+O admin enxerga a carteira inteira. Gestores e membros veem somente clientes
+que cadastraram, pelos quais são responsáveis ou que o admin atribuiu a eles
+em **Equipe**. A tela e o cadastro de clientes ficam sempre disponíveis para
+os três papéis; as demais ações continuam configuráveis em **Equipe**.
 
 ## Integrações (Shopee e Mercado Livre)
 

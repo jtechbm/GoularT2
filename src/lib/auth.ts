@@ -121,14 +121,18 @@ export function assertCan(user: User, permission: Permission, message?: string):
 /**
  * Clientes que a pessoa enxerga. `null` significa a carteira inteira.
  *
- * O membro só vê onde foi atribuído, que é o que a tela de Equipe promete ao
- * dizer "opera clientes atribuídos". Sem ninguém o atribuindo, ele vê vazio —
- * é melhor do que ver a carteira toda por omissão.
+ * O admin vê tudo. Gestor e membro veem o que cadastraram, aquilo de que são
+ * responsáveis e o que foi atribuído a eles na tela de Equipe.
  */
 export const visibleClientIds = cache(async function visibleClientIds(user: User): Promise<string[] | null> {
-  if (can(user, "carteira.completa")) return null;
+  if (user.role === "admin") return null;
   const rows = await all<{ client_id: string }>(
-    "SELECT client_id FROM client_team WHERE user_id = ?",
+    `SELECT c.id AS client_id
+       FROM clients c
+      WHERE c.created_by = ? OR c.owner_id = ?
+         OR EXISTS (SELECT 1 FROM client_team ct WHERE ct.client_id = c.id AND ct.user_id = ?)`,
+    user.id,
+    user.id,
     user.id,
   );
   return rows.map((r) => r.client_id);
@@ -141,7 +145,9 @@ export async function canSeeClient(user: User, clientId: string): Promise<boolea
 
 /** Aborta a Server Action quando o cliente não é da pessoa. */
 export async function assertClientAccess(user: User, clientId: string): Promise<void> {
-  if (!(await canSeeClient(user, clientId))) throw new Error("Este cliente não está atribuído a você.");
+  if (!(await canSeeClient(user, clientId))) {
+    throw new Error("Este cliente não foi cadastrado por você nem atribuído a você.");
+  }
 }
 
 export async function login(email: string, password: string): Promise<User | null> {

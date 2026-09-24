@@ -6,8 +6,9 @@ import { SaveBar } from "@/components/submit";
 import { CLIENT_STATUS, MARKETPLACES } from "@/lib/types";
 
 export default async function NovoClientePage() {
-  await requirePermission("clientes.gerenciar");
-  const team = await listUsers();
+  const user = await requirePermission("clientes.cadastrar");
+  const isAdmin = user.role === "admin";
+  const team = isAdmin ? await listUsers() : [];
 
   return (
     <>
@@ -47,29 +48,38 @@ export default async function NovoClientePage() {
               </select>
             </Field>
 
-            <Field label="Responsável pela conta" className="sm:col-span-2">
-              <select name="owner_id" className="select" defaultValue="">
-                <option value="">Definir depois</option>
-                {team.map((u) => (
-                  <option key={u.id} value={u.id}>
-                    {u.name} — {u.job_title ?? u.role}
-                  </option>
-                ))}
-              </select>
-            </Field>
+            {isAdmin ? (
+              <>
+                <Field label="Responsável pela conta" className="sm:col-span-2">
+                  <select name="owner_id" className="select" defaultValue="">
+                    <option value="">Definir depois</option>
+                    {team.map((u) => (
+                      <option key={u.id} value={u.id}>
+                        {u.name} — {u.job_title ?? u.role}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
 
-            <Field label="Tipo de cadastro" className="sm:col-span-2">
-              <label className="flex cursor-pointer items-start gap-2.5 rounded-[10px] border border-line bg-surface-2 px-3 py-2.5">
-                <input type="checkbox" name="kind" value="propria" className="mt-0.5 accent-[var(--primary)]" />
-                <span className="text-sm text-ink">
-                  Esta é uma loja própria
-                  <span className="mt-0.5 block text-xs text-muted">
-                    Marque só se a loja for do próprio Kadu. Ela fica fora da carteira de clientes, não gera
-                    cobrança, e o resultado aparece separado no Financeiro.
-                  </span>
-                </span>
-              </label>
-            </Field>
+                <Field label="Tipo de cadastro" className="sm:col-span-2">
+                  <label className="flex cursor-pointer items-start gap-2.5 rounded-[10px] border border-line bg-surface-2 px-3 py-2.5">
+                    <input type="checkbox" name="kind" value="propria" className="mt-0.5 accent-[var(--primary)]" />
+                    <span className="text-sm text-ink">
+                      Esta é uma loja própria
+                      <span className="mt-0.5 block text-xs text-muted">
+                        Marque só se a loja for do próprio Kadu. Ela fica fora da carteira de clientes, não gera
+                        cobrança, e o resultado aparece separado no Financeiro.
+                      </span>
+                    </span>
+                  </label>
+                </Field>
+              </>
+            ) : (
+              <div className="sm:col-span-2 rounded-[10px] border border-brand/20 bg-brand-soft px-3 py-2.5 text-sm text-ink">
+                Você será o responsável inicial. Só você, o super admin e as pessoas atribuídas depois poderão ver
+                este cliente e seus resultados.
+              </div>
+            )}
 
             <Field label="Contato — nome">
               <input name="contact_name" className="input" />

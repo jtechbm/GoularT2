@@ -3,7 +3,17 @@ import { SaveBar } from "@/components/submit";
 import { updateClientAction } from "@/lib/actions/clients";
 import { CLIENT_STATUS, type Client, type User } from "@/lib/types";
 
-export function TabDados({ client, users, manager }: { client: Client; users: User[]; manager: boolean }) {
+export function TabDados({
+  client,
+  users,
+  manager,
+  admin,
+}: {
+  client: Client;
+  users: User[];
+  manager: boolean;
+  admin: boolean;
+}) {
   if (!manager) {
     return (
       <Card title="Dados cadastrais">
@@ -39,29 +49,33 @@ export function TabDados({ client, users, manager }: { client: Client; users: Us
             </select>
           </Field>
 
-          <Field label="Responsável" className="sm:col-span-2">
-            <select name="owner_id" defaultValue={client.owner_id ?? ""} className="select">
-              <option value="">Sem responsável</option>
-              {users.map((u) => (
-                <option key={u.id} value={u.id}>
-                  {u.name}
-                </option>
-              ))}
-            </select>
-          </Field>
+          {admin && (
+            <>
+              <Field label="Responsável" className="sm:col-span-2">
+                <select name="owner_id" defaultValue={client.owner_id ?? ""} className="select">
+                  <option value="">Sem responsável</option>
+                  {users.map((u) => (
+                    <option key={u.id} value={u.id}>
+                      {u.name}
+                    </option>
+                  ))}
+                </select>
+              </Field>
 
-          <Field label="Tipo de cadastro" className="sm:col-span-2">
-            <label className="flex cursor-pointer items-start gap-2.5 rounded-[10px] border border-line bg-surface-2 px-3 py-2.5">
-              <input type="checkbox" name="kind" value="propria" className="mt-0.5 accent-[var(--primary)]" defaultChecked={client.kind === "propria"} />
-              <span className="text-sm text-ink">
-                Esta é uma loja própria
-                <span className="mt-0.5 block text-xs text-muted">
-                  Marque só se a loja for do próprio Kadu. Ela fica fora da carteira de clientes, não gera
-                  cobrança, e o resultado aparece separado no Financeiro.
-                </span>
-              </span>
-            </label>
-          </Field>
+              <Field label="Tipo de cadastro" className="sm:col-span-2">
+                <label className="flex cursor-pointer items-start gap-2.5 rounded-[10px] border border-line bg-surface-2 px-3 py-2.5">
+                  <input type="checkbox" name="kind" value="propria" className="mt-0.5 accent-[var(--primary)]" defaultChecked={client.kind === "propria"} />
+                  <span className="text-sm text-ink">
+                    Esta é uma loja própria
+                    <span className="mt-0.5 block text-xs text-muted">
+                      Marque só se a loja for do próprio Kadu. Ela fica fora da carteira de clientes, não gera
+                      cobrança, e o resultado aparece separado no Financeiro.
+                    </span>
+                  </span>
+                </label>
+              </Field>
+            </>
+          )}
 
           <Field label="Contato — nome">
             <input name="contact_name" defaultValue={client.contact_name ?? ""} className="input" />

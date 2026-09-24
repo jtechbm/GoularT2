@@ -35,6 +35,7 @@ CREATE TABLE IF NOT EXISTS clients (
   commission_pct double precision NOT NULL DEFAULT 0,
   started_at     text,
   owner_id       text REFERENCES users(id) ON DELETE SET NULL,
+  created_by     text REFERENCES users(id) ON DELETE SET NULL,
   summary        text,
   created_at     text NOT NULL,
   updated_at     text NOT NULL
@@ -789,6 +790,11 @@ CREATE INDEX IF NOT EXISTS idx_expenses_month ON agency_expenses(ref_month);
 
 -- loja própria do Kadu x cliente atendido
 ALTER TABLE clients ADD COLUMN IF NOT EXISTS kind text NOT NULL DEFAULT 'cliente';
+
+-- Quem cadastrou sempre enxerga o cliente. Para os cadastros antigos fica
+-- NULL: o admin continua vendo tudo e a equipe vê pelos vínculos existentes.
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS created_by text REFERENCES users(id) ON DELETE SET NULL;
+CREATE INDEX IF NOT EXISTS idx_clients_created_by ON clients(created_by);
 
 -- link de autorização enviado ao lojista (Fase 1 das integrações)
 ALTER TABLE client_marketplaces ADD COLUMN IF NOT EXISTS auth_token      text;

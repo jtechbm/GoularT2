@@ -25,18 +25,24 @@ async function assertManager() {
 
 /** Cria um cliente novo e leva direto para a página dele. */
 export async function createClientAction(formData: FormData) {
-  await assertManager();
+  const actor = await requireUser();
+  assertCan(actor, "clientes.cadastrar", "Seu acesso não permite cadastrar clientes.");
   const clientId = id();
   const name = str(formData.get("name"));
   if (!name) throw new Error("Nome do cliente é obrigatório.");
 
+  // Só o super admin escolhe outro responsável ou cadastra loja própria.
+  // Para gestor e membro, quem cadastrou já nasce responsável e com acesso.
+  const owner = actor.role === "admin" ? strOrNull(formData.get("owner_id")) : actor.id;
+  const kind = actor.role === "admin" && formData.get("kind") === "propria" ? "propria" : "cliente";
+
   await run(
     `INSERT INTO clients (id, kind, name, trade_name, doc, status, segment, tier, contact_name, contact_email,
-                          contact_phone, fee_model, monthly_fee, commission_pct, started_at, owner_id, summary,
-                          created_at, updated_at)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+                          contact_phone, fee_model, monthly_fee, commission_pct, started_at, owner_id, created_by,
+                          summary, created_at, updated_at)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     clientId,
-    formData.get("kind") === "propria" ? "propria" : "cliente",
+    kind,
     name,
     strOrNull(formData.get("trade_name")),
     strOrNull(formData.get("doc")),
@@ -50,7 +56,8 @@ export async function createClientAction(formData: FormData) {
     toNumber(formData.get("monthly_fee")),
     toNumber(formData.get("commission_pct")),
     strOrNull(formData.get("started_at")),
-    strOrNull(formData.get("owner_id")),
+    owner,
+    actor.id,
     strOrNull(formData.get("summary")),
     now(),
     now(),
@@ -71,7 +78,6 @@ export async function createClientAction(formData: FormData) {
     );
   }
 
-  const owner = strOrNull(formData.get("owner_id"));
   if (owner) {
     await run("INSERT INTO client_team (client_id, user_id, role) VALUES (?,?,?) ON CONFLICT DO NOTHING", clientId, owner, "responsavel");
   }
@@ -82,14 +88,23 @@ export async function createClientAction(formData: FormData) {
 }
 
 export async function updateClientAction(formData: FormData) {
-  await assertManager();
+  const actor = await assertManager();
   const clientId = str(formData.get("client_id"));
+  await assertClientAccess(actor, clientId);
+  const existente = await one<{ kind: string; owner_id: string | null }>(
+    "SELECT kind, owner_id FROM clients WHERE id = ?",
+    clientId,
+  );
+  if (!existente) throw new Error("Cliente não encontrado.");
+  const kind =
+    actor.role === "admin" ? (formData.get("kind") === "propria" ? "propria" : "cliente") : existente.kind;
+  const ownerId = actor.role === "admin" ? strOrNull(formData.get("owner_id")) : existente.owner_id;
   await run(
     `UPDATE clients SET kind=?, name=?, trade_name=?, doc=?, status=?, segment=?, tier=?, contact_name=?,
             contact_email=?, contact_phone=?, fee_model=?, monthly_fee=?, commission_pct=?, started_at=?,
             owner_id=?, summary=?, updated_at=?
       WHERE id=?`,
-    formData.get("kind") === "propria" ? "propria" : "cliente",
+    kind,
     str(formData.get("name")),
     strOrNull(formData.get("trade_name")),
     strOrNull(formData.get("doc")),
@@ -103,11 +118,27 @@ export async function updateClientAction(formData: FormData) {
     toNumber(formData.get("monthly_fee")),
     toNumber(formData.get("commission_pct")),
     strOrNull(formData.get("started_at")),
-    strOrNull(formData.get("owner_id")),
+    ownerId,
     strOrNull(formData.get("summary")),
     now(),
     clientId,
   );
+  if (ownerId) {
+    await run(
+      `INSERT INTO client_team (client_id, user_id, role) VALUES (?,?,?)
+       ON CONFLICT (client_id, user_id) DO UPDATE SET role = EXCLUDED.role`,
+      clientId,
+      ownerId,
+      "responsavel",
+    );
+  }
+  if (existente.owner_id && existente.owner_id !== ownerId) {
+    await run(
+      "UPDATE client_team SET role = 'analista' WHERE client_id = ? AND user_id = ?",
+      clientId,
+      existente.owner_id,
+    );
+  }
   await touch(clientId);
   redirect(`/clientes/${clientId}?tab=dados&ok=1`);
 }
@@ -123,7 +154,10 @@ export async function updateClientAction(formData: FormData) {
  */
 export async function salvarClientesDaPessoaAction(formData: FormData) {
   const actor = await requirePermission("equipe.gerenciar");
+  if (actor.role !== "admin") throw new Error("Apenas o super admin pode atribuir clientes.");
   const userId = str(formData.get("user_id"));
+  const alvo = await one<{ id: string }>("SELECT id FROM users WHERE id = ? AND active = 1", userId);
+  if (!alvo) throw new Error("Pessoa não encontrada ou sem acesso ativo.");
   const escolhidos = formData.getAll("clients").map(String).filter(Boolean);
 
   const antes = await all<{ client_id: string }>("SELECT client_id FROM client_team WHERE user_id = ?", userId);
@@ -154,8 +188,9 @@ export async function salvarClientesDaPessoaAction(formData: FormData) {
 }
 
 export async function saveTeamAction(formData: FormData) {
-  await assertManager();
+  const actor = await assertManager();
   const clientId = str(formData.get("client_id"));
+  await assertClientAccess(actor, clientId);
   const ownerId = strOrNull(formData.get("owner_id"));
   const members = formData.getAll("members").map(String).filter(Boolean);
 
@@ -179,8 +214,9 @@ export async function saveTeamAction(formData: FormData) {
 }
 
 export async function addMarketplaceAction(formData: FormData) {
-  await assertManager();
+  const actor = await assertManager();
   const clientId = str(formData.get("client_id"));
+  await assertClientAccess(actor, clientId);
   await run(
     `INSERT INTO client_marketplaces (id, client_id, marketplace, nickname, external_id, status, created_at)
      VALUES (?,?,?,?,?,?,?)`,
@@ -197,8 +233,9 @@ export async function addMarketplaceAction(formData: FormData) {
 }
 
 export async function updateMarketplaceAction(formData: FormData) {
-  await assertManager();
+  const actor = await assertManager();
   const clientId = str(formData.get("client_id"));
+  await assertClientAccess(actor, clientId);
   const rowId = str(formData.get("marketplace_id"));
   await run(
     "UPDATE client_marketplaces SET nickname=?, external_id=?, status=? WHERE id=? AND client_id=?",
@@ -213,8 +250,9 @@ export async function updateMarketplaceAction(formData: FormData) {
 }
 
 export async function removeMarketplaceAction(formData: FormData) {
-  await assertManager();
+  const actor = await assertManager();
   const clientId = str(formData.get("client_id"));
+  await assertClientAccess(actor, clientId);
   await run("DELETE FROM client_marketplaces WHERE id=? AND client_id=?", str(formData.get("marketplace_id")), clientId);
   await touch(clientId);
   redirect(`/clientes/${clientId}?tab=marketplaces&ok=1`);

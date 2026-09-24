@@ -9,6 +9,7 @@ import {
   can,
   gravarPermissoes,
   PAPEIS_EDITAVEIS,
+  PERMISSOES_OBRIGATORIAS,
   PERMISSION_LABEL,
   PERMISSION_ORDER,
   permissoesGravadas,
@@ -304,9 +305,10 @@ export async function salvarPapeisAction(formData: FormData) {
   for (const role of PAPEIS_EDITAVEIS) {
     const antes = await one<{ permissions: string }>("SELECT permissions FROM role_permissions WHERE role = ?", role);
     const anterior: string[] = permissoesGravadas(role, antes?.permissions ?? null);
-    const marcadas = voltarAoPadrao
+    const escolhidas = voltarAoPadrao
       ? permissoesPadrao(role)
       : PERMISSION_ORDER.filter((p) => formData.get(`${role}:${p}`) === "1");
+    const marcadas = [...new Set([...escolhidas, ...PERMISSOES_OBRIGATORIAS])];
 
     const entrou = marcadas.filter((p) => !anterior.includes(p));
     const saiu = anterior.filter((p) => !marcadas.includes(p as never));

@@ -32,8 +32,8 @@ export type Permission =
   | "integracoes.sincronizar"
   /** cadastrar, editar e excluir cliente, suas contas e sua equipe */
   | "clientes.gerenciar"
-  /** enxergar a carteira inteira, e não só os clientes atribuídos */
-  | "carteira.completa"
+  /** criar um cliente novo; depois a visibilidade continua limitada ao escopo */
+  | "clientes.cadastrar"
   /** as lojas do próprio Kadu, que não fazem parte da carteira */
   | "lojas.proprias"
   /** criar tarefa para outra pessoa, editar e excluir */
@@ -66,7 +66,7 @@ const TODAS: Permission[] = [
   "integracoes.gerenciar",
   "integracoes.sincronizar",
   "clientes.gerenciar",
-  "carteira.completa",
+  "clientes.cadastrar",
   "lojas.proprias",
   "tarefas.gerenciar",
   "financeiro",
@@ -75,6 +75,13 @@ const TODAS: Permission[] = [
   "precos.pesquisar",
   "analise.rodar",
 ];
+
+/**
+ * Faz parte do trabalho de qualquer pessoa da operação. Estas duas não
+ * podem ser retiradas na tabela de papéis: a privacidade vem do escopo dos
+ * clientes, não de esconder a tela inteira.
+ */
+export const PERMISSOES_OBRIGATORIAS: readonly Permission[] = ["clientes.ver", "clientes.cadastrar"];
 
 const POR_PAPEL: Record<Role, Permission[]> = {
   admin: TODAS,
@@ -87,7 +94,7 @@ const POR_PAPEL: Record<Role, Permission[]> = {
     ...TELAS,
     "integracoes.sincronizar",
     "clientes.gerenciar",
-    "carteira.completa",
+    "clientes.cadastrar",
     "lojas.proprias",
     "tarefas.gerenciar",
     "financeiro",
@@ -96,11 +103,9 @@ const POR_PAPEL: Record<Role, Permission[]> = {
     "precos.pesquisar",
   ],
 
-  // o membro trabalha nas tarefas: vê Tarefas, Chat e Notificações, e a
-  // tela inicial dele é a de pontos. O resto da operação o admin libera,
-  // tela por tela, na Equipe. "Buscar os números" fica porque, se ele
-  // ganhar a tela de clientes, sincronizar o que é dele faz parte do dia.
-  membro: ["integracoes.sincronizar"],
+  // o membro trabalha nas tarefas e nos clientes que cadastrou ou recebeu.
+  // O resto da operação o admin libera tela por tela na Equipe.
+  membro: ["clientes.ver", "clientes.cadastrar", "integracoes.sincronizar"],
 };
 
 /**
@@ -109,6 +114,7 @@ const POR_PAPEL: Record<Role, Permission[]> = {
  */
 export function can(user: { role: Role; permissions?: readonly string[] | null }, permission: Permission): boolean {
   if (user.role === "admin") return true;
+  if (PERMISSOES_OBRIGATORIAS.includes(permission)) return true;
   if (user.permissions) return user.permissions.includes(permission);
   return POR_PAPEL[user.role]?.includes(permission) ?? false;
 }
@@ -147,7 +153,9 @@ export function permissoesGravadas(role: Role, gravado: string | null | undefine
     } else {
       return padrao;
     }
-    return TODAS.filter((p) => (conhecidas.includes(p) ? tem.includes(p) : padrao.includes(p)));
+    return TODAS.filter(
+      (p) => PERMISSOES_OBRIGATORIAS.includes(p) || (conhecidas.includes(p) ? tem.includes(p) : padrao.includes(p)),
+    );
   } catch {
     return padrao;
   }
@@ -181,8 +189,8 @@ export const PERMISSION_LABEL: Record<Permission, string> = {
   "equipe.gerenciar": "Cadastrar pessoas e trocar papéis",
   "integracoes.gerenciar": "Conectar e desconectar marketplaces",
   "integracoes.sincronizar": "Buscar os números do mês",
-  "clientes.gerenciar": "Cadastrar e editar clientes",
-  "carteira.completa": "Ver a carteira inteira (sem isso, só os clientes atribuídos)",
+  "clientes.gerenciar": "Editar dados, contas e equipe dos clientes",
+  "clientes.cadastrar": "Cadastrar novos clientes",
   "lojas.proprias": "Ver as lojas próprias",
   "tarefas.gerenciar": "Criar e distribuir tarefas",
   financeiro: "Cobranças, despesas e resultado",

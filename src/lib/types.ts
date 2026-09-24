@@ -51,6 +51,7 @@ export interface Client {
   commission_pct: number;
   started_at: string | null;
   owner_id: string | null;
+  created_by: string | null;
   summary: string | null;
   created_at: string;
   updated_at: string;
@@ -232,8 +233,8 @@ export const TASK_PRIORITIES: { value: TaskPriority; label: string; points: numb
 
 export const ROLES: { value: Role; label: string; description: string }[] = [
   { value: "admin", label: "Admin", description: "Acesso total, gerencia equipe e integrações" },
-  { value: "gestor", label: "Gestor", description: "Gerencia carteira, tarefas e financeiro" },
-  { value: "membro", label: "Membro", description: "Opera clientes atribuídos e pega tarefas" },
+  { value: "gestor", label: "Gestor", description: "Cadastra clientes e opera os que criou ou recebeu" },
+  { value: "membro", label: "Membro", description: "Cadastra clientes e opera os que criou ou recebeu" },
 ];
 
 export function marketplaceLabel(value: string): string {

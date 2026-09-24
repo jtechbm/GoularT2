@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { id, now, run } from "@/lib/db";
-import { requireUser } from "@/lib/auth";
+import { assertClientAccess, requireUser } from "@/lib/auth";
 import { str, strOrNull, toNumber } from "@/lib/format";
 
 function refresh(clientId?: string) {
@@ -19,6 +19,7 @@ export async function createAdsAction(formData: FormData) {
   const periodStart = str(formData.get("period_start"));
   const periodEnd = str(formData.get("period_end")) || periodStart;
   if (!clientId || !periodStart) throw new Error("Cliente e início do período são obrigatórios.");
+  await assertClientAccess(user, clientId);
   // lançamento sem valor virava uma "campanha sem nome, R$ 0,00" na lista
   if (!(toNumber(formData.get("invested")) > 0) && !(toNumber(formData.get("revenue")) > 0)) {
     throw new Error("Informe o valor investido.");
@@ -49,10 +50,15 @@ export async function createAdsAction(formData: FormData) {
 }
 
 export async function deleteAdsAction(formData: FormData) {
-  await requireUser();
+  const user = await requireUser();
   const clientId = str(formData.get("client_id"));
+  await assertClientAccess(user, clientId);
   // linhas da sincronização não se apagam pela tela: voltariam na rodada seguinte
-  await run("DELETE FROM ads_entries WHERE id = ? AND source = 'manual'", str(formData.get("entry_id")));
+  await run(
+    "DELETE FROM ads_entries WHERE id = ? AND client_id = ? AND source = 'manual'",
+    str(formData.get("entry_id")),
+    clientId,
+  );
   refresh(clientId);
   const back = str(formData.get("redirect_to"));
   redirect(back || "/ads");

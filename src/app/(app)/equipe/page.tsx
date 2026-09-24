@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { listUsers, visibleClientIds, requirePermission } from "@/lib/auth";
-import { can, PERMISSION_LABEL, PERMISSION_ORDER } from "@/lib/permissions";
+import { can, PERMISSION_LABEL, PERMISSION_ORDER, PERMISSOES_OBRIGATORIAS } from "@/lib/permissions";
 import { all } from "@/lib/db";
 import { clientRows, desempenhoEquipe, leaderboard, periodoDe, permissoesDosPapeis, rankingMensal, tasks } from "@/lib/queries";
 import { Ranking } from "@/components/ranking";
@@ -42,7 +42,7 @@ export default async function EquipePage({
     leaderboard(),
     rankingMensal(currentMonth()),
     manager ? desempenhoEquipe(periodo.inicio, periodo.fim) : Promise.resolve([]),
-    clientRows(currentMonth(), undefined, escopo),
+    clientRows(currentMonth(), "cliente", escopo),
     tasks({ statuses: ["assumida", "em_andamento", "em_revisao"] }),
     all<{ user_id: string; client_id: string; name: string; role: string }>(
       `SELECT ct.user_id, ct.client_id, c.name, ct.role
@@ -255,7 +255,7 @@ export default async function EquipePage({
                   </form>
                 )}
 
-                {isOpen && manager && carteira.length > 0 && (
+                {isOpen && user.role === "admin" && carteira.length > 0 && (
                   <form action={salvarClientesDaPessoaAction} className="mt-4 border-t border-line pt-4">
                     <input type="hidden" name="user_id" value={u.id} />
                     <span className="label">Clientes desta pessoa</span>
@@ -419,14 +419,21 @@ export default async function EquipePage({
                         <td className="text-xs text-muted">{PERMISSION_LABEL[p]}</td>
                         {ROLES.map((r) => {
                           const tem = papeis[r.value].includes(p);
-                          if (r.value === "admin" || !manager) {
+                          const obrigatoria = PERMISSOES_OBRIGATORIAS.includes(p);
+                          if (r.value === "admin" || !manager || obrigatoria) {
                             return (
                               <td
                                 key={r.value}
                                 className={`num ${tem ? "text-ok" : "text-dim"}`}
-                                title={r.value === "admin" ? "O admin tem tudo sempre" : r.description}
+                                title={
+                                  r.value === "admin"
+                                    ? "O admin tem tudo sempre"
+                                    : obrigatoria
+                                      ? "Obrigatório para toda a operação"
+                                      : r.description
+                                }
                               >
-                                {tem ? "sim" : "—"}
+                                {tem ? (obrigatoria ? "sempre" : "sim") : "—"}
                               </td>
                             );
                           }
@@ -447,14 +454,12 @@ export default async function EquipePage({
                     ))}
                     <tr>
                       <td className="text-xs text-muted">
-                        Quais clientes aparecem
-                        <span className="block text-[0.65rem] text-dim">consequência de "Ver a carteira inteira"</span>
+                        Clientes que aparecem
+                        <span className="block text-[0.65rem] text-dim">privacidade fixa, não é uma permissão</span>
                       </td>
-                      {ROLES.map((r) => (
-                        <td key={r.value} className="num text-xs text-muted">
-                          {papeis[r.value].includes("carteira.completa") ? "todos" : "só os dele"}
-                        </td>
-                      ))}
+                      <td className="num text-xs text-muted">todos</td>
+                      <td className="num text-xs text-muted">criados ou atribuídos</td>
+                      <td className="num text-xs text-muted">criados ou atribuídos</td>
                     </tr>
                   </tbody>
                 </table>

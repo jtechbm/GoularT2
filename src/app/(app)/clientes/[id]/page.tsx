@@ -79,6 +79,8 @@ export default async function ClientePage({
   if (!client) notFound();
   // um cliente fora da carteira da pessoa não existe para ela
   if (!(await canSeeClient(user, client.id))) notFound();
+  const manager = can(user, "clientes.gerenciar");
+  const admin = user.role === "admin";
 
   const months = lastMonths(12);
   const ref = sp.mes && months.includes(sp.mes) ? sp.mes : currentMonth();
@@ -130,7 +132,7 @@ export default async function ClientePage({
     serieDiaria(periodo.inicio, periodo.fim, { clientId: client.id }),
     penalidades({ clientId: client.id, status: "aberta" }),
     saudeContasML(undefined, client.id),
-    listUsers(),
+    manager ? listUsers() : Promise.resolve([]),
     integrationStatus(),
   ]);
 
@@ -173,7 +175,6 @@ export default async function ClientePage({
     },
   });
   const marketplacesDisponiveis = integracoes.filter((i) => i.configured).map((i) => i.marketplace);
-  const manager = can(user, "clientes.gerenciar");
   const margin = totals.revenue ? totals.profit / totals.revenue : 0;
   // as campanhas do mês têm o que a API leu e o que foi lançado à mão; o
   // fechamento sincronizado só tem o primeiro
@@ -337,7 +338,7 @@ export default async function ClientePage({
         )}
         {tab === "historico" && <TabHistorico client={client} notes={notes} currentUserId={user.id} manager={manager} />}
         {tab === "equipe" && <TabEquipe client={client} team={team} users={allUsers} manager={manager} />}
-        {tab === "dados" && <TabDados client={client} users={allUsers} manager={manager} />}
+        {tab === "dados" && <TabDados client={client} users={allUsers} manager={manager} admin={admin} />}
       </div>
 
       <p className="mt-6 flex flex-wrap items-center justify-center gap-2 text-center text-[0.7rem] text-dim">
