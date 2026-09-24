@@ -50,6 +50,9 @@ export default async function ClientesPage({
   const ordem = lerOrdem(params.ordem);
 
   const escopo = await visibleClientIds(user);
+  // carteira limitada e vazia não é "cadastre o primeiro cliente": é
+  // "ninguém te atribuiu nenhum ainda"
+  const semAtribuicao = escopo !== null && escopo.length === 0;
   const [todos, indicadores] = await Promise.all([
     clientRows(ref, "cliente", escopo),
     indicadoresDosClientes(ref, escopo),
@@ -221,13 +224,21 @@ export default async function ClientesPage({
         ) : (
           <div className="p-5">
             <Empty
-              title={todos.length ? "Nenhum cliente para este filtro" : "Carteira vazia"}
+              title={
+                todos.length
+                  ? "Nenhum cliente para este filtro"
+                  : semAtribuicao
+                    ? "Nenhum cliente atribuído a você"
+                    : "Carteira vazia"
+              }
               hint={
                 todos.length
                   ? soAds
                     ? "Nenhum cliente com investimento em Ads neste mês e filtro."
                     : "Ajuste a busca, o status ou o canal para ver outros clientes."
-                  : "Cadastre o primeiro cliente para começar."
+                  : semAtribuicao
+                    ? "Você enxerga só os clientes que forem atribuídos a você. Peça ao admin para atribuir em Equipe, no seu cartão."
+                    : "Cadastre o primeiro cliente para começar."
               }
               action={
                 can(user, "clientes.gerenciar") && !todos.length ? (

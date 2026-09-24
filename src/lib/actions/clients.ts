@@ -2,8 +2,8 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { id, now, one, run } from "@/lib/db";
-import { assertCan, assertClientAccess, requireUser } from "@/lib/auth";
+import { all, id, now, one, run } from "@/lib/db";
+import { assertCan, assertClientAccess, requirePermission, requireUser } from "@/lib/auth";
 import { can } from "@/lib/permissions";
 import { str, strOrNull, toNumber } from "@/lib/format";
 import { avaliarOnboardingDoCliente } from "@/lib/queries";
@@ -113,6 +113,46 @@ export async function updateClientAction(formData: FormData) {
 }
 
 /** Define responsável + equipe do cliente de uma vez. */
+/**
+ * Atribui clientes a uma pessoa, pela tela de Equipe.
+ *
+ * É o mesmo vínculo da aba Equipe de cada cliente (client_team), visto pelo
+ * outro lado: lá se escolhe quem atende o cliente, aqui quais clientes a
+ * pessoa atende. Sem esse vínculo, quem não enxerga a carteira inteira abre
+ * a tela de Clientes vazia, mesmo com a permissão de ver.
+ */
+export async function salvarClientesDaPessoaAction(formData: FormData) {
+  const actor = await requirePermission("equipe.gerenciar");
+  const userId = str(formData.get("user_id"));
+  const escolhidos = formData.getAll("clients").map(String).filter(Boolean);
+
+  const antes = await all<{ client_id: string }>("SELECT client_id FROM client_team WHERE user_id = ?", userId);
+  const tinha = new Set<string>(antes.map((a) => a.client_id));
+
+  for (const clientId of escolhidos) {
+    if (tinha.has(clientId)) continue;
+    // não vira responsável por isso: responsável se define no cliente
+    await run(
+      "INSERT INTO client_team (client_id, user_id, role) VALUES (?,?,?) ON CONFLICT DO NOTHING",
+      clientId,
+      userId,
+      "analista",
+    );
+  }
+  for (const clientId of tinha) {
+    if (escolhidos.includes(clientId)) continue;
+    // quem responde pela conta não sai por aqui, para o cliente não ficar sem dono
+    const dono = await one<{ n: number }>("SELECT COUNT(*) AS n FROM clients WHERE id = ? AND owner_id = ?", clientId, userId);
+    if ((dono?.n ?? 0) > 0) continue;
+    await run("DELETE FROM client_team WHERE client_id = ? AND user_id = ?", clientId, userId);
+  }
+
+  void actor;
+  revalidatePath("/equipe");
+  revalidatePath("/clientes");
+  redirect(`/equipe?ok=1&u=${userId}`);
+}
+
 export async function saveTeamAction(formData: FormData) {
   await assertManager();
   const clientId = str(formData.get("client_id"));

@@ -8,6 +8,7 @@ import { DesempenhoEquipe } from "@/components/desempenho-equipe";
 import { brlShort, currentMonth, dateBR } from "@/lib/format";
 import { Avatar, Card, Chip, Field, PageHeader, Stat } from "@/components/ui";
 import { SaveBar, SubmitButton } from "@/components/submit";
+import { salvarClientesDaPessoaAction } from "@/lib/actions/clients";
 import {
   createTeamMemberAction,
   deleteTeamMemberAction,
@@ -254,6 +255,44 @@ export default async function EquipePage({
                   </form>
                 )}
 
+                {isOpen && manager && carteira.length > 0 && (
+                  <form action={salvarClientesDaPessoaAction} className="mt-4 border-t border-line pt-4">
+                    <input type="hidden" name="user_id" value={u.id} />
+                    <span className="label">Clientes desta pessoa</span>
+                    <p className="mb-2 text-xs text-muted">
+                      Quem não vê a carteira inteira só enxerga os clientes marcados aqui. O responsável pela conta
+                      não pode ser desmarcado por aqui: isso se muda no cliente, na aba Equipe.
+                    </p>
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      {carteira.map((c) => {
+                        const responsavel = c.owner_id === u.id;
+                        return (
+                          <label
+                            key={c.id}
+                            className="flex items-center gap-2.5 rounded-lg border border-line bg-surface-2 px-3 py-2"
+                          >
+                            <input
+                              type="checkbox"
+                              name="clients"
+                              value={c.id}
+                              defaultChecked={responsavel || clients.some((m) => m.client_id === c.id)}
+                              disabled={responsavel}
+                              className="accent-[var(--primary)]"
+                            />
+                            <span className="min-w-0 flex-1 truncate text-sm text-ink">{c.name}</span>
+                            {responsavel && <Chip tone="accent">responsável</Chip>}
+                          </label>
+                        );
+                      })}
+                    </div>
+                    <div className="-mx-5 mt-3 flex items-center justify-end border-t border-line px-5 py-3">
+                      <SubmitButton size="sm" pendingLabel="Salvando…">
+                        Salvar clientes
+                      </SubmitButton>
+                    </div>
+                  </form>
+                )}
+
                 {/* ninguém escolhe a senha de outra pessoa: manda-se um link e ela escolhe */}
                 {isOpen && manager && u.id !== user.id && (
                   <div className="-mx-5 mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-line px-5 pt-3">
@@ -408,8 +447,8 @@ export default async function EquipePage({
                     ))}
                     <tr>
                       <td className="text-xs text-muted">
-                        Ver clientes
-                        <span className="block text-[0.65rem] text-dim">segue "Ver a carteira inteira"</span>
+                        Quais clientes aparecem
+                        <span className="block text-[0.65rem] text-dim">consequência de "Ver a carteira inteira"</span>
                       </td>
                       {ROLES.map((r) => (
                         <td key={r.value} className="num text-xs text-muted">

@@ -171,7 +171,7 @@ export function permissoesPadrao(role: Role): Permission[] {
  */
 export const PERMISSION_LABEL: Record<Permission, string> = {
   "painel.ver": "Ver o painel da carteira",
-  "clientes.ver": "Ver clientes",
+  "clientes.ver": "Abrir a tela de Clientes",
   "alertas.ver": "Ver Atenção",
   "penalidades.ver": "Ver Penalidades",
   "ads.ver": "Ver Ads",
@@ -182,7 +182,7 @@ export const PERMISSION_LABEL: Record<Permission, string> = {
   "integracoes.gerenciar": "Conectar e desconectar marketplaces",
   "integracoes.sincronizar": "Buscar os números do mês",
   "clientes.gerenciar": "Cadastrar e editar clientes",
-  "carteira.completa": "Ver a carteira inteira",
+  "carteira.completa": "Ver a carteira inteira (sem isso, só os clientes atribuídos)",
   "lojas.proprias": "Ver as lojas próprias",
   "tarefas.gerenciar": "Criar e distribuir tarefas",
   financeiro: "Cobranças, despesas e resultado",
