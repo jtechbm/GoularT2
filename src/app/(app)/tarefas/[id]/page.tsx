@@ -1,14 +1,16 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { requireUser } from "@/lib/auth";
+import { listUsers, requireUser, visibleClientIds } from "@/lib/auth";
 import { can } from "@/lib/permissions";
-import { getTask, taskDetail } from "@/lib/queries";
+import { clientOptions, getTask, taskDetail } from "@/lib/queries";
 import { dateBR, dateTimeBR, relativeBR } from "@/lib/format";
 import { Avatar, Card, Chip, Empty, Field, PageHeader, Stat } from "@/components/ui";
 import { SubmitButton } from "@/components/submit";
 import {
   approveTaskAction,
   definirPrazoAction,
+  deleteTaskAction,
+  updateTaskAction,
   rejectTaskAction,
   releaseTaskAction,
   reopenTaskAction,
@@ -24,7 +26,7 @@ import {
   toggleChecklistItemAction,
   toggleEvidenceRequiredAction,
 } from "@/lib/actions/task-detalhe";
-import { TASK_COLUMNS } from "@/lib/types";
+import { TASK_COLUMNS, TASK_PRIORITIES } from "@/lib/types";
 import { calcularPontos } from "@/lib/pontos";
 import { OPCOES_PRAZO, rotuloPrazo, situacaoPrazo } from "@/lib/prazo-tarefa";
 import { PrazoChip } from "@/components/prazo-tarefa";
@@ -38,6 +40,10 @@ export default async function TarefaPage({ params }: { params: Promise<{ id: str
 
   const { checklist, evidencias, comentarios, eventos } = await taskDetail(id);
   const manager = can(user, "tarefas.gerenciar");
+  // as listas do formulário de edição só interessam a quem edita
+  const [clients, team] = manager
+    ? await Promise.all([clientOptions(await visibleClientIds(user)), listUsers()])
+    : [[], []];
   const meu = task.assignee_id === user.id;
   const podeEditar = meu || manager;
 
@@ -410,8 +416,98 @@ export default async function TarefaPage({ params }: { params: Promise<{ id: str
                   </SubmitButton>
                 </form>
               )}
+
+              {manager && (
+                <form action={deleteTaskAction} className="border-t border-line pt-2">
+                  <input type="hidden" name="task_id" value={task.id} />
+                  <SubmitButton
+                    variant="danger"
+                    size="sm"
+                    pendingLabel="Excluindo…"
+                    confirm={`Excluir "${task.title}" para sempre? Isso não tem volta: o histórico, o checklist, as evidências, os comentários e os pontos desta tarefa somem junto.`}
+                  >
+                    Excluir tarefa
+                  </SubmitButton>
+                </form>
+              )}
             </div>
           </Card>
+
+          {manager && (
+            <details className="rounded-[var(--radius-card)] border border-line bg-surface">
+              <summary className="cursor-pointer px-5 py-4 text-sm font-medium text-brand">Editar tarefa</summary>
+              <form action={updateTaskAction} className="border-t border-line px-5 pt-4">
+                <input type="hidden" name="task_id" value={task.id} />
+                <div className="space-y-3">
+                  <Field label="Título *">
+                    <input name="title" defaultValue={task.title} required className="input" />
+                  </Field>
+                  <Field label="Descrição">
+                    <textarea name="description" defaultValue={task.description ?? ""} rows={3} className="textarea" />
+                  </Field>
+                  <Field label="Cliente">
+                    <select name="client_id" defaultValue={task.client_id ?? ""} className="select">
+                      <option value="">Sem cliente</option>
+                      {clients.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.name}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+                  <Field label="Responsável" hint="Em branco devolve a tarefa ao mural.">
+                    <select name="assignee_id" defaultValue={task.assignee_id ?? ""} className="select">
+                      <option value="">Ninguém, volta para o mural</option>
+                      {team.map((u) => (
+                        <option key={u.id} value={u.id}>
+                          {u.name}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+                  <Field label="Etapa">
+                    <select name="status" defaultValue={task.status} className="select">
+                      {TASK_COLUMNS.filter((c) => c.value !== "concluida").map((c) => (
+                        <option key={c.value} value={c.value}>
+                          {c.label}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+                  <Field label="Prioridade" hint="Muda os pontos, se eles não estiverem fixados abaixo.">
+                    <select name="priority" defaultValue={task.priority} className="select">
+                      {TASK_PRIORITIES.map((p) => (
+                        <option key={p.value} value={p.value}>
+                          {p.label} · {p.points} pts
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+                  <Field label="Pontos" hint="Deixe 0 para usar os da prioridade.">
+                    <input name="points" inputMode="numeric" defaultValue={String(task.points)} className="input" />
+                  </Field>
+                  <Field label="Prazo para concluir" hint="Trocar o responsável reinicia a contagem.">
+                    <select name="sla_hours" defaultValue={task.sla_hours ?? ""} className="select">
+                      <option value="">Sem prazo em horas</option>
+                      {OPCOES_PRAZO.map((o) => (
+                        <option key={o.horas} value={o.horas}>
+                          {o.rotulo}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+                  <Field label="Data limite">
+                    <input name="due_date" type="date" defaultValue={task.due_date ?? ""} className="input" />
+                  </Field>
+                </div>
+                <div className="-mx-5 mt-4 flex items-center justify-end border-t border-line px-5 py-3">
+                  <SubmitButton size="sm" pendingLabel="Salvando…">
+                    Salvar alterações
+                  </SubmitButton>
+                </div>
+              </form>
+            </details>
+          )}
 
           <Card title="Prazo">
             <dl className="space-y-1.5 text-xs">

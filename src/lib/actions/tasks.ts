@@ -409,37 +409,87 @@ export async function reopenTaskAction(formData: FormData) {
   redirect("/tarefas?aba=minhas");
 }
 
+/**
+ * O gestor edita a tarefa.
+ *
+ * Trocar o responsável mexe no relógio do prazo: quem acabou de receber
+ * começa a contar agora, e tarefa devolvida ao mural não tem prazo correndo.
+ * Por isso claimed_at e deadline_at são recalculados aqui, em vez de só
+ * gravar os campos do formulário.
+ */
 export async function updateTaskAction(formData: FormData) {
   const user = await requireUser();
   assertCan(user, "tarefas.gerenciar", "Somente gestores e admins editam a tarefa.");
   const taskId = str(formData.get("task_id"));
   const priority = str(formData.get("priority"));
+  const titulo = str(formData.get("title"));
+  if (!titulo) throw new Error("A tarefa precisa de um título.");
+
+  const antes = await one<{ assignee_id: string | null; claimed_at: string | null; status: string }>(
+    "SELECT assignee_id, claimed_at, status FROM tasks WHERE id = ?",
+    taskId,
+  );
+  if (!antes) throw new Error("Tarefa não encontrada.");
+
+  const clientId = strOrNull(formData.get("client_id"));
+  if (clientId) await assertClientAccess(user, clientId);
+
+  const assignee = strOrNull(formData.get("assignee_id"));
+  const sla = lerSla(formData.get("sla_hours"));
+  const agora = now();
+  const trocou = assignee !== antes.assignee_id;
+  // sem dono não há relógio; dono novo começa a contar agora
+  const claimed = !assignee ? null : trocou ? agora : (antes.claimed_at ?? agora);
+  const status = str(formData.get("status")) || antes.status;
 
   await run(
     `UPDATE tasks SET title=?, description=?, client_id=?, priority=?, due_date=?, points=?, assignee_id=?,
-            status=?, updated_at=? WHERE id=?`,
-    str(formData.get("title")),
+            status=?, sla_hours=?, claimed_at=?, deadline_at=?, overdue_notified_at=NULL, updated_at=?
+      WHERE id=?`,
+    titulo,
     strOrNull(formData.get("description")),
-    strOrNull(formData.get("client_id")),
+    clientId,
     priority,
     strOrNull(formData.get("due_date")),
     pointsFor(priority, toNumber(formData.get("points"))),
-    strOrNull(formData.get("assignee_id")),
-    str(formData.get("status")),
-    now(),
+    assignee,
+    assignee ? status : "disponivel",
+    sla,
+    claimed,
+    claimed ? calcularDeadline(claimed, sla) : null,
+    agora,
     taskId,
   );
-  await logEvent(taskId, user.id, "editada");
+  await logEvent(taskId, user.id, "editada", 0, trocou && assignee ? "responsável trocado" : undefined);
+
+  if (trocou && assignee) {
+    await notificar({
+      userId: assignee,
+      actorId: user.id,
+      type: "atribuicao",
+      title: `${user.name} passou "${titulo}" para você${sla ? ` · prazo de ${rotuloPrazo(sla)}` : ""}`,
+      href: `/tarefas/${taskId}`,
+      taskId,
+      clientId,
+    });
+  }
+
   refresh();
-  redirect("/tarefas?ok=1");
+  revalidatePath(`/tarefas/${taskId}`);
+  redirect(`/tarefas/${taskId}?ok=1`);
 }
 
+/**
+ * Exclui a tarefa. Some o histórico dela junto (eventos, checklist,
+ * evidências e comentários caem em cascata), inclusive os pontos que ela
+ * gerou. Para tirar do caminho sem perder o placar, o certo é concluir.
+ */
 export async function deleteTaskAction(formData: FormData) {
   const user = await requireUser();
   assertCan(user, "tarefas.gerenciar", "Somente gestores e admins excluem tarefas.");
   await run("DELETE FROM tasks WHERE id = ?", str(formData.get("task_id")));
   refresh();
-  redirect("/tarefas");
+  redirect("/tarefas?ok=1");
 }
 
 /**
