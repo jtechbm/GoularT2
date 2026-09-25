@@ -61,7 +61,15 @@ function lerIndicadores(json: string | null): Indicador[] {
 export default async function PenalidadesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ cliente?: string; status?: string; tipo?: string; verificado?: string; erros?: string }>;
+  searchParams: Promise<{
+    cliente?: string;
+    status?: string;
+    tipo?: string;
+    verificado?: string;
+    erros?: string;
+    lojas?: string;
+    restam?: string;
+  }>;
 }) {
   const user = await requirePermission("penalidades.ver");
   const sp = await searchParams;
@@ -123,12 +131,27 @@ export default async function PenalidadesPage({
         }
       />
 
-      {sp.verificado !== undefined && (
-        <div className="flash mb-4 rounded-lg border border-ok/30 bg-ok-soft px-4 py-2.5 text-sm font-medium text-ok">
-          Verificação concluída: {sp.verificado} {sp.verificado === "1" ? "penalidade nova" : "penalidades novas"}
-          {sp.erros && sp.erros !== "0" ? ` · ${sp.erros} contas não responderam` : ""}.
-        </div>
-      )}
+      {/* a verificação vai até onde o tempo deixa; dizer quantas faltam evita
+          que a tela pareça ter terminado o que não terminou */}
+      {sp.verificado !== undefined &&
+        (() => {
+          const restam = Number(sp.restam ?? 0);
+          const lojas = Number(sp.lojas ?? 0);
+          return (
+            <div
+              className={`flash mb-4 rounded-lg border px-4 py-2.5 text-sm font-medium ${
+                restam > 0 ? "border-warn/30 bg-warn-soft text-warn" : "border-ok/30 bg-ok-soft text-ok"
+              }`}
+            >
+              {lojas} {lojas === 1 ? "loja verificada" : "lojas verificadas"} · {sp.verificado}{" "}
+              {sp.verificado === "1" ? "penalidade nova" : "penalidades novas"}
+              {sp.erros && sp.erros !== "0" ? ` · ${sp.erros} não responderam` : ""}.
+              {restam > 0
+                ? ` Faltam ${restam} ${restam === 1 ? "loja" : "lojas"}: clique de novo para continuar de onde parou.`
+                : ""}
+            </div>
+          );
+        })()}
 
       {faltamPermissoes.length > 0 && (
         <div className="mb-4 rounded-[12px] border border-warn/30 bg-warn-soft px-4 py-3 text-sm">

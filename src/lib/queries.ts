@@ -121,6 +121,8 @@ export interface ClientRow extends Client {
   stores: { id: string; marketplace: string; name: string }[];
   /** canais cujo Ads o marketplace não deixa ler: o valor de Ads está incompleto */
   ads_pendente: string;
+  /** 1 quando alguma loja do mês ainda está sendo lida: o faturamento é piso */
+  carregando: number;
   team_size: number;
   open_tasks: number;
   last_note_at: string | null;
@@ -143,6 +145,7 @@ export async function clientRows(
             COALESCE(f.tax,0)      AS tax,
             COALESCE(f.ads,0)      AS ads,
             COALESCE(f.orders,0)   AS orders,
+            COALESCE(f.partial,0)  AS carregando,
             COALESCE(p.revenue,0)  AS prev_revenue,
             COALESCE(p.profit,0)   AS prev_profit,
             COALESCE(m.list,'')    AS marketplaces,
@@ -154,7 +157,7 @@ export async function clientRows(
        FROM clients c
        LEFT JOIN users u ON u.id = c.owner_id
        LEFT JOIN (SELECT client_id, SUM(revenue) revenue, SUM(profit) profit, SUM(tax) tax,
-                         SUM(ads) ads, SUM(orders) orders
+                         SUM(ads) ads, SUM(orders) orders, MAX(partial) partial
                     FROM finance_snapshots WHERE ref_month = ? GROUP BY client_id) f ON f.client_id = c.id
        LEFT JOIN (SELECT client_id, SUM(revenue) revenue, SUM(profit) profit
                     FROM finance_snapshots WHERE ref_month = ? GROUP BY client_id) p ON p.client_id = c.id

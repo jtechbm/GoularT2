@@ -27,7 +27,7 @@ import {
   totalsForClient,
   indicadoresDosClientes,
 } from "@/lib/queries";
-import { addMonths, brl, brlShort, currentMonth, dateBR, lastMonths, monthLabel, num, pct, variacaoMensal } from "@/lib/format";
+import { addMonths, brl, brlShort, currentMonth, dateBR, lastMonths, MESES_DE_HISTORICO, monthLabel, num, pct, variacaoMensal } from "@/lib/format";
 import { Avatar, Card, Chip, Delta, PageHeader, Stat, StatusChip } from "@/components/ui";
 import { RevenueProfitChart, ChartLegend } from "@/components/charts";
 import { integrationStatus } from "@/lib/integrations";
@@ -82,7 +82,7 @@ export default async function ClientePage({
   const manager = can(user, "clientes.gerenciar");
   const admin = user.role === "admin";
 
-  const months = lastMonths(12);
+  const months = lastMonths(MESES_DE_HISTORICO);
   const ref = sp.mes && months.includes(sp.mes) ? sp.mes : currentMonth();
   const tab = TABS.some((t) => t.key === sp.tab) ? sp.tab! : "visao";
 
@@ -116,10 +116,10 @@ export default async function ClientePage({
   ] = await Promise.all([
     totalsForClient(client.id, ref),
     totalsForClient(client.id, addMonths(ref, -1)),
-    monthlySeries(6, client.id),
+    monthlySeries(MESES_DE_HISTORICO, client.id),
     clientTeam(client.id),
     clientMarketplaces(client.id),
-    clientSnapshots(client.id, 12),
+    clientSnapshots(client.id, MESES_DE_HISTORICO),
     clientNotes(client.id),
     clientAds(client.id, 300),
     tasks({ clientId: client.id }),
@@ -357,7 +357,7 @@ export default async function ClientePage({
           comDados={procedencia.comDados}
         />
         <span>
-          · faturamento acumulado de {brlShort(snapshots.reduce((s, r) => s + r.revenue, 0))} nos últimos 12 meses
+          · faturamento acumulado de {brlShort(snapshots.reduce((s, r) => s + r.revenue, 0))} nos últimos {MESES_DE_HISTORICO} meses
         </span>
       </p>
     </>

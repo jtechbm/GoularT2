@@ -18,7 +18,7 @@ import { TASK_COLUMNS, TASK_PRIORITIES, type TaskStatus } from "@/lib/types";
 import { Quadro } from "./quadro";
 import { atrasada, PrazoChip } from "@/components/prazo-tarefa";
 import { MonthPicker } from "@/components/month-picker";
-import { currentMonth, dateTimeBR, lastMonths, monthLabel, pct } from "@/lib/format";
+import { currentMonth, dateTimeBR, lastMonths, MESES_DE_HISTORICO, monthLabel, pct } from "@/lib/format";
 import { duracao, limiteDaTarefa, OPCOES_PRAZO, rotuloPrazo, situacaoPrazo } from "@/lib/prazo-tarefa";
 
 const TOM_PRIORIDADE: Record<string, "bad" | "warn" | "brand" | "neutral"> = {
@@ -98,7 +98,7 @@ export default async function TarefasPage({
   const emRevisao = porColuna.em_revisao ?? [];
 
   // registro: quem não gerencia vê só o próprio histórico
-  const meses = lastMonths(12);
+  const meses = lastMonths(MESES_DE_HISTORICO);
   const mesRegistro = sp.mes && meses.includes(sp.mes) ? sp.mes : currentMonth();
   const [anoReg, mesReg] = mesRegistro.split("-").map(Number);
   const registro =

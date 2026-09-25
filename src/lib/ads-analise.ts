@@ -92,6 +92,28 @@ export function dicaRoas(r: { valor: number; base: string } | null): string {
     : "faturamento ÷ investido (a Shopee não informa a venda por anúncio)";
 }
 
+/**
+ * Aviso de que parte do "investido" é recarga de crédito, não gasto.
+ *
+ * A Shopee bloqueia a API de Ads para quem não é parceiro oficial dela, então
+ * o investido da Shopee é lido da carteira: são as recargas de crédito do
+ * mês. Isso é quanto o lojista pôs na conta do anúncio, não quanto o anúncio
+ * consumiu — e os dois só coincidem por acaso. O Kadu compara com o painel da
+ * Shopee e vê número diferente; sem esta frase parece erro do sistema.
+ */
+export function avisoRecarga(recargas: number, investido: number): string | null {
+  if (recargas <= 0) return null;
+  const tudo = recargas >= investido - 0.01;
+  const quanto = tudo
+    ? "É recarga de crédito da Shopee"
+    : `${brl(recargas)} são recarga de crédito da Shopee`;
+  return `${quanto}: o que entrou na carteira do anúncio, não o que o anúncio gastou.`;
+}
+
+function brl(v: number): string {
+  return v.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 });
+}
+
 function porcento(v: number): string {
   return `${(v * 100).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%`;
 }
@@ -208,6 +230,8 @@ export interface ResumoAds {
   conversao: number | null;
   /** investido em linhas sem retorno informado: fora do ROAS */
   semRetorno: number;
+  /** parte do investido que é recarga de crédito da Shopee, não gasto medido */
+  recargas: number;
 }
 
 export function resumirAds(
@@ -232,6 +256,7 @@ export function resumirAds(
     ...soma,
     prints,
     semRetorno: soma.invested - comRetorno,
+    recargas: campanhas.filter((c) => c.recarga).reduce((s, c) => s + c.invested, 0),
     roas: roasDoTotal(soma.invested, comRetorno, soma.revenue).roas,
     acos: soma.revenue > 0 ? comRetorno / soma.revenue : null,
     // custo por clique só de quem informou cliques: o lançado à mão sem

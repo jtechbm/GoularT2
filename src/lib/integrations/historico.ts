@@ -1,9 +1,9 @@
 import { all, one, run } from "../db.ts";
-import { addMonths, currentMonth } from "../format.ts";
+import { addMonths, currentMonth, MESES_DE_HISTORICO } from "../format.ts";
 import { syncAccount } from "./sincronizar-conta.ts";
 
-/** Quantos meses para trás o sistema guarda, contando o atual. */
-export const MESES_DE_HISTORICO = 12;
+// a quantidade de meses mora em format.ts, que as telas também leem
+export { MESES_DE_HISTORICO };
 
 /** O mês mais antigo que o histórico deve alcançar. */
 export function mesMaisAntigo(): string {
@@ -69,7 +69,7 @@ export async function avancarHistorico(
   return { meses: feitos, completo: proximoMes(conta?.history_from ?? null) === null, erro, ultimaMensagem };
 }
 
-/** Contas conectadas que ainda não têm os 12 meses, a mais atrasada primeiro. */
+/** Contas conectadas com histórico faltando, a mais atrasada primeiro. */
 export async function contasComHistoricoPendente() {
   const contas = await all<{ id: string; nome: string; marketplace: string; history_from: string | null }>(
     `SELECT cm.id, cl.name AS nome, cm.marketplace, cm.history_from

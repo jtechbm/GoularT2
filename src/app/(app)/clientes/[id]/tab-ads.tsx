@@ -1,8 +1,8 @@
 import { Card, Chip, Empty, Field, Stat, StoreChip } from "@/components/ui";
 import { SaveBar, SubmitButton } from "@/components/submit";
 import { createAdsAction, deleteAdsAction } from "@/lib/actions/ads";
-import { brl, lastMonths, monthLabel, num, pct } from "@/lib/format";
-import { analisarCampanha, dicaRoas, resumirAds, roasDaTela, xRoas } from "@/lib/ads-analise";
+import { brl, lastMonths, MESES_DE_HISTORICO, monthLabel, num, pct } from "@/lib/format";
+import { analisarCampanha, avisoRecarga, dicaRoas, resumirAds, roasDaTela, xRoas } from "@/lib/ads-analise";
 import { MARKETPLACES, marketplaceLabel, type AdsEntry, type Client, type ClientMarketplace, type FinanceSnapshot } from "@/lib/types";
 
 /** A linha de Ads vale para o mês se o período dela cobre o mês. */
@@ -57,7 +57,7 @@ export function TabAds({
   const roasMes = roasDaTela(resumo.invested, resumo.invested - resumo.semRetorno, resumo.revenue, faturamento);
 
   // mês a mês, os últimos 12 até o escolhido
-  const meses = lastMonths(12, refMonth).reverse();
+  const meses = lastMonths(MESES_DE_HISTORICO, refMonth).reverse();
   const historico = meses.map((mes) => {
     const doMesAtual = entries.filter((e) => doMes(e, mes)).map(analisarCampanha);
     const r = resumirAds(doMesAtual);
@@ -81,9 +81,14 @@ export function TabAds({
     <div className="space-y-3">
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <Stat
-          label={`Investido · ${monthLabel(refMonth)}`}
+          label={`${resumo.recargas >= resumo.invested - 0.01 && resumo.invested > 0 ? "Recarregado" : "Investido"} · ${monthLabel(refMonth)}`}
           value={brl(resumo.invested)}
-          hint={resumo.invested ? `${campanhas.length} ${campanhas.length === 1 ? "campanha" : "campanhas"}` : "nenhum investimento no mês"}
+          hint={
+            avisoRecarga(resumo.recargas, resumo.invested) ??
+            (resumo.invested
+              ? `${campanhas.length} ${campanhas.length === 1 ? "campanha" : "campanhas"}`
+              : "nenhum investimento no mês")
+          }
           tone="brand"
         />
         <Stat

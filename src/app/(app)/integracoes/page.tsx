@@ -4,7 +4,7 @@ import { requirePermission } from "@/lib/auth";
 import { all } from "@/lib/db";
 import { sincronizacoes } from "@/lib/queries";
 import { integrationStatus } from "@/lib/integrations";
-import { currentMonth, dateTimeBR, emQuantoBR, lastMonths, monthLabel, relativeBR } from "@/lib/format";
+import { currentMonth, dateTimeBR, emQuantoBR, lastMonths, MESES_DE_HISTORICO, monthLabel, relativeBR } from "@/lib/format";
 import { diagnosticar, proximaSincronizacao } from "@/lib/integracao-status";
 import { Card, Chip, Empty, MarketplaceChip, PageHeader, Stat, StatusChip } from "@/components/ui";
 import { SubmitButton } from "@/components/submit";
@@ -26,7 +26,7 @@ export default async function IntegracoesPage({
 }) {
   const user = await requirePermission("integracoes.gerenciar");
   const sp = await searchParams;
-  const months = lastMonths(12);
+  const months = lastMonths(MESES_DE_HISTORICO);
   const ref = sp.mes && months.includes(sp.mes) ? sp.mes : currentMonth();
   const manager = true; // a página inteira já exige a permissão de integrações
 

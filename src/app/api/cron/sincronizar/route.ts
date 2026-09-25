@@ -42,8 +42,13 @@ export async function GET(req: NextRequest) {
   // Contas com erro entram também. Antes só entravam as "conectadas": uma
   // falha por tempo virava status de erro e o agendamento nunca mais tentava
   // aquela conta, que ficava parada até alguém clicar à mão.
-  const contas = await all<{ id: string; nome: string; marketplace: string }>(
-    `SELECT cm.id, cl.name AS nome, cm.marketplace
+  const contas = await all<{
+    id: string;
+    nome: string;
+    marketplace: string;
+    penalties_checked_at: string | null;
+  }>(
+    `SELECT cm.id, cl.name AS nome, cm.marketplace, cm.penalties_checked_at
        FROM client_marketplaces cm
        JOIN clients cl ON cl.id = cm.client_id
       WHERE cm.status IN ('conectado', 'erro') AND cm.credentials IS NOT NULL
@@ -102,9 +107,16 @@ export async function GET(req: NextRequest) {
 
   // penalidades depois dos números: se o tempo acabar, o faturamento, que é o
   // que a agência cobra, já foi gravado. Cada verificação são três chamadas.
+  //
+  // A fila começa pela loja verificada há mais tempo. Antes ela seguia a mesma
+  // ordem da sincronização, então o tempo que sobrava caía sempre nas mesmas
+  // primeiras contas e o fim da lista nunca era verificado.
+  const filaPenalidades = [...contas].sort((a, b) =>
+    (a.penalties_checked_at ?? "").localeCompare(b.penalties_checked_at ?? ""),
+  );
   let penalidadesNovas = 0;
   let penalidadesVerificadas = 0;
-  for (const conta of contas) {
+  for (const conta of filaPenalidades) {
     if (Date.now() > fim) {
       semTempo = true;
       break;

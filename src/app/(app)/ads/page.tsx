@@ -2,13 +2,13 @@ import Link from "next/link";
 import { Suspense } from "react";
 import { visibleClientIds, requirePermission } from "@/lib/auth";
 import { adsEFaturamento, adsRows, canaisDeAds, clientOptions, procedenciaDoMes, serieDiaria } from "@/lib/queries";
-import { addMonths, brl, currentMonth, lastMonths, monthLabel, num, pct } from "@/lib/format";
+import { addMonths, brl, currentMonth, lastMonths, MESES_DE_HISTORICO, monthLabel, num, pct } from "@/lib/format";
 import { Card, Chip, Empty, Field, PageHeader, Stat, StoreChip } from "@/components/ui";
 import { SaveBar, SubmitButton } from "@/components/submit";
 import { MonthPicker } from "@/components/month-picker";
 import { Procedencia } from "@/components/procedencia";
 import { createAdsAction, deleteAdsAction } from "@/lib/actions/ads";
-import { analisarCampanha, dicaRoas, resumirAds, roasDaTela, xRoas } from "@/lib/ads-analise";
+import { analisarCampanha, avisoRecarga, dicaRoas, resumirAds, roasDaTela, xRoas } from "@/lib/ads-analise";
 import { MARKETPLACES, marketplaceLabel } from "@/lib/types";
 
 /**
@@ -27,7 +27,7 @@ export default async function AdsPage({
 }) {
   const user = await requirePermission("ads.ver");
   const sp = await searchParams;
-  const months = lastMonths(12);
+  const months = lastMonths(MESES_DE_HISTORICO);
   const ref = sp.mes && months.includes(sp.mes) ? sp.mes : currentMonth();
   const escopo = await visibleClientIds(user);
   const filtro = { clientId: sp.cliente || undefined, marketplace: sp.canal || undefined, scope: escopo };
@@ -168,9 +168,14 @@ export default async function AdsPage({
           label="Investido"
           value={brl(resumo.invested)}
           hint={
-            faturamentoLido
-              ? `${pct(resumo.invested / faturamentoLido)} do faturamento${naoLidos.length ? " dos canais lidos" : ""}`
-              : "sem faturamento no mês"
+            [
+              faturamentoLido
+                ? `${pct(resumo.invested / faturamentoLido)} do faturamento${naoLidos.length ? " dos canais lidos" : ""}`
+                : "sem faturamento no mês",
+              avisoRecarga(resumo.recargas, resumo.invested),
+            ]
+              .filter(Boolean)
+              .join(" · ")
           }
           tone={naoLidos.length ? "warn" : "brand"}
         />

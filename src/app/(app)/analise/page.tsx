@@ -2,7 +2,7 @@ import Link from "next/link";
 import { Suspense } from "react";
 import { visibleClientIds, requirePermission } from "@/lib/auth";
 import { can } from "@/lib/permissions";
-import { brl, currentMonth, dateTimeBR, lastMonths, monthLabel, pct, relativeBR } from "@/lib/format";
+import { brl, currentMonth, dateTimeBR, lastMonths, MESES_DE_HISTORICO, monthLabel, pct, relativeBR } from "@/lib/format";
 import { Card, Chip, Empty, Field, PageHeader, Stat, type Tone } from "@/components/ui";
 import { SubmitButton } from "@/components/submit";
 import { MonthPicker } from "@/components/month-picker";
@@ -109,7 +109,7 @@ export default async function AnalisePage({
             </Suspense>
           </Field>
           <Suspense fallback={null}>
-            <MonthPicker months={lastMonths(6, refMonth)} value={refMonth} />
+            <MonthPicker months={lastMonths(MESES_DE_HISTORICO, refMonth)} value={refMonth} />
           </Suspense>
         </div>
       </Card>

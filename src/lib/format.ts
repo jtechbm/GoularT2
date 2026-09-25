@@ -68,6 +68,16 @@ export function currentMonth(): string {
 }
 
 /** Lista de meses ('YYYY-MM') terminando no mes informado. */
+/**
+ * Quantos meses o sistema carrega e mostra, contando o mês atual.
+ *
+ * Era 12. Baixou para 4 porque a primeira leitura de cada loja custa um mês
+ * de cada vez: com 40 lojas, 12 meses seriam horas de carga para um número
+ * que ninguém compara tão para trás. Subir o número de volta é só editar
+ * aqui — a sincronização retoma do mês onde parou e preenche o resto.
+ */
+export const MESES_DE_HISTORICO = 4;
+
 export function lastMonths(count: number, end = currentMonth()): string[] {
   const [y, m] = end.split("-").map(Number);
   const out: string[] = [];

@@ -2,7 +2,7 @@ import Link from "next/link";
 import { Suspense } from "react";
 import { visibleClientIds, requirePermission } from "@/lib/auth";
 import { alertasDaCarteira, clientOptions, penalidades } from "@/lib/queries";
-import { currentMonth, dateTimeBR, lastMonths, monthLabel } from "@/lib/format";
+import { currentMonth, dateTimeBR, lastMonths, MESES_DE_HISTORICO, monthLabel } from "@/lib/format";
 import { Card, Chip, Empty, Field, PageHeader, Stat } from "@/components/ui";
 import { SubmitButton } from "@/components/submit";
 import { MonthPicker } from "@/components/month-picker";
@@ -18,7 +18,7 @@ export default async function AlertasPage({
 }) {
   const user = await requirePermission("alertas.ver");
   const sp = await searchParams;
-  const months = lastMonths(12);
+  const months = lastMonths(MESES_DE_HISTORICO);
   const ref = sp.mes && months.includes(sp.mes) ? sp.mes : currentMonth();
 
   const escopo = await visibleClientIds(user);

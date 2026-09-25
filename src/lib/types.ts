@@ -101,6 +101,8 @@ export interface FinanceSnapshot {
   tax: number;
   ads: number;
   profit: number;
+  /** 1 quando o mês ainda não foi lido inteiro: o número é piso, não final. */
+  partial: number;
   source: "manual" | "api";
   updated_by: string | null;
   updated_at: string;

@@ -135,9 +135,23 @@ export function TabelaClientes({
                 )}
                 <td className="num font-semibold text-ink" data-label="Faturamento">
                   {brlShort(c.revenue)}
+                  {/* mês pela metade: o número é piso, e dizer isso evita que
+                      um "R$ 0" ou um valor baixo passe por loja sem venda */}
+                  {c.carregando ? (
+                    <span className="ml-1 text-dim" title="Ainda lendo o mês nesta loja: o valor sobe até a leitura terminar.">
+                      ↑
+                    </span>
+                  ) : null}
                 </td>
                 <td className="num" data-label="vs. ant.">
-                  <Delta value={variacaoMensal(c.revenue, c.prev_revenue)} />
+                  {/* comparar mês pela metade com mês inteiro inventa queda */}
+                  {c.carregando ? (
+                    <span className="text-dim" title="Sem comparação enquanto o mês não termina de carregar.">
+                      —
+                    </span>
+                  ) : (
+                    <Delta value={variacaoMensal(c.revenue, c.prev_revenue)} />
+                  )}
                 </td>
                 <td className="num text-muted" data-label="Investido">
                   {c.ads ? brlShort(c.ads) : "—"}

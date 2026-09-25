@@ -2,7 +2,7 @@ import { Card, Chip, Empty, Field, StoreChip } from "@/components/ui";
 import { SaveBar } from "@/components/submit";
 import { MonthPicker } from "@/components/month-picker";
 import { saveFinanceAction } from "@/lib/actions/clients";
-import { brl, dateTimeBR, monthLabel, num, pct } from "@/lib/format";
+import { brl, dateTimeBR, MESES_DE_HISTORICO, monthLabel, num, pct } from "@/lib/format";
 import { MARKETPLACES, marketplaceLabel, type Client, type ClientMarketplace, type FinanceSnapshot } from "@/lib/types";
 import { Suspense } from "react";
 
@@ -132,7 +132,7 @@ export function TabFinanceiro({
         })}
       </div>
 
-      <Card title="Histórico de fechamentos" subtitle="Últimos 12 meses" bodyClassName="p-0">
+      <Card title="Histórico de fechamentos" subtitle={`Últimos ${MESES_DE_HISTORICO} meses`} bodyClassName="p-0">
         {byMonth.size ? (
           <div className="table-wrap">
             <table className="data">
@@ -181,7 +181,14 @@ export function TabFinanceiro({
                         <td className="num">{s.revenue ? pct(s.profit / s.revenue) : "—"}</td>
                         <td className="num text-muted">{num(s.orders)}</td>
                         <td>
-                          <Chip tone={s.source === "api" ? "ok" : "neutral"}>{s.source}</Chip>
+                          {/* mês ainda em leitura: o valor é piso, não fechamento */}
+                          {s.partial ? (
+                            <Chip tone="info" title="A leitura do mês nesta loja ainda não terminou: o valor sobe até fechar.">
+                              carregando
+                            </Chip>
+                          ) : (
+                            <Chip tone={s.source === "api" ? "ok" : "neutral"}>{s.source}</Chip>
+                          )}
                         </td>
                       </tr>
                     )),

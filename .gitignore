@@ -15,3 +15,6 @@ next-env.d.ts
 
 shopee-review/
 .next-perf
+
+# log da rotina de sincronizacao desta maquina
+.sync-logs

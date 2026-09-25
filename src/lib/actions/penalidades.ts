@@ -106,8 +106,18 @@ export async function tarefaDaPenalidadeAction(formData: FormData) {
   redirect(`/tarefas/${taskId}`);
 }
 
+/** Tempo que a verificação pode ocupar antes de devolver a tela. */
+const ORCAMENTO_MS = 45_000;
+
 /**
  * Verifica agora, sem esperar a rodada diária.
+ *
+ * Vai até onde o tempo deixar e para. Cada loja leva uns 20 segundos (são
+ * seis chamadas ao marketplace) e a função morre aos 60: tentar as 55 de uma
+ * vez estourava o limite e a tela dava erro sem ter gravado o fim da fila —
+ * 44 lojas nunca tinham sido verificadas. A ordem é a da loja verificada há
+ * mais tempo primeiro, então clicar de novo continua de onde parou em vez de
+ * refazer as mesmas primeiras.
  *
  * Só as contas que a pessoa enxerga. Um membro clicando aqui não dispara
  * leitura de cliente que não é dele.
@@ -121,23 +131,35 @@ export async function verificarPenalidadesAgoraAction(formData: FormData) {
   const contas = await all<{ id: string; client_id: string; marketplace: string }>(
     `SELECT id, client_id, marketplace FROM client_marketplaces
       WHERE status = 'conectado' AND credentials IS NOT NULL
-        ${clientId ? "AND client_id = ?" : ""}`,
+        ${clientId ? "AND client_id = ?" : ""}
+      ORDER BY penalties_checked_at ASC NULLS FIRST`,
     ...(clientId ? [clientId] : []),
   );
 
+  const fila = contas.filter((c) => !escopo || escopo.includes(c.client_id));
+  const prazo = Date.now() + ORCAMENTO_MS;
+
   let novas = 0;
   let erros = 0;
-  for (const c of contas) {
-    if (escopo && !escopo.includes(c.client_id)) continue;
+  let feitas = 0;
+  for (const c of fila) {
+    if (Date.now() > prazo) break;
     const r =
       c.marketplace === "mercado_livre"
         ? await verificarPenalidadesML(c.id)
         : await verificarPenalidadesShopee(c.id);
+    feitas += 1;
     novas += r.novas;
     if (!r.ok) erros += 1;
   }
 
   refresh(clientId);
   const destino = str(formData.get("redirect_to")) || "/penalidades";
-  redirect(`${destino}${destino.includes("?") ? "&" : "?"}verificado=${novas}&erros=${erros}`);
+  const q = new URLSearchParams({
+    verificado: String(novas),
+    erros: String(erros),
+    lojas: String(feitas),
+    restam: String(fila.length - feitas),
+  });
+  redirect(`${destino}${destino.includes("?") ? "&" : "?"}${q}`);
 }

@@ -77,6 +77,10 @@ CREATE TABLE IF NOT EXISTS finance_snapshots (
   tax         double precision NOT NULL DEFAULT 0,
   ads         double precision NOT NULL DEFAULT 0,
   profit      double precision NOT NULL DEFAULT 0,
+  -- 1 = o mes ainda nao foi lido inteiro. O numero vale, mas e piso: a
+  -- proxima rodada completa. Existe para a tela poder dizer "carregando"
+  -- em vez de mostrar R$ 0, que parecia loja sem venda.
+  partial     integer NOT NULL DEFAULT 0,
   source      text NOT NULL DEFAULT 'manual',
   updated_by  text REFERENCES users(id) ON DELETE SET NULL,
   updated_at  text NOT NULL
@@ -760,7 +764,7 @@ ALTER TABLE client_marketplaces ADD COLUMN IF NOT EXISTS promos_permission text;
 ALTER TABLE client_marketplaces ADD COLUMN IF NOT EXISTS ads_permission text;
 
 -- Histórico: o mês mais antigo já fechado por completo. A busca anda um mês
--- por vez para trás até 12 meses, retomando daqui na rodada seguinte.
+-- por vez para trás até MESES_DE_HISTORICO, retomando daqui na seguinte.
 ALTER TABLE client_marketplaces ADD COLUMN IF NOT EXISTS history_from text;
 
 -- Prazo para concluir, em horas, definido por quem cria a tarefa. Começa a
@@ -823,6 +827,8 @@ ALTER TABLE finance_daily ADD COLUMN IF NOT EXISTS client_marketplace_id text
   REFERENCES client_marketplaces(id) ON DELETE SET NULL;
 ALTER TABLE ads_entries ADD COLUMN IF NOT EXISTS client_marketplace_id text
   REFERENCES client_marketplaces(id) ON DELETE SET NULL;
+
+ALTER TABLE finance_snapshots ADD COLUMN IF NOT EXISTS partial integer NOT NULL DEFAULT 0;
 
 ALTER TABLE finance_snapshots DROP CONSTRAINT IF EXISTS finance_snapshots_client_marketplace_id_fkey;
 ALTER TABLE finance_snapshots ADD CONSTRAINT finance_snapshots_client_marketplace_id_fkey

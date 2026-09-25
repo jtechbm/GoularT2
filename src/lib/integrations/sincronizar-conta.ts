@@ -216,17 +216,37 @@ async function fecharRodada(
  * mesmo caminho: dois lugares escrevendo o fechamento de jeitos diferentes
  * foi exatamente o que já fez o Ads sumir uma vez.
  */
+/**
+ * O fechamento já gravado vale mais do que o que a rodada trouxe?
+ *
+ * Só num caso: a rodada leu o mês pela metade e o que está gravado veio
+ * inteiro. Aí o número completo de ontem vence o parcial de agora, senão
+ * cada leitura interrompida rebaixaria um faturamento bom. Nos outros casos
+ * o novo valor entra — inclusive parcial sobre parcial, que é como a loja
+ * grande vai subindo até fechar o mês.
+ */
+export function manterFechamentoAnterior(
+  existente: { partial: number } | null,
+  parcial: boolean,
+): boolean {
+  return parcial && existente !== null && !existente.partial;
+}
+
 export async function gravarResultado(
   row: { id: string; client_id: string; marketplace: string },
   refMonth: string,
   result: MonthlyResult,
   userId: string | null,
+  /** O mês ainda não foi lido inteiro: grava como piso e marca `partial`. */
+  parcial = false,
 ): Promise<{ ads: number; diasGravados: number }> {
-  const existing = await one<{ id: string; cogs: number; ads: number; shipping: number }>(
-    "SELECT id, cogs, ads, shipping FROM finance_snapshots WHERE client_marketplace_id=? AND ref_month=?",
+  const existing = await one<{ id: string; cogs: number; ads: number; shipping: number; partial: number }>(
+    "SELECT id, cogs, ads, shipping, partial FROM finance_snapshots WHERE client_marketplace_id=? AND ref_month=?",
     row.id,
     refMonth,
   );
+
+  const manterFechamento = manterFechamentoAnterior(existing, parcial);
 
   const cogs = existing?.cogs ?? result.cogs;
   const ads = result.ads || existing?.ads || 0;
@@ -234,20 +254,22 @@ export async function gravarResultado(
   const shipping = result.freteApurado ? result.shipping : result.shipping || existing?.shipping || 0;
   const profit = result.revenue - result.fees - shipping - result.tax - ads - cogs;
 
-  if (existing) {
+  if (manterFechamento) {
+    // nada a gravar no fechamento; os dias e as campanhas abaixo seguem
+  } else if (existing) {
     await run(
       `UPDATE finance_snapshots SET revenue=?, orders=?, units=?, fees=?, shipping=?, tax=?, cogs=?, ads=?,
-              profit=?, source='api', updated_by=?, updated_at=? WHERE id=?`,
+              profit=?, partial=?, source='api', updated_by=?, updated_at=? WHERE id=?`,
       result.revenue, result.orders, result.units, result.fees, shipping,
-      result.tax, cogs, ads, profit, userId, now(), existing.id,
+      result.tax, cogs, ads, profit, parcial ? 1 : 0, userId, now(), existing.id,
     );
   } else {
     await run(
       `INSERT INTO finance_snapshots (id, client_id, client_marketplace_id, marketplace, ref_month, revenue, orders,
-                                      units, cogs, fees, shipping, tax, ads, profit, source, updated_by, updated_at)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,'api',?,?)`,
+                                      units, cogs, fees, shipping, tax, ads, profit, partial, source, updated_by, updated_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'api',?,?)`,
       id(), row.client_id, row.id, row.marketplace, refMonth, result.revenue, result.orders,
-      result.units, cogs, result.fees, shipping, result.tax, ads, profit, userId, now(),
+      result.units, cogs, result.fees, shipping, result.tax, ads, profit, parcial ? 1 : 0, userId, now(),
     );
   }
 
@@ -337,38 +359,26 @@ export async function syncAccount(
     );
 
     // Progresso salvo, mas o mês ainda não foi lido inteiro. Não é erro e a
-    // conta continua conectada: a próxima rodada continua de onde parou. O
-    // fechamento do mês não é tocado, senão um número parcial menor
-    // apareceria como se fosse o faturamento real.
+    // conta continua conectada: a próxima rodada continua de onde parou.
+    //
+    // O que já foi lido é gravado assim mesmo, marcado como `partial`: é piso,
+    // não fechamento. Antes daqui a rodada não gravava nada quando a listagem
+    // do mês não fechava, e uma loja grande — que nunca lê o mês inteiro numa
+    // passada só — ficava com R$ 0 na tela, como se não tivesse vendido. A
+    // CONFORT LAR tinha 2.544 pedidos de setembro no banco e mostrava zero.
+    // `gravarResultado` se recusa a rebaixar um fechamento que já veio
+    // inteiro, então o parcial nunca piora um número bom.
     if (result.incompleto) {
       const { feitos, total, dias, listagemCompleta } = result.incompleto;
       const faltaDia = dias ? ` · ${dias} ${dias === 1 ? "dia" : "dias"} sem varrer` : "";
-      const msg = `Carga em andamento: ${feitos} de ${total} pedidos conferidos${faltaDia}. A próxima rodada continua de onde parou.`;
-
-      // Quando a listagem do mês fechou, o conjunto de pedidos está completo e
-      // só faltou reler o valor de alguns: o total é o melhor retrato que
-      // existe, e gravá-lo é melhor do que deixar o fechamento de ontem na
-      // tela. Sem a listagem completa o número seria menor por falta de dado,
-      // e aí o fechamento antigo continua valendo.
-      if (listagemCompleta) {
-        const { ads, diasGravados } = await gravarResultado(row, refMonth, result, userId);
-        const parcial = `${result.orders} pedidos · faturamento ${result.revenue.toFixed(2)}${ads ? ` · ads ${ads.toFixed(2)}` : ""}${diasGravados ? ` · ${diasGravados} dias` : ""} · ${feitos} de ${total} pedidos conferidos, o resto na próxima rodada`;
-        await log(row.id, row.marketplace, refMonth, "parcial", parcial);
-        await fecharRodada(runId, "parcial", parcial, diasGravados);
-        return { ok: true, status: "parcial", message: parcial, result };
-      }
-
-      await run(
-        "UPDATE client_marketplaces SET last_sync_at = ?, last_error = NULL, status = 'conectado' WHERE id = ?",
-        now(),
-        row.id,
-      );
+      const { ads, diasGravados } = await gravarResultado(row, refMonth, result, userId, !listagemCompleta);
+      const msg = `${result.orders} pedidos · faturamento ${result.revenue.toFixed(2)}${ads ? ` · ads ${ads.toFixed(2)}` : ""}${diasGravados ? ` · ${diasGravados} dias` : ""} · ${feitos} de ${total} pedidos conferidos${faltaDia}, o resto na próxima rodada`;
       await log(row.id, row.marketplace, refMonth, "parcial", msg);
-      await fecharRodada(runId, "parcial", msg, 0);
+      await fecharRodada(runId, "parcial", msg, diasGravados);
       return { ok: true, status: "parcial", message: msg, result };
     }
 
-    const { ads, diasGravados } = await gravarResultado(row, refMonth, result, userId);
+    const { ads, diasGravados } = await gravarResultado(row, refMonth, result, userId, false);
 
     const msg = `${result.orders} pedidos · faturamento ${result.revenue.toFixed(2)}${ads ? ` · ads ${ads.toFixed(2)}` : ""}${diasGravados ? ` · ${diasGravados} dias` : ""}`;
     await log(row.id, row.marketplace, refMonth, "ok", msg);

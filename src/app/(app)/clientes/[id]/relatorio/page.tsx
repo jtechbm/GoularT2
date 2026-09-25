@@ -11,7 +11,7 @@ import {
   tasks,
   totalsForClient,
 } from "@/lib/queries";
-import { addMonths, brl, currentMonth, dateBR, lastMonths, monthLabel, num, pct } from "@/lib/format";
+import { addMonths, brl, currentMonth, dateBR, lastMonths, MESES_DE_HISTORICO, monthLabel, num, pct } from "@/lib/format";
 import { Card, Chip, PageHeader } from "@/components/ui";
 import { marketplaceLabel } from "@/lib/types";
 import { evolucoes, metasDoRelatorio, resumoWhatsApp, type DadosRelatorio } from "@/lib/relatorio";
@@ -34,7 +34,7 @@ export default async function RelatorioPage({
   if (!client) notFound();
   if (!(await canSeeClient(user, client.id))) notFound();
 
-  const months = lastMonths(12);
+  const months = lastMonths(MESES_DE_HISTORICO);
   const ref = sp.mes && months.includes(sp.mes) ? sp.mes : currentMonth();
   const anteriorRef = addMonths(ref, -1);
 

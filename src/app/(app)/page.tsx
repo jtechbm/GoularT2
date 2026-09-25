@@ -16,7 +16,7 @@ import {
   alertasDaCarteira,
   indicadoresDosClientes,
 } from "@/lib/queries";
-import { brl, brlShort, currentMonth, dateBR, lastMonths, num, pct, variacaoMensal } from "@/lib/format";
+import { brl, brlShort, currentMonth, dateBR, lastMonths, MESES_DE_HISTORICO, num, pct, variacaoMensal } from "@/lib/format";
 import { lerOrdem } from "@/lib/ordem-clientes";
 import { roasDaTela, roasDoTotal, textoAds } from "@/lib/ads-analise";
 import {
@@ -49,7 +49,7 @@ export default async function DashboardPage({
 }) {
   const user = await requireUser();
   const params = await searchParams;
-  const months = lastMonths(12);
+  const months = lastMonths(MESES_DE_HISTORICO);
   const ref = params.mes && months.includes(params.mes) ? params.mes : currentMonth();
   const corrente = ref === currentMonth();
 
@@ -69,7 +69,7 @@ export default async function DashboardPage({
     await Promise.all([
       clientRows(ref, "cliente", escopo),
       verLojasProprias ? ownStoreTotals(ref) : Promise.resolve(null),
-      monthlySeries(12, undefined, escopo),
+      monthlySeries(MESES_DE_HISTORICO, undefined, escopo),
       marketplaceBreakdown(ref, undefined, escopo),
       tasks({ status: "disponivel" }),
       tasks({ statuses: ["assumida", "em_andamento", "em_revisao"] }),
@@ -313,7 +313,7 @@ export default async function DashboardPage({
       <div className="mt-3 grid gap-3 lg:grid-cols-3">
         <Card
           className="lg:col-span-2"
-          title="Faturamento e lucro — últimos 12 meses"
+          title={`Faturamento e lucro — últimos ${MESES_DE_HISTORICO} meses`}
           actions={
             <ChartLegend
               items={[

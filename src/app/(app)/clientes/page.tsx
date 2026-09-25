@@ -3,7 +3,7 @@ import { Suspense } from "react";
 import { visibleClientIds, requirePermission } from "@/lib/auth";
 import { can } from "@/lib/permissions";
 import { avaliarOnboardingEmLote, clientRows, indicadoresDosClientes, scoresEmLote } from "@/lib/queries";
-import { brlShort, currentMonth, lastMonths, pct } from "@/lib/format";
+import { brlShort, currentMonth, lastMonths, MESES_DE_HISTORICO, pct } from "@/lib/format";
 import { Card, Empty, PageHeader, Stat } from "@/components/ui";
 import { MonthPicker } from "@/components/month-picker";
 import { montarLinhas, TabelaClientes } from "@/components/tabela-clientes";
@@ -40,7 +40,7 @@ export default async function ClientesPage({
 }) {
   const user = await requirePermission("clientes.ver");
   const params = await searchParams;
-  const months = lastMonths(12);
+  const months = lastMonths(MESES_DE_HISTORICO);
   const ref = params.mes && months.includes(params.mes) ? params.mes : currentMonth();
 
   const query = (params.q ?? "").toLowerCase().trim();

@@ -13,7 +13,7 @@ import {
   procedenciaDoMes,
   carteiraCobrancas,
 } from "@/lib/queries";
-import { brl, brlShort, currentMonth, dateBR, lastMonths, monthLabel, pct } from "@/lib/format";
+import { brl, brlShort, currentMonth, dateBR, lastMonths, MESES_DE_HISTORICO, monthLabel, pct } from "@/lib/format";
 import { Card, Chip, Empty, Field, PageHeader, Stat } from "@/components/ui";
 import { Procedencia } from "@/components/procedencia";
 import { SubmitButton } from "@/components/submit";
@@ -79,7 +79,7 @@ export default async function FinanceiroPage({
   const isAdmin = user.role === "admin";
 
   const sp = await searchParams;
-  const months = lastMonths(12);
+  const months = lastMonths(MESES_DE_HISTORICO);
   const ref = sp.mes && months.includes(sp.mes) ? sp.mes : currentMonth();
   const aba = ABAS.some((a) => a.key === sp.aba) && isAdmin ? sp.aba! : "receita";
 

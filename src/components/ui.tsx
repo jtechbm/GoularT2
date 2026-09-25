@@ -71,8 +71,21 @@ const TONES: Record<string, string> = {
 
 export type Tone = keyof typeof TONES;
 
-export function Chip({ tone = "neutral", children }: { tone?: Tone; children: ReactNode }) {
-  return <span className={`chip ${TONES[tone] ?? TONES.neutral}`}>{children}</span>;
+export function Chip({
+  tone = "neutral",
+  title,
+  children,
+}: {
+  tone?: Tone;
+  /** explicação no passar do mouse, para o rótulo curto não precisar explicar */
+  title?: string;
+  children: ReactNode;
+}) {
+  return (
+    <span className={`chip ${TONES[tone] ?? TONES.neutral}`} title={title}>
+      {children}
+    </span>
+  );
 }
 
 const STATUS_TONE: Record<string, Tone> = {
