@@ -3,6 +3,7 @@ import { decryptJSON, encryptJSON } from "../crypto.ts";
 import { mercadoLivre } from "./mercadolivre.ts";
 import { shopee } from "./shopee.ts";
 import {
+  eTropeco,
   IntegrationError,
   monthRange,
   type AdsCampaign,
@@ -386,7 +387,18 @@ export async function syncAccount(
     return { ok: true, status: "ok", message: msg, result };
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error);
-    await run("UPDATE client_marketplaces SET last_error = ?, status = 'erro' WHERE id = ?", msg, row.id);
+
+    // Tropeço (429, servidor fora do ar, rede caindo) não derruba a conexão:
+    // a loja continua conectada e a próxima rodada resolve. Marcar essas
+    // como "com erro" enchia a tela do Kadu de vermelho por engasgo passageiro
+    // e escondia as que de fato precisam ser reconectadas. A rodada continua
+    // registrada como erro no histórico, que é onde isso deve aparecer.
+    if (eTropeco(error)) {
+      await run("UPDATE client_marketplaces SET last_error = ? WHERE id = ?", msg, row.id);
+    } else {
+      await run("UPDATE client_marketplaces SET last_error = ?, status = 'erro' WHERE id = ?", msg, row.id);
+    }
+
     await log(row.id, row.marketplace, refMonth, "erro", msg);
     await fecharRodada(runId, "erro", msg, 0, msg);
     return { ok: false, status: "erro", message: msg };

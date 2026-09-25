@@ -30,8 +30,10 @@ export type Permission =
   | "integracoes.gerenciar"
   /** puxar os números de um cliente que já está conectado */
   | "integracoes.sincronizar"
-  /** cadastrar, editar e excluir cliente, suas contas e sua equipe */
+  /** editar o cadastro do cliente, suas contas e sua equipe */
   | "clientes.gerenciar"
+  /** apagar o cliente e todo o histórico dele; separada porque não tem volta */
+  | "clientes.excluir"
   /** criar um cliente novo; depois a visibilidade continua limitada ao escopo */
   | "clientes.cadastrar"
   /** as lojas do próprio Kadu, que não fazem parte da carteira */
@@ -66,6 +68,7 @@ const TODAS: Permission[] = [
   "integracoes.gerenciar",
   "integracoes.sincronizar",
   "clientes.gerenciar",
+  "clientes.excluir",
   "clientes.cadastrar",
   "lojas.proprias",
   "tarefas.gerenciar",
@@ -94,6 +97,7 @@ const POR_PAPEL: Record<Role, Permission[]> = {
     ...TELAS,
     "integracoes.sincronizar",
     "clientes.gerenciar",
+    "clientes.excluir",
     "clientes.cadastrar",
     // o dinheiro da agência e as lojas do próprio Kadu não são da equipe:
     // funcionário vê o financeiro das lojas dos clientes, que é o trabalho
@@ -106,7 +110,17 @@ const POR_PAPEL: Record<Role, Permission[]> = {
 
   // o membro trabalha nas tarefas e nos clientes que cadastrou ou recebeu.
   // O resto da operação o admin libera tela por tela na Equipe.
-  membro: ["clientes.ver", "clientes.cadastrar", "integracoes.sincronizar"],
+  //
+  // Editar e excluir cliente entraram a pedido do Kadu: a equipe inteira
+  // cuida da carteira, não só ele. Excluir é permissão à parte justamente
+  // para ele poder tirar de um papel sem tirar a edição junto.
+  membro: [
+    "clientes.ver",
+    "clientes.cadastrar",
+    "clientes.gerenciar",
+    "clientes.excluir",
+    "integracoes.sincronizar",
+  ],
 };
 
 /**
@@ -191,6 +205,7 @@ export const PERMISSION_LABEL: Record<Permission, string> = {
   "integracoes.gerenciar": "Conectar e desconectar marketplaces",
   "integracoes.sincronizar": "Buscar os números do mês",
   "clientes.gerenciar": "Editar dados, contas e equipe dos clientes",
+  "clientes.excluir": "Excluir cliente e todo o histórico dele",
   "clientes.cadastrar": "Cadastrar novos clientes",
   "lojas.proprias": "Ver as lojas do próprio Kadu",
   "tarefas.gerenciar": "Criar e distribuir tarefas",

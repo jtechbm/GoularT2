@@ -50,3 +50,24 @@ test("gestor e membro sempre podem abrir e cadastrar clientes", () => {
     assert.equal(can({ role, permissions: [] }, "clientes.cadastrar"), true);
   }
 });
+
+test("membro edita e exclui cliente por padrão", () => {
+  // pedido do Kadu: a equipe inteira cuida da carteira, não só ele
+  const membro = { role: "membro" as const, permissions: null };
+  assert.equal(can(membro, "clientes.gerenciar"), true);
+  assert.equal(can(membro, "clientes.excluir"), true);
+});
+
+test("permissão nova cai no padrão do papel, não no que ficou gravado antes", () => {
+  // o que estava salvo na produção foi gravado antes de clientes.excluir
+  // existir, então ela não está em 'conhecidas' e vale o padrão do papel —
+  // sem isso, criar a permissão tiraria de todo mundo silenciosamente
+  const antes = JSON.stringify({
+    tem: ["clientes.ver", "clientes.cadastrar"],
+    conhecidas: ["clientes.ver", "clientes.cadastrar", "clientes.gerenciar"],
+  });
+  const efetivo = permissoesGravadas("membro", antes);
+  assert.ok(efetivo.includes("clientes.excluir"), "excluir deveria vir do padrão");
+  // e o que ele conhecia e tirou continua tirado
+  assert.equal(efetivo.includes("clientes.gerenciar"), false);
+});

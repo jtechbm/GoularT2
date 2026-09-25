@@ -150,13 +150,35 @@ export interface MarketplaceAdapter {
 export class IntegrationError extends Error {
   // campo explícito em vez de parameter property: assim o módulo também
   // roda nos scripts com --experimental-strip-types
-  readonly kind: "config" | "auth" | "api";
+  readonly kind: "config" | "auth" | "api" | "limite";
 
-  constructor(message: string, kind: "config" | "auth" | "api" = "api") {
+  constructor(message: string, kind: "config" | "auth" | "api" | "limite" = "api") {
     super(message);
     this.name = "IntegrationError";
     this.kind = kind;
   }
+}
+
+/**
+ * O erro é um tropeço passageiro, e não uma conexão quebrada?
+ *
+ * Marketplace pedindo calma (429), servidor dele fora do ar (5xx) ou a rede
+ * caindo no meio não querem dizer que a loja perdeu a autorização: a próxima
+ * rodada funciona sozinha. Tratar os dois casos igual pintava a loja de "com
+ * erro" na tela do Kadu por causa de um engasgo de trinta segundos, do mesmo
+ * jeito que uma loja que de fato precisa ser reconectada — e aí o aviso que
+ * importa se perdia no meio do falso alarme.
+ */
+export function eTropeco(error: unknown): boolean {
+  if (error instanceof IntegrationError) {
+    if (error.kind === "limite") return true;
+    if (error.kind === "auth" || error.kind === "config") return false;
+  }
+  const msg = error instanceof Error ? error.message : String(error);
+  return (
+    /\((429|500|502|503|504)\)/.test(msg) ||
+    /ECONNRESET|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|socket hang up|fetch failed|network|timeout/i.test(msg)
+  );
 }
 
 /**

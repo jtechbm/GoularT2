@@ -315,6 +315,15 @@ export const mercadoLivre: MarketplaceAdapter = {
       return alvo;
     };
 
+    /**
+     * Uma página de pedidos, com paciência para o 429.
+     *
+     * O Mercado Livre corta quem pede rápido demais, e o limite é bem mais
+     * apertado do que parece: mesmo uma rodada sozinha esbarra nele. Antes
+     * disto o 429 subia como erro e a loja ficava marcada como quebrada na
+     * tela até a rodada seguinte. Agora espera e tenta de novo; só desiste
+     * depois de três esperas, e aí como "limite", que não derruba a conexão.
+     */
     const buscarPagina = async (offset: number) => {
       const qs = new URLSearchParams({
         seller: String(sellerId),
@@ -325,11 +334,25 @@ export const mercadoLivre: MarketplaceAdapter = {
         limit: String(limit),
         offset: String(offset),
       });
-      const res = await fetch(`${API}/orders/search?${qs}`, {
-        headers: { authorization: `Bearer ${token}`, accept: "application/json" },
-      });
-      if (!res.ok) throw new IntegrationError(`Erro ao listar pedidos do ML (${res.status}).`);
-      return (await res.json()) as { results: MLOrder[]; paging: { total: number } };
+
+      for (let tentativa = 0; ; tentativa += 1) {
+        const res = await fetch(`${API}/orders/search?${qs}`, {
+          headers: { authorization: `Bearer ${token}`, accept: "application/json" },
+        });
+        if (res.ok) return (await res.json()) as { results: MLOrder[]; paging: { total: number } };
+
+        const passageiro = res.status === 429 || res.status >= 500;
+        if (!passageiro || tentativa >= 2) {
+          throw new IntegrationError(
+            `Erro ao listar pedidos do ML (${res.status}).`,
+            passageiro ? "limite" : "api",
+          );
+        }
+        // o cabeçalho manda quando ele existe; senão, 2s, 4s, 8s
+        const pedido = Number(res.headers.get("retry-after"));
+        const espera = Number.isFinite(pedido) && pedido > 0 ? pedido * 1000 : 2000 * 2 ** tentativa;
+        await new Promise((ok) => setTimeout(ok, Math.min(espera, 15_000)));
+      }
     };
 
     const somar = (orders: MLOrder[]) => {

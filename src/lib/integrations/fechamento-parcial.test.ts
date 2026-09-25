@@ -1,6 +1,7 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
 import { manterFechamentoAnterior } from "./sincronizar-conta.ts";
+import { eTropeco, IntegrationError } from "./types.ts";
 import { avisoRecarga, resumirAds, analisarCampanha } from "../ads-analise.ts";
 
 const linha = (x: Record<string, unknown>) =>
@@ -49,4 +50,27 @@ test("o resumo separa quanto do investido é recarga", () => {
   assert.equal(r.recargas, 1300);
   // a recarga não informa retorno, então fica fora do ROAS do total
   assert.equal(r.semRetorno, 1300);
+});
+
+test("429 e servidor fora do ar são tropeço, não conexão quebrada", () => {
+  // o Jaum e a Mônica funcionavam e ficaram "com erro" na tela do Kadu por
+  // causa de um 429 passageiro do Mercado Livre
+  assert.equal(eTropeco(new Error("Erro ao listar pedidos do ML (429).")), true);
+  assert.equal(eTropeco(new Error("Erro ao listar pedidos do ML (503).")), true);
+  assert.equal(eTropeco(new IntegrationError("pediu calma", "limite")), true);
+  assert.equal(eTropeco(new Error("fetch failed")), true);
+  assert.equal(eTropeco(new Error("ECONNRESET")), true);
+});
+
+test("token vencido e permissão negada continuam derrubando a conexão", () => {
+  // essas precisam de alguém agir: o lojista reconectar a loja
+  assert.equal(eTropeco(new Error("Shopee: invalid_acceess_token — Invalid access_token.")), false);
+  assert.equal(eTropeco(new Error("Shopee recusou o código (403).")), false);
+  assert.equal(eTropeco(new IntegrationError("Conta ainda não autorizada.", "auth")), false);
+  assert.equal(eTropeco(new IntegrationError("Faltam variáveis de ambiente", "config")), false);
+});
+
+test("erro de autorização vence a palavra 'timeout' na mensagem", () => {
+  // kind explícito manda mais que o texto solto
+  assert.equal(eTropeco(new IntegrationError("sessão expirou por timeout", "auth")), false);
 });

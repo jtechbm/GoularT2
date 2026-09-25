@@ -344,6 +344,7 @@ export default async function ClientePage({
             users={allUsers}
             manager={manager}
             admin={admin}
+            podeExcluir={can(user, "clientes.excluir")}
             erroExclusao={sp.erro === "nome"}
           />
         )}

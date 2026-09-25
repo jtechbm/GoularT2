@@ -8,19 +8,22 @@ export function TabDados({
   users,
   manager,
   admin,
+  podeExcluir,
   erroExclusao,
 }: {
   client: Client;
   users: User[];
   manager: boolean;
   admin: boolean;
+  /** excluir é permissão à parte de editar: não tem volta */
+  podeExcluir: boolean;
   /** o nome digitado não confere com o do cliente */
   erroExclusao?: boolean;
 }) {
   if (!manager) {
     return (
       <Card title="Dados cadastrais">
-        <p className="text-sm text-dim">Apenas gestores e admins editam o cadastro do cliente.</p>
+        <p className="text-sm text-dim">Seu perfil não pode editar o cadastro do cliente.</p>
       </Card>
     );
   }
@@ -124,9 +127,9 @@ export function TabDados({
       </Card>
       </form>
 
-      {/* apagar cliente é do admin: gestor e membro podem editar cadastro e
-          nem por isso devem poder sumir com anos de histórico */}
-      {admin && (
+      {/* excluir é permissão própria, separada de editar, para o Kadu poder
+          tirar de um papel na tela de Equipe sem tirar a edição junto */}
+      {podeExcluir && (
         <form action={deleteClientAction} className="mt-3">
           <input type="hidden" name="client_id" value={client.id} />
           <Card title="Excluir cliente" subtitle="Não tem volta">

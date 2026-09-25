@@ -163,8 +163,10 @@ export async function updateClientAction(formData: FormData) {
  * por isso devem poder apagar a conta inteira de um cliente.
  */
 export async function deleteClientAction(formData: FormData) {
-  await requireRole("admin");
+  const user = await requireUser();
+  assertCan(user, "clientes.excluir", "Seu perfil não pode excluir clientes.");
   const clientId = str(formData.get("client_id"));
+  await assertClientAccess(user, clientId);
   const confirmacao = str(formData.get("confirmacao"));
 
   const alvo = await one<{ name: string }>("SELECT name FROM clients WHERE id = ?", clientId);
