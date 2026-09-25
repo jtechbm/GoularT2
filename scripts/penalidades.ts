@@ -11,7 +11,8 @@ import { verificarPenalidadesShopee } from "../src/lib/penalidades/shopee.ts";
 
 const contas = await all<{ id: string; nome: string; marketplace: string }>(
   `SELECT cm.id, c.name AS nome, cm.marketplace FROM client_marketplaces cm JOIN clients c ON c.id = cm.client_id
-    WHERE cm.status = 'conectado' AND cm.credentials IS NOT NULL
+    -- inclui quem está 'erro' pelo mesmo motivo da sincronização
+    WHERE cm.status IN ('conectado', 'erro') AND cm.credentials IS NOT NULL
     ORDER BY lower(c.name), cm.marketplace`,
 );
 

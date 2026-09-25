@@ -74,7 +74,8 @@ export async function contasComHistoricoPendente() {
   const contas = await all<{ id: string; nome: string; marketplace: string; history_from: string | null }>(
     `SELECT cm.id, cl.name AS nome, cm.marketplace, cm.history_from
        FROM client_marketplaces cm JOIN clients cl ON cl.id = cm.client_id
-      WHERE cm.status = 'conectado' AND cm.credentials IS NOT NULL
+      -- inclui quem está 'erro' pelo mesmo motivo da sincronização
+      WHERE cm.status IN ('conectado', 'erro') AND cm.credentials IS NOT NULL
       ORDER BY cm.history_from DESC NULLS FIRST`,
   );
   return contas.filter((c) => proximoMes(c.history_from) !== null);

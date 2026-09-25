@@ -24,7 +24,10 @@ const contas = await all<{
 }>(
   `SELECT cm.id, cl.name AS client_name, cm.marketplace, cm.credentials
      FROM client_marketplaces cm JOIN clients cl ON cl.id = cm.client_id
-    WHERE cm.status = 'conectado' AND cm.credentials IS NOT NULL
+    -- inclui quem está 'erro': loja marcada por engasgo passageiro só se
+    -- recupera numa rodada boa, e filtrar por 'conectado' a deixava de fora
+    -- para sempre — o erro virava o que impedia a correção do erro
+    WHERE cm.status IN ('conectado', 'erro') AND cm.credentials IS NOT NULL
     ORDER BY lower(cl.name)`,
 );
 
