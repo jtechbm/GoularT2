@@ -44,6 +44,8 @@ export function SerieDiaria({
   atalhoAtivo,
   hrefBase,
   metaAds,
+  de,
+  ate,
 }: {
   dias: DiaFinanceiro[];
   label: string;
@@ -52,7 +54,16 @@ export function SerieDiaria({
   hrefBase: (atalho: string) => string;
   /** teto de Ads combinado no mês, quando existir */
   metaAds?: number | null;
+  /** datas do período escolhido à mão, para o formulário voltar preenchido */
+  de?: string;
+  ate?: string;
 }) {
+  // O formulário reaproveita o mesmo hrefBase dos atalhos: o que já está na
+  // URL (cliente, aba, mês) vira campo oculto, e só as datas são digitadas.
+  // Assim escolher um intervalo não derruba os outros filtros da tela.
+  const [caminho, query = ""] = hrefBase("personalizado").split("?");
+  const herdados = [...new URLSearchParams(query).entries()];
+  const escolhido = atalhoAtivo === "personalizado";
   const soma = dias.reduce(
     (a, d) => ({
       revenue: a.revenue + d.revenue,
@@ -74,17 +85,42 @@ export function SerieDiaria({
       title="Dia a dia"
       subtitle={`${label} · ${dias.length} dias`}
       actions={
-        <nav className="flex gap-1">
-          {ATALHOS.map((a) => (
-            <Link
-              key={a.key}
-              href={hrefBase(a.key)}
-              className={`btn btn-sm ${atalhoAtivo === a.key ? "btn-primary" : "btn-ghost"}`}
-            >
-              {a.label}
-            </Link>
-          ))}
-        </nav>
+        <div className="flex flex-wrap items-center gap-2">
+          <nav className="flex gap-1">
+            {ATALHOS.map((a) => (
+              <Link
+                key={a.key}
+                href={hrefBase(a.key)}
+                className={`btn btn-sm ${atalhoAtivo === a.key ? "btn-primary" : "btn-ghost"}`}
+              >
+                {a.label}
+              </Link>
+            ))}
+          </nav>
+          <form method="get" action={caminho} className="flex flex-wrap items-center gap-1">
+            {herdados.map(([k, v]) => (
+              <input key={k} type="hidden" name={k} value={v} />
+            ))}
+            <input
+              type="date"
+              name="de"
+              defaultValue={de ?? ""}
+              aria-label="Data inicial"
+              className={`input h-8 w-[9.5rem] px-2 py-1 text-xs ${escolhido ? "border-brand" : ""}`}
+            />
+            <span className="text-xs text-dim">até</span>
+            <input
+              type="date"
+              name="ate"
+              defaultValue={ate ?? ""}
+              aria-label="Data final"
+              className={`input h-8 w-[9.5rem] px-2 py-1 text-xs ${escolhido ? "border-brand" : ""}`}
+            />
+            <button type="submit" className={`btn btn-sm ${escolhido ? "btn-primary" : "btn-ghost"}`}>
+              Aplicar
+            </button>
+          </form>
+        </div>
       }
     >
       {dias.some((d) => d.revenue > 0 || d.ads > 0) ? (

@@ -2,7 +2,14 @@ import Link from "next/link";
 import { Suspense } from "react";
 import { visibleClientIds, requirePermission } from "@/lib/auth";
 import { can } from "@/lib/permissions";
-import { avaliarOnboardingEmLote, clientRows, indicadoresDosClientes, scoresEmLote } from "@/lib/queries";
+import {
+  avaliarOnboardingEmLote,
+  clientRows,
+  indicadoresDosClientes,
+  periodoDe,
+  scoresEmLote,
+  totaisPorClienteNoPeriodo,
+} from "@/lib/queries";
 import { brlShort, currentMonth, lastMonths, MESES_DE_HISTORICO, pct } from "@/lib/format";
 import { Card, Empty, PageHeader, Stat } from "@/components/ui";
 import { MonthPicker } from "@/components/month-picker";
@@ -36,6 +43,9 @@ export default async function ClientesPage({
     ordem?: string;
     ads?: string;
     ok?: string;
+    periodo?: string;
+    de?: string;
+    ate?: string;
   }>;
 }) {
   const user = await requirePermission("clientes.ver");
@@ -50,6 +60,12 @@ export default async function ClientesPage({
   const soAds = params.ads === "1";
   const ordem = lerOrdem(params.ordem);
 
+  // período livre: o faturamento deixa de vir do fechamento do mês e passa a
+  // ser somado do diário. "mes" mantém o comportamento antigo intacto.
+  const atalhoPeriodo = params.periodo ?? "mes";
+  const intervalo = periodoDe(atalhoPeriodo, ref, params.de, params.ate);
+  const porDia = atalhoPeriodo !== "mes";
+
   const escopo = await visibleClientIds(user);
   const semClientesVisiveis = escopo !== null && escopo.length === 0;
   const [todos, indicadores] = await Promise.all([
@@ -62,7 +78,26 @@ export default async function ClientesPage({
     scoresEmLote(todos, ref),
   ]);
 
-  const linhas = montarLinhas(todos, indicadores, ref).filter((c) => {
+  // no período livre, troca o número do mês pelo somado dia a dia
+  const totaisPeriodo = porDia ? await totaisPorClienteNoPeriodo(intervalo.inicio, intervalo.fim, escopo) : null;
+
+  const linhas = montarLinhas(todos, indicadores, ref)
+    .map((c) => {
+      if (!totaisPeriodo) return c;
+      const t = totaisPeriodo.get(c.id);
+      return {
+        ...c,
+        revenue: t?.revenue ?? 0,
+        orders: t?.orders ?? 0,
+        ads: t?.ads ?? 0,
+        ads_revenue: t?.ads_revenue ?? 0,
+        // lucro e comparação com o mês anterior não existem por intervalo
+        profit: 0,
+        prev_revenue: 0,
+        carregando: 0,
+      };
+    })
+    .filter((c) => {
     if (status && c.status !== status) return false;
     if (canal && !c.marketplaces.split(",").includes(canal)) return false;
     if (onlyMine && c.owner_id !== user.id) return false;
@@ -98,6 +133,9 @@ export default async function ClientesPage({
     if (onlyMine) p.set("resp", "eu");
     if (soAds) p.set("ads", "1");
     if (params.ordem) p.set("ordem", params.ordem);
+    if (params.periodo) p.set("periodo", params.periodo);
+    if (params.de) p.set("de", params.de);
+    if (params.ate) p.set("ate", params.ate);
     for (const [k, v] of Object.entries(extra)) v ? p.set(k, v) : p.delete(k);
     return `/clientes?${p}`;
   };
@@ -134,13 +172,22 @@ export default async function ClientesPage({
       )}
 
       <div className="mb-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <Stat label="Faturamento (filtro)" value={brlShort(totais.revenue)} tone="brand" />
-        <Stat
-          label="Lucro (filtro)"
-          value={brlShort(totais.profit)}
-          hint={totais.revenue ? `margem ${pct(totais.profit / totais.revenue)}` : "—"}
-          tone="accent"
-        />
+        <Stat label="Faturamento (filtro)" value={brlShort(totais.revenue)} hint={porDia ? intervalo.label : undefined} tone="brand" />
+        {porDia ? (
+          <Stat
+            label="Pedidos (filtro)"
+            value={linhas.reduce((s, c) => s + c.orders, 0).toLocaleString("pt-BR")}
+            hint={intervalo.label}
+            tone="accent"
+          />
+        ) : (
+          <Stat
+            label="Lucro (filtro)"
+            value={brlShort(totais.profit)}
+            hint={totais.revenue ? `margem ${pct(totais.profit / totais.revenue)}` : "—"}
+            tone="accent"
+          />
+        )}
         <Stat
           label="Investido em Ads (filtro)"
           value={brlShort(totais.ads)}
@@ -205,6 +252,55 @@ export default async function ClientesPage({
             {chip("Meus clientes", base({ resp: "eu" }), onlyMine)}
           </div>
         </form>
+
+        {/* período: por padrão o mês fechado; escolhendo dias, os números da
+            tabela passam a vir do diário em vez do fechamento mensal */}
+        <div className="flex flex-wrap items-center gap-2 border-b border-line px-4 py-3">
+          <span className="mr-1 text-xs text-dim">Período:</span>
+          <div className="flex gap-1">
+            {[
+              { key: "mes", label: "Mês" },
+              { key: "7d", label: "7 dias" },
+              { key: "30d", label: "30 dias" },
+            ].map((a) => (
+              <Link
+                key={a.key}
+                href={base({ periodo: a.key === "mes" ? "" : a.key, de: "", ate: "" })}
+                className={`btn btn-sm ${atalhoPeriodo === a.key ? "btn-primary" : "btn-ghost"}`}
+              >
+                {a.label}
+              </Link>
+            ))}
+          </div>
+          <form method="get" action="/clientes" className="flex flex-wrap items-center gap-1">
+            <input type="hidden" name="mes" value={ref} />
+            {query && <input type="hidden" name="q" value={query} />}
+            {status && <input type="hidden" name="status" value={status} />}
+            {canal && <input type="hidden" name="canal" value={canal} />}
+            {onlyMine && <input type="hidden" name="resp" value="eu" />}
+            {soAds && <input type="hidden" name="ads" value="1" />}
+            {params.ordem && <input type="hidden" name="ordem" value={params.ordem} />}
+            <input type="hidden" name="periodo" value="personalizado" />
+            <input
+              type="date"
+              name="de"
+              defaultValue={params.de ?? ""}
+              aria-label="Data inicial"
+              className={`input h-8 w-[9.5rem] px-2 py-1 text-xs ${atalhoPeriodo === "personalizado" ? "border-brand" : ""}`}
+            />
+            <span className="text-xs text-dim">até</span>
+            <input
+              type="date"
+              name="ate"
+              defaultValue={params.ate ?? ""}
+              aria-label="Data final"
+              className={`input h-8 w-[9.5rem] px-2 py-1 text-xs ${atalhoPeriodo === "personalizado" ? "border-brand" : ""}`}
+            />
+            <button type="submit" className={`btn btn-sm ${atalhoPeriodo === "personalizado" ? "btn-primary" : "btn-ghost"}`}>
+              Aplicar
+            </button>
+          </form>
+        </div>
 
         <div className="flex flex-wrap items-center gap-1.5 border-b border-line px-4 py-3">
           <span className="mr-1 text-xs text-dim">Ordenar por:</span>

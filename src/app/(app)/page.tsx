@@ -15,9 +15,12 @@ import {
   scoresEmLote,
   alertasDaCarteira,
   indicadoresDosClientes,
+  periodoDe,
+  serieDiaria,
 } from "@/lib/queries";
 import { brl, brlShort, currentMonth, dateBR, lastMonths, MESES_DE_HISTORICO, num, pct, variacaoMensal } from "@/lib/format";
 import { lerOrdem } from "@/lib/ordem-clientes";
+import { SerieDiaria } from "@/components/serie-diaria";
 import { roasDaTela, roasDoTotal, textoAds } from "@/lib/ads-analise";
 import {
   Avatar,
@@ -45,7 +48,14 @@ import { marketplaceLabel } from "@/lib/types";
 export default async function DashboardPage({
   searchParams,
 }: {
-  searchParams: Promise<{ mes?: string; sem_acesso?: string; ordem?: string }>;
+  searchParams: Promise<{
+    mes?: string;
+    sem_acesso?: string;
+    ordem?: string;
+    periodo?: string;
+    de?: string;
+    ate?: string;
+  }>;
 }) {
   const user = await requireUser();
   const params = await searchParams;
@@ -63,6 +73,11 @@ export default async function DashboardPage({
   const escopo = await visibleClientIds(user);
   const verLojasProprias = can(user, "lojas.proprias");
 
+  // o dia a dia da carteira inteira: o resto da tela fecha por mês, e o Kadu
+  // precisava olhar intervalo de datas sem entrar cliente por cliente
+  const atalhoPeriodo = params.periodo ?? "mes";
+  const intervalo = periodoDe(atalhoPeriodo, ref, params.de, params.ate);
+
   // Tudo que não depende de outra consulta sai junto. Em fila, a tela
   // esperava a soma de todas; em paralelo, espera a mais lenta.
   const [rows, propria, series, byMarketplace, openTasks, emAndamento, board, saude, procedencia, indicadores] =
@@ -78,6 +93,8 @@ export default async function DashboardPage({
       procedenciaDoMes(ref, { scope: escopo }),
       indicadoresDosClientes(ref, escopo),
     ]);
+
+  const dias = await serieDiaria(intervalo.inicio, intervalo.fim, { scope: escopo });
 
   const mrr = rows
     .filter((r) => r.status !== "encerrado" && r.status !== "pausado")
@@ -309,6 +326,23 @@ export default async function DashboardPage({
           </div>
         )}
       </Card>
+
+      <div className="mt-3">
+        <SerieDiaria
+          dias={dias}
+          label={intervalo.label}
+          atalhoAtivo={atalhoPeriodo}
+          hrefBase={(a) => {
+            const p = new URLSearchParams();
+            if (params.mes) p.set("mes", params.mes);
+            if (params.ordem) p.set("ordem", params.ordem);
+            p.set("periodo", a);
+            return `/?${p}`;
+          }}
+          de={params.de}
+          ate={params.ate}
+        />
+      </div>
 
       <div className="mt-3 grid gap-3 lg:grid-cols-3">
         <Card

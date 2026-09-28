@@ -1,6 +1,6 @@
 import "server-only";
 import { all, one } from "./db";
-import { addMonths, currentMonth, lastMonths, monthLabel } from "./format";
+import { addMonths, currentMonth, dateBR, lastMonths, monthLabel } from "./format";
 import { avaliarOnboarding } from "./onboarding";
 import { calcularScore, type Score } from "./score";
 import { alertasDoCliente, ordenarAlertas, type Alerta } from "./alertas";
@@ -1533,6 +1533,41 @@ export interface DiaFinanceiro {
   prints: number;
 }
 
+/**
+ * Faturamento, pedidos e Ads por cliente num intervalo de datas.
+ *
+ * A lista de clientes fecha por mês, lendo finance_snapshots. Para período
+ * livre o mês não serve, então a soma vem do diário. Só entram clientes com
+ * movimento no intervalo; quem não aparece somou zero.
+ */
+export async function totaisPorClienteNoPeriodo(
+  inicio: string,
+  fim: string,
+  scope?: Scope,
+): Promise<Map<string, { revenue: number; orders: number; ads: number; ads_revenue: number }>> {
+  const esc = scoped(scope, "client_id");
+  const linhas = await all<{
+    client_id: string;
+    revenue: number;
+    orders: number;
+    ads: number;
+    ads_revenue: number;
+  }>(
+    `SELECT client_id,
+            COALESCE(SUM(revenue),0)     AS revenue,
+            COALESCE(SUM(orders),0)      AS orders,
+            COALESCE(SUM(ads),0)         AS ads,
+            COALESCE(SUM(ads_revenue),0) AS ads_revenue
+       FROM finance_daily
+      WHERE day >= ? AND day <= ?${esc.sql}
+      GROUP BY client_id`,
+    inicio,
+    fim,
+    ...esc.params,
+  );
+  return new Map(linhas.map((l) => [l.client_id, l]));
+}
+
 /** Traduz o atalho da tela em um intervalo de datas fechado. */
 export function periodoDe(
   atalho: string,
@@ -1543,8 +1578,14 @@ export function periodoDe(
   const hoje = new Date();
   const iso = (d: Date) => d.toISOString().slice(0, 10);
 
+  // datas digitadas pelo usuário: valida o formato e aceita invertido, que é
+  // o erro mais comum de quem preenche "de" e "até" fora de ordem
   if (atalho === "personalizado" && de && ate) {
-    return { inicio: de, fim: ate, label: "período escolhido" };
+    const data = /^\d{4}-\d{2}-\d{2}$/;
+    if (data.test(de) && data.test(ate)) {
+      const [inicio, fim] = de <= ate ? [de, ate] : [ate, de];
+      return { inicio, fim, label: `${dateBR(inicio)} a ${dateBR(fim)}` };
+    }
   }
   if (atalho === "7d") {
     return { inicio: iso(new Date(hoje.getTime() - 6 * 864e5)), fim: iso(hoje), label: "últimos 7 dias" };

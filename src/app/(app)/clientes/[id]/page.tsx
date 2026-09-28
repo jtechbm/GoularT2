@@ -314,6 +314,8 @@ export default async function ClientePage({
               atalhoAtivo={atalho}
               hrefBase={(a) => `/clientes/${client.id}?tab=financeiro&mes=${ref}&periodo=${a}`}
               metaAds={metaGeral?.ads_budget ?? null}
+              de={sp.de}
+              ate={sp.ate}
             />
           </div>
         )}
