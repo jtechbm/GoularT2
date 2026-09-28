@@ -1568,6 +1568,54 @@ export async function totaisPorClienteNoPeriodo(
   return new Map(linhas.map((l) => [l.client_id, l]));
 }
 
+/**
+ * Faturamento e vendas de cada loja do cliente num intervalo de datas.
+ *
+ * Vem do diário, e não do fechamento do mês, porque a análise rápida aceita
+ * qualquer intervalo — inclusive um único dia. Loja sem movimento no período
+ * não aparece aqui; quem monta a tela junta com a lista de lojas cadastradas
+ * para poder mostrar "vendeu zero" em vez de omitir a loja.
+ */
+export async function totaisPorLojaNoPeriodo(
+  clientId: string,
+  inicio: string,
+  fim: string,
+): Promise<Map<string, { revenue: number; orders: number; units: number }>> {
+  const linhas = await all<{
+    client_marketplace_id: string | null;
+    revenue: number;
+    orders: number;
+    units: number;
+  }>(
+    `SELECT client_marketplace_id,
+            COALESCE(SUM(revenue),0) AS revenue,
+            COALESCE(SUM(orders),0)  AS orders,
+            COALESCE(SUM(units),0)   AS units
+       FROM finance_daily
+      WHERE client_id = ? AND day >= ? AND day <= ?
+      GROUP BY client_marketplace_id`,
+    clientId,
+    inicio,
+    fim,
+  );
+  return new Map(linhas.filter((l) => l.client_marketplace_id).map((l) => [l.client_marketplace_id!, l]));
+}
+
+/**
+ * O intervalo de mesmo tamanho imediatamente antes deste.
+ *
+ * É a comparação que quase todo mundo quer quando pede "e antes?": sete dias
+ * contra os sete anteriores, um dia contra o dia anterior. Comparar contra
+ * um período de outro tamanho infla ou afunda a variação sem querer.
+ */
+export function periodoAnterior(inicio: string, fim: string): { inicio: string; fim: string } {
+  const dia = 864e5;
+  const ini = Date.parse(`${inicio}T00:00:00Z`);
+  const tamanho = Math.round((Date.parse(`${fim}T00:00:00Z`) - ini) / dia) + 1;
+  const iso = (t: number) => new Date(t).toISOString().slice(0, 10);
+  return { inicio: iso(ini - tamanho * dia), fim: iso(ini - dia) };
+}
+
 /** Traduz o atalho da tela em um intervalo de datas fechado. */
 export function periodoDe(
   atalho: string,
@@ -1578,14 +1626,25 @@ export function periodoDe(
   const hoje = new Date();
   const iso = (d: Date) => d.toISOString().slice(0, 10);
 
-  // datas digitadas pelo usuário: valida o formato e aceita invertido, que é
-  // o erro mais comum de quem preenche "de" e "até" fora de ordem
+  // Datas digitadas: valida o formato e aceita invertido, que é o erro mais
+  // comum de quem preenche "de" e "até" fora de ordem. Só a primeira data
+  // preenchida quer dizer um dia só — é assim que a análise rápida deixa
+  // escolher "o dia 12" sem obrigar a repetir a data nos dois campos.
+  if (atalho === "personalizado" && de && !ate) ate = de;
   if (atalho === "personalizado" && de && ate) {
     const data = /^\d{4}-\d{2}-\d{2}$/;
     if (data.test(de) && data.test(ate)) {
       const [inicio, fim] = de <= ate ? [de, ate] : [ate, de];
-      return { inicio, fim, label: `${dateBR(inicio)} a ${dateBR(fim)}` };
+      const label = inicio === fim ? dateBR(inicio) : `${dateBR(inicio)} a ${dateBR(fim)}`;
+      return { inicio, fim, label };
     }
+  }
+  if (atalho === "hoje") {
+    return { inicio: iso(hoje), fim: iso(hoje), label: "hoje" };
+  }
+  if (atalho === "ontem") {
+    const d = iso(new Date(hoje.getTime() - 864e5));
+    return { inicio: d, fim: d, label: "ontem" };
   }
   if (atalho === "7d") {
     return { inicio: iso(new Date(hoje.getTime() - 6 * 864e5)), fim: iso(hoje), label: "últimos 7 dias" };

@@ -24,6 +24,7 @@ import {
   saudeContasML,
   serieDiaria,
   tasks,
+  totaisPorLojaNoPeriodo,
   totalsForClient,
   indicadoresDosClientes,
 } from "@/lib/queries";
@@ -39,6 +40,8 @@ import { TabMetas } from "./tab-metas";
 import { TabHistorico } from "./tab-historico";
 import { TabEquipe } from "./tab-equipe";
 import { TabDados } from "./tab-dados";
+import { TabAnalise } from "./tab-analise";
+import type { DadosAnalise } from "@/components/analise-rapida";
 
 // a sincronização com os marketplaces pode levar dezenas de segundos
 export const maxDuration = 60;
@@ -46,6 +49,7 @@ export const maxDuration = 60;
 const TABS = [
   { key: "visao", label: "Visão geral" },
   { key: "financeiro", label: "Resultados" },
+  { key: "analise", label: "Análise" },
   { key: "marketplaces", label: "Lojas" },
   { key: "ads", label: "Ads" },
   { key: "metas", label: "Metas" },
@@ -69,6 +73,8 @@ export default async function ClientePage({
     periodo?: string;
     de?: string;
     ate?: string;
+    dia1?: string;
+    dia2?: string;
   }>;
 }) {
   const user = await requirePermission("clientes.ver");
@@ -135,6 +141,57 @@ export default async function ClientePage({
     manager ? listUsers() : Promise.resolve([]),
     integrationStatus(),
   ]);
+
+  // a análise só busca por loja quando a aba está aberta: é uma consulta a
+  // mais e as outras abas não usam nada disso
+  const hojeISO = new Date().toISOString().slice(0, 10);
+  const ontemISO = new Date(Date.now() - 864e5).toISOString().slice(0, 10);
+  const porLoja = tab === "analise" ? await totaisPorLojaNoPeriodo(client.id, periodo.inicio, periodo.fim) : null;
+
+  /** monta o bloco da análise a partir da série diária e do total por loja */
+  const montarAnalise = (
+    inicio: string,
+    fim: string,
+    serie: { revenue: number; orders: number; units: number }[],
+    lojas: Map<string, { revenue: number; orders: number }>,
+  ): DadosAnalise => ({
+    clienteNome: client.name,
+    inicio,
+    fim,
+    ...serie.reduce(
+      (a, d) => ({ revenue: a.revenue + d.revenue, orders: a.orders + d.orders, units: a.units + d.units }),
+      { revenue: 0, orders: 0, units: 0 },
+    ),
+    lojas: accounts
+      .filter((l) => l.status !== "desativado")
+      .map((l) => ({ ...l, revenue: lojas.get(l.id)?.revenue ?? 0, orders: lojas.get(l.id)?.orders ?? 0 })),
+  });
+
+  const dadosAnalise: DadosAnalise | null = porLoja
+    ? montarAnalise(periodo.inicio, periodo.fim, dias, porLoja)
+    : null;
+
+  // Comparativo de DOIS DIAS: cada campo da tela é um dia, não as pontas de um
+  // intervalo. Com os dois preenchidos, a análise inteira passa a ser um dia
+  // contra o outro, e o seletor de período de cima sai de cena.
+  const diaValido = (d?: string) => (d && /^\d{4}-\d{2}-\d{2}$/.test(d) ? d : null);
+  const d1 = diaValido(sp.dia1);
+  const d2 = diaValido(sp.dia2);
+  const comparandoDias = tab === "analise" && Boolean(d1 && d2);
+
+  const [serieD1, lojasD1, serieD2, lojasD2] = comparandoDias
+    ? await Promise.all([
+        serieDiaria(d1!, d1!, { clientId: client.id }),
+        totaisPorLojaNoPeriodo(client.id, d1!, d1!),
+        serieDiaria(d2!, d2!, { clientId: client.id }),
+        totaisPorLojaNoPeriodo(client.id, d2!, d2!),
+      ])
+    : [null, null, null, null];
+
+  const analiseA =
+    serieD1 && lojasD1 && d1 ? montarAnalise(d1, d1, serieD1, lojasD1) : dadosAnalise;
+  const comparacao: DadosAnalise | null =
+    serieD2 && lojasD2 && d2 ? montarAnalise(d2, d2, serieD2, lojasD2) : null;
 
   // no mês corrente, o anterior só até o mesmo dia: meio mês contra o mês
   // cheio punha o cliente "em queda" até o dia 30
@@ -321,6 +378,21 @@ export default async function ClientePage({
         )}
         {tab === "financeiro" && (
           <TabFinanceiro client={client} snapshots={snapshots} accounts={accounts} refMonth={ref} months={months} />
+        )}
+        {tab === "analise" && analiseA && (
+          <TabAnalise
+            clientId={client.id}
+            dados={analiseA}
+            comparacao={comparacao}
+            atalhoAtivo={atalho}
+            refMonth={ref}
+            de={sp.de}
+            ate={sp.ate}
+            dia1={sp.dia1}
+            dia2={sp.dia2}
+            hoje={hojeISO}
+            ontem={ontemISO}
+          />
         )}
         {tab === "marketplaces" && <TabMarketplaces client={client} accounts={accounts} refMonth={ref} manager={manager} />}
         {tab === "ads" && (
