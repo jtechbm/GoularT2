@@ -15,8 +15,10 @@ import {
   scoresEmLote,
   alertasDaCarteira,
   indicadoresDosClientes,
+  periodoAnterior,
   periodoDe,
   serieDiaria,
+  totaisPorClienteNoPeriodo,
 } from "@/lib/queries";
 import { brl, brlShort, currentMonth, dateBR, lastMonths, MESES_DE_HISTORICO, num, pct, variacaoMensal } from "@/lib/format";
 import { lerOrdem } from "@/lib/ordem-clientes";
@@ -77,6 +79,7 @@ export default async function DashboardPage({
   // precisava olhar intervalo de datas sem entrar cliente por cliente
   const atalhoPeriodo = params.periodo ?? "mes";
   const intervalo = periodoDe(atalhoPeriodo, ref, params.de, params.ate);
+  const porDia = atalhoPeriodo !== "mes";
 
   // Tudo que não depende de outra consulta sai junto. Em fila, a tela
   // esperava a soma de todas; em paralelo, espera a mais lenta.
@@ -100,11 +103,41 @@ export default async function DashboardPage({
     .filter((r) => r.status !== "encerrado" && r.status !== "pausado")
     .reduce((s, r) => s + r.monthly_fee, 0);
 
-  const linhas = montarLinhas(rows, indicadores, ref);
+  // Período escolhido em dias: os números da carteira deixam de vir do
+  // fechamento do mês e passam a ser somados do diário, e a comparação passa
+  // a ser com o intervalo de mesmo tamanho logo antes. Sem isso a tela
+  // inicial só sabia falar de mês, que era a reclamação do Kadu.
+  const antes = periodoAnterior(intervalo.inicio, intervalo.fim);
+  const [totaisAgora, totaisAntes] = porDia
+    ? await Promise.all([
+        totaisPorClienteNoPeriodo(intervalo.inicio, intervalo.fim, escopo),
+        totaisPorClienteNoPeriodo(antes.inicio, antes.fim, escopo),
+      ])
+    : [null, null];
+
+  const linhas = montarLinhas(rows, indicadores, ref).map((c) => {
+    if (!totaisAgora) return c;
+    const t = totaisAgora.get(c.id);
+    return {
+      ...c,
+      revenue: t?.revenue ?? 0,
+      orders: t?.orders ?? 0,
+      ads: t?.ads ?? 0,
+      ads_revenue: t?.ads_revenue ?? 0,
+      prev_revenue: totaisAntes?.get(c.id)?.revenue ?? 0,
+      // lucro é apurado no fechamento do mês, não existe por intervalo
+      profit: 0,
+      carregando: 0,
+    };
+  });
+
   const ordem = lerOrdem(params.ordem);
   const hrefOrdem = (o: string) => {
     const p = new URLSearchParams();
     if (params.mes) p.set("mes", params.mes);
+    if (params.periodo) p.set("periodo", params.periodo);
+    if (params.de) p.set("de", params.de);
+    if (params.ate) p.set("ate", params.ate);
     p.set("ordem", o);
     return `/?${p}#clientes`;
   };
@@ -143,7 +176,11 @@ export default async function DashboardPage({
     .filter((x) => x.v < 0)
     .sort((a, b) => a.v - b.v)
     .slice(0, 4);
-  const periodo = corrente ? "até hoje, vs. mesmo período do mês anterior" : "vs. mês anterior";
+  const periodo = porDia
+    ? `${intervalo.label}, vs. período anterior de mesmo tamanho`
+    : corrente
+      ? "até hoje, vs. mesmo período do mês anterior"
+      : "vs. mês anterior";
 
   const emOnboarding = rows.filter((r) => r.status === "onboarding").length;
   const semResponsavel = rows.filter((r) => !r.owner_id).length;
@@ -195,6 +232,68 @@ export default async function DashboardPage({
         }
       />
 
+      {/* Período logo abaixo do cabeçalho, onde o seletor de mês já está: os
+          números e a tabela inteira seguem o que for escolhido aqui. */}
+      <div className="mb-3 flex flex-wrap items-center gap-2 rounded-[12px] border border-line bg-surface px-4 py-2.5">
+        <span className="text-xs text-dim">Período:</span>
+        <nav className="flex flex-wrap gap-1">
+          {[
+            { key: "mes", label: "Mês" },
+            { key: "hoje", label: "Hoje" },
+            { key: "ontem", label: "Ontem" },
+            { key: "7d", label: "7 dias" },
+            { key: "30d", label: "30 dias" },
+          ].map((a) => {
+            const p = new URLSearchParams();
+            if (params.mes) p.set("mes", params.mes);
+            if (params.ordem) p.set("ordem", params.ordem);
+            if (a.key !== "mes") p.set("periodo", a.key);
+            return (
+              <Link
+                key={a.key}
+                href={`/?${p}`}
+                className={`btn btn-sm ${atalhoPeriodo === a.key ? "btn-primary" : "btn-ghost"}`}
+              >
+                {a.label}
+              </Link>
+            );
+          })}
+        </nav>
+
+        <form method="get" action="/" className="flex flex-wrap items-center gap-1">
+          {params.mes && <input type="hidden" name="mes" value={params.mes} />}
+          {params.ordem && <input type="hidden" name="ordem" value={params.ordem} />}
+          <input type="hidden" name="periodo" value="personalizado" />
+          <input
+            type="date"
+            name="de"
+            defaultValue={params.de ?? ""}
+            aria-label="Data inicial"
+            className={`input h-8 w-[9.5rem] px-2 py-1 text-xs ${atalhoPeriodo === "personalizado" ? "border-brand" : ""}`}
+          />
+          <span className="text-xs text-dim">até</span>
+          <input
+            type="date"
+            name="ate"
+            defaultValue={params.ate ?? ""}
+            aria-label="Data final"
+            className={`input h-8 w-[9.5rem] px-2 py-1 text-xs ${atalhoPeriodo === "personalizado" ? "border-brand" : ""}`}
+          />
+          <button
+            type="submit"
+            className={`btn btn-sm ${atalhoPeriodo === "personalizado" ? "btn-primary" : "btn-ghost"}`}
+          >
+            Aplicar
+          </button>
+        </form>
+
+        {porDia && (
+          <span className="text-xs text-muted">
+            mostrando <strong className="text-ink">{intervalo.label}</strong>
+          </span>
+        )}
+      </div>
+
       {/* quatro números, e cada um leva ao detalhe: a tela inicial é o
           resumo, e o que explica o número está a um clique */}
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -202,7 +301,7 @@ export default async function DashboardPage({
           label="Faturamento da carteira"
           value={brl(faturamento)}
           delta={variacaoMensal(faturamento, faturamentoAnt)}
-          hint={corrente ? "vs. mesmo período do mês anterior" : "vs. mês anterior"}
+          hint={porDia ? `${intervalo.label} · vs. período anterior` : corrente ? "vs. mesmo período do mês anterior" : "vs. mês anterior"}
           tone="brand"
           href={hrefOrdem("faturamento")}
           icon={<IconBarChart size={20} />}
