@@ -431,6 +431,7 @@ export default async function DashboardPage({
           dias={dias}
           label={intervalo.label}
           atalhoAtivo={atalhoPeriodo}
+          adsDoPeriodo={porDia ? investido : null}
           hrefBase={(a) => {
             const p = new URLSearchParams();
             if (params.mes) p.set("mes", params.mes);

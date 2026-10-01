@@ -44,6 +44,7 @@ export function SerieDiaria({
   atalhoAtivo,
   hrefBase,
   metaAds,
+  adsDoPeriodo,
   de,
   ate,
 }: {
@@ -54,6 +55,15 @@ export function SerieDiaria({
   hrefBase: (atalho: string) => string;
   /** teto de Ads combinado no mês, quando existir */
   metaAds?: number | null;
+  /**
+   * Ads do período vindo de `ads_entries`, que é a fonte boa.
+   *
+   * O Ads da Shopee não existe no diário: ele é lido das recargas da carteira
+   * e gravado como uma linha por mês. Somar a coluna diária mostrava R$ 23 mil
+   * onde havia R$ 319 mil. Quando este valor vem, ele manda no total; as
+   * barras por dia seguem sendo só dos canais que informam Ads diariamente.
+   */
+  adsDoPeriodo?: number | null;
   /** datas do período escolhido à mão, para o formulário voltar preenchido */
   de?: string;
   ate?: string;
@@ -76,8 +86,9 @@ export function SerieDiaria({
   );
 
   const comVenda = dias.filter((d) => d.revenue > 0).length;
+  // o total de Ads vem de fora quando quem chama sabe o número bom
+  const adsTotal = adsDoPeriodo ?? soma.ads;
   const ticket = soma.orders ? soma.revenue / soma.orders : 0;
-  const roas = soma.ads ? soma.adsRevenue / soma.ads : 0;
   const melhor = [...dias].sort((a, b) => b.revenue - a.revenue)[0];
 
   return (
@@ -136,15 +147,15 @@ export function SerieDiaria({
             />
             <Stat
               label="Ads no período"
-              value={brl(soma.ads)}
+              value={brl(adsTotal)}
               hint={
                 metaAds
-                  ? `${pct(soma.ads / metaAds)} do teto de ${brlShort(metaAds)}`
-                  : roas
-                    ? `ROAS ${roas.toFixed(2)}x`
-                    : "sem retorno atribuído"
+                  ? `${pct(adsTotal / metaAds)} do teto de ${brlShort(metaAds)}`
+                  : soma.revenue
+                    ? `${pct(adsTotal / soma.revenue)} do faturamento`
+                    : "sem faturamento no período"
               }
-              tone={metaAds && soma.ads > metaAds ? "bad" : "warn"}
+              tone={metaAds && adsTotal > metaAds ? "bad" : "warn"}
             />
           </div>
 
@@ -163,7 +174,12 @@ export function SerieDiaria({
           {soma.ads > 0 && (
             <div className="mt-4">
               <div className="mb-1 flex items-center justify-between text-[0.7rem] text-dim">
-                <span>Investimento em Ads por dia</span>
+                <span>
+                  Investimento em Ads por dia
+                  {adsDoPeriodo != null && adsDoPeriodo - soma.ads > 1 && (
+                    <span className="text-warn"> · só os canais que informam por dia</span>
+                  )}
+                </span>
                 <span>{num(soma.clicks)} cliques no período</span>
               </div>
               <Barras dias={dias} campo="ads" cor="var(--accent)" />

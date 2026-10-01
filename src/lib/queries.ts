@@ -1546,26 +1546,52 @@ export async function totaisPorClienteNoPeriodo(
   scope?: Scope,
 ): Promise<Map<string, { revenue: number; orders: number; ads: number; ads_revenue: number }>> {
   const esc = scoped(scope, "client_id");
-  const linhas = await all<{
-    client_id: string;
-    revenue: number;
-    orders: number;
-    ads: number;
-    ads_revenue: number;
-  }>(
-    `SELECT client_id,
-            COALESCE(SUM(revenue),0)     AS revenue,
-            COALESCE(SUM(orders),0)      AS orders,
-            COALESCE(SUM(ads),0)         AS ads,
-            COALESCE(SUM(ads_revenue),0) AS ads_revenue
-       FROM finance_daily
-      WHERE day >= ? AND day <= ?${esc.sql}
-      GROUP BY client_id`,
-    inicio,
-    fim,
-    ...esc.params,
-  );
-  return new Map(linhas.map((l) => [l.client_id, l]));
+
+  // Faturamento e pedidos vêm do diário, que é por dia. O Ads NÃO: o da
+  // Shopee é lido das recargas da carteira e gravado como uma linha por mês,
+  // então `finance_daily.ads` é zero para ela. Somar dali mostrava R$ 23 mil
+  // onde havia R$ 330 mil, e um ROAS de 80x. O Ads sai de ads_entries,
+  // rateado pelos dias em que a linha encosta no período pedido.
+  const [vendas, ads] = await Promise.all([
+    all<{ client_id: string; revenue: number; orders: number }>(
+      `SELECT client_id,
+              COALESCE(SUM(revenue),0) AS revenue,
+              COALESCE(SUM(orders),0)  AS orders
+         FROM finance_daily
+        WHERE day >= ? AND day <= ?${esc.sql}
+        GROUP BY client_id`,
+      inicio,
+      fim,
+      ...esc.params,
+    ),
+    all<{ client_id: string; ads: number; ads_revenue: number }>(
+      `SELECT client_id,
+              COALESCE(SUM(invested * fatia),0) AS ads,
+              COALESCE(SUM(revenue  * fatia),0) AS ads_revenue
+         FROM (
+           SELECT client_id, invested, revenue,
+                  -- dias de sobreposição ÷ dias da linha
+                  GREATEST(0, (LEAST(period_end, ?)::date - GREATEST(period_start, ?)::date) + 1)::numeric
+                    / GREATEST(1, (period_end::date - period_start::date) + 1) AS fatia
+             FROM ads_entries
+            WHERE period_start <= ? AND period_end >= ?${esc.sql}
+         ) r
+        GROUP BY client_id`,
+      fim,
+      inicio,
+      fim,
+      inicio,
+      ...esc.params,
+    ),
+  ]);
+
+  const mapa = new Map<string, { revenue: number; orders: number; ads: number; ads_revenue: number }>();
+  for (const v of vendas) mapa.set(v.client_id, { ...v, ads: 0, ads_revenue: 0 });
+  for (const a of ads) {
+    const atual = mapa.get(a.client_id) ?? { revenue: 0, orders: 0, ads: 0, ads_revenue: 0 };
+    mapa.set(a.client_id, { ...atual, ads: Number(a.ads), ads_revenue: Number(a.ads_revenue) });
+  }
+  return mapa;
 }
 
 /**
